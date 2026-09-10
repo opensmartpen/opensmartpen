@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "ios-sdk3.0",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/NeoSmartpen/iOS-SDK3.0.git",
+      "state" : {
+        "revision" : "a53a01ec43a36f3eaad22d73d31f67672349fc08",
+        "version" : "1.1.5"
+      }
+    }
+  ],
+  "version" : 2
+}

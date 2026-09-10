@@ -27,3 +27,8 @@ Running log. Newest at the bottom. Each entry: what was decided, why, what it ru
 ## 2026-09-10 — Note grouping
 
 - Open. The pen's unit is the page. Grouping pages into notes is a derived index; keep a log of how other products do it in `docs/landscape-log.md` and decide once real data exists.
+
+## 2026-09-10 — Responsibilities (late evening clarification)
+
+- PenBridge only keeps raw files current in git. Fully autonomous: auto-connect, auto-drain, commit and push, delete from pen after push. Notifies the person only on problems.
+- All rendering and transcription happens in DAM, off the git repo. Recorded as ADR-002; ADR-001 records the raw-log-as-source-of-truth decision.

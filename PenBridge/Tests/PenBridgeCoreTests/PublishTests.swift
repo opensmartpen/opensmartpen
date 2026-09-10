@@ -1,0 +1,126 @@
+import Foundation
+@testable import PenBridgeCore
+import XCTest
+
+/// Runs real `git` against a temporary repository (no remote, push disabled).
+final class PublishTests: XCTestCase {
+    var root: URL!
+
+    override func setUpWithError() throws {
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("penbridge-git-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    func stroke(_ page: PageID, start: Int) -> Stroke {
+        Stroke(page: page, start: start, end: start + 10, dots: [DotSample(x: 1, y: 2, force: 0.3, dt: 0)],
+               source: .live, penMac: "M", firmware: "F")
+    }
+
+    func makePublisher() throws -> GitPublisher {
+        let p = GitPublisher(repo: root, push: false)
+        let hasRemote = try p.ensureRepository()
+        XCTAssertFalse(hasRemote)
+        // Identity so commits work on a machine without global git config.
+        _ = try p.run(["config", "user.email", "test@example.com"])
+        _ = try p.run(["config", "user.name", "test"])
+        return p
+    }
+
+    func testEnsureRepositoryIsIdempotent() throws {
+        let p = try makePublisher()
+        XCTAssertFalse(try p.ensureRepository())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(".git").path))
+    }
+
+    func testPublishCommitsOnlyGivenPathsAndSkipsWhenClean() throws {
+        let p = try makePublisher()
+        let store = RawStore(root: root, client: "c", sdk: "s")
+        let a = PageID(section: 3, owner: 27, book: 5, page: 1)
+        let b = PageID(section: 3, owner: 27, book: 5, page: 2)
+        try store.append([stroke(a, start: 1), stroke(b, start: 1)])
+
+        let hash = try p.publish(paths: [a.rawRelativePath], message: "one page")
+        XCTAssertNotNil(hash)
+        let tracked = try p.run(["ls-files"]).output
+        XCTAssertTrue(tracked.contains(a.rawRelativePath))
+        XCTAssertFalse(tracked.contains(b.rawRelativePath), "page b was not staged")
+
+        XCTAssertNil(try p.publish(paths: [a.rawRelativePath], message: "again"), "nothing new to commit")
+        XCTAssertNotNil(try p.publish(paths: [b.rawRelativePath], message: "second page"))
+        let count = try p.run(["rev-list", "--count", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(count, "2")
+    }
+
+    func testCoordinatorPublishesQuietPagesAndKeepsBusyOnes() throws {
+        let p = try makePublisher()
+        let store = RawStore(root: root, client: "c", sdk: "s")
+        let tracker = QuietTracker()
+        let rec = RecordingNotifier()
+        let c = SyncCoordinator(store: store, tracker: tracker, publisher: p, notifier: rec, quietWindow: 600)
+        let a = PageID(section: 3, owner: 27, book: 5, page: 1)
+        let b = PageID(section: 3, owner: 27, book: 5, page: 2)
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        c.ingestLive([stroke(a, start: 1)], now: t0)
+        c.ingestLive([stroke(b, start: 1)], now: t0.addingTimeInterval(500))
+        XCTAssertEqual(Set(c.pendingPages), [a, b])
+
+        let done = expectation(description: "published")
+        c.onChange = { done.fulfill() }
+        c.tick(now: t0.addingTimeInterval(650))
+        wait(for: [done], timeout: 30)
+
+        XCTAssertEqual(c.pendingPages, [b], "b is still within the quiet window")
+        XCTAssertEqual(c.lastPublish?.pages, 1)
+        XCTAssertNotNil(c.lastPublish?.commit)
+        XCTAssertTrue(rec.notices.isEmpty)
+    }
+
+    func testOfflineStrokesPublishImmediately() throws {
+        let p = try makePublisher()
+        let store = RawStore(root: root, client: "c", sdk: "s")
+        let c = SyncCoordinator(store: store, tracker: QuietTracker(), publisher: p, notifier: RecordingNotifier(), quietWindow: 600)
+        let a = PageID(section: 3, owner: 27, book: 5, page: 1)
+        var offline = stroke(a, start: 1)
+        offline.source = .offline
+        let pages = c.ingestOffline([offline])
+        XCTAssertEqual(pages, [a])
+        XCTAssertEqual(c.tracker.quietPages(now: Date(), window: 600), [a])
+
+        let done = expectation(description: "published")
+        c.publish(pages: Array(pages), reason: "drain") { result in
+            if case .failure(let e) = result { XCTFail("\(e)") }
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 30)
+        XCTAssertTrue(c.pendingPages.isEmpty)
+    }
+
+    func testPublishFailureNotifiesAfterThreeAttempts() throws {
+        final class Failing: Publishing {
+            var push = false
+            func publish(paths: [String], message: String) throws -> String? {
+                throw PublishError.git(command: "push", status: 1, output: "no network")
+            }
+        }
+        let store = RawStore(root: root, client: "c", sdk: "s")
+        let rec = RecordingNotifier()
+        let c = SyncCoordinator(store: store, tracker: QuietTracker(), publisher: Failing(), notifier: rec, quietWindow: 0)
+        let a = PageID(section: 3, owner: 27, book: 5, page: 1)
+        c.ingestLive([stroke(a, start: 1)])
+        var now = Date()
+        for i in 1...3 {
+            let done = expectation(description: "attempt \(i)")
+            c.onChange = { done.fulfill() }
+            c.tick(now: now)
+            wait(for: [done], timeout: 5)
+            now = now.addingTimeInterval(60 * 60) // past any backoff
+        }
+        XCTAssertEqual(c.consecutiveFailures, 3)
+        XCTAssertEqual(rec.notices.map(\.key), ["publish-failed"])
+        XCTAssertEqual(c.pendingPages, [a], "data stays pending")
+    }
+}

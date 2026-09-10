@@ -9,4 +9,8 @@ Digitise handwritten notes from a Neo smartpen (A1, Ncode paper) into a GitHub-b
 - `docs/landscape-log.md` — how other products solve each concern, and how we differ.
 - `docs/ubiquitous-language.md` — glossary.
 
-Planned components: **PenBridge** (macOS menubar app on NeoLAB's NISDK3) and **pipeline** (render and transcribe).
+Components:
+
+- `PenBridge/` — macOS menubar app on NeoLAB's NISDK3 that syncs raw strokes to a git repo. Builds and is unit-tested; not yet run against a pen.
+- Processing (render, transcribe) runs in a DAM agent off the notes repo; see `docs/processing.md`. Not built yet.
+- `docs/adrs/` — architecture decision records.
