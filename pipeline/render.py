@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Render raw pen strokes to SVG (and optionally PNG).
+
+Reads one page's append-only JSONL file (docs/stroke-format.md) and draws it at true
+physical size. Coordinates arrive in Ncode cells; one cell is 2.371 mm.
+
+Geometry: a page needs to know which paper it is printed on before it can be drawn to
+scale. NeoLAB publishes no layout file for our notebooks, so the paper is taken from
+geometry/<book>.json when present and otherwise guessed from the strokes themselves.
+
+Usage:
+    render.py <raw.jsonl> [-o out.svg] [--png] [--repo DIR]
+    render.py --all [--repo DIR] [--png]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import re
+import subprocess
+import sys
+import tempfile
+
+MM_PER_CELL = 2.371
+
+# Paper sizes in millimetres, widest first, used when a book has no recorded geometry.
+PAPERS = {
+    "A4": (210.0, 297.0),
+    "A5": (148.0, 210.0),
+    "Letter": (215.9, 279.4),
+}
+
+
+class Stroke:
+    __slots__ = ("start", "end", "color", "tip", "dots", "src")
+
+    def __init__(self, o: dict):
+        self.start = o["start"]
+        self.end = o["end"]
+        self.color = o.get("color", "#000000")
+        self.tip = o.get("tip", "pen")
+        self.src = o.get("src", "live")
+        self.dots = o["dots"]
+
+
+def read_page(path: pathlib.Path) -> list[Stroke]:
+    """Strokes sorted by time. Raw lines arrive in capture order, which is not chronological:
+    strokes buffered just before a connection completes are appended after live ones."""
+    strokes = []
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        o = json.loads(line)
+        if o.get("t") == "stroke" and o.get("dots"):
+            strokes.append(Stroke(o))
+    strokes.sort(key=lambda s: s.start)
+    return strokes
+
+
+def page_id(path: pathlib.Path) -> tuple[str, str]:
+    """('s3/o27/b450', 'p1') from a raw file path."""
+    m = re.search(r"(s\d+)/(o\d+)/(b\d+)/(p\d+)\.jsonl$", str(path))
+    if not m:
+        raise SystemExit(f"not a raw page file: {path}")
+    return "/".join(m.group(1, 2, 3)), m.group(4)
+
+
+def load_geometry(repo: pathlib.Path, book: str) -> dict | None:
+    f = repo / "geometry" / (book.replace("/", "-") + ".json")
+    return json.loads(f.read_text()) if f.exists() else None
+
+
+def guess_geometry(strokes: list[Stroke]) -> dict:
+    """Fall back to a whole sheet of the smallest standard paper the writing fits on.
+
+    The Ncode origin sits at the top-left of the printed pattern, so cell coordinates are
+    already page-relative: the paper is (0,0) to (width, height) in cells. This is a guess,
+    flagged as such, until a book is calibrated.
+    """
+    xs = [d[0] for s in strokes for d in s.dots]
+    ys = [d[1] for s in strokes for d in s.dots]
+    need_w, need_h = max(xs) * MM_PER_CELL, max(ys) * MM_PER_CELL
+    for name, (w, h) in sorted(PAPERS.items(), key=lambda kv: kv[1][0] * kv[1][1]):
+        if need_w <= w and need_h <= h:
+            return {"paper": name, "width_mm": w, "height_mm": h, "source": "guessed"}
+    w, h = PAPERS["A4"]
+    return {"paper": "A4", "width_mm": w, "height_mm": h, "source": "guessed (overflows)"}
+
+
+def width_for(force: float, base: float) -> float:
+    """Nib width in mm. Force is 0..1 and mostly sits mid-range, so the spread is gentle:
+    a 0.5 mm gel nib does not double in width when pressed."""
+    return base * (0.65 + 0.7 * max(0.0, min(1.0, force)))
+
+
+def path_data(dots: list, decimals: int = 2) -> str:
+    pts = [(d[0] * MM_PER_CELL, d[1] * MM_PER_CELL) for d in dots]
+    if len(pts) == 1:
+        x, y = pts[0]
+        return f"M{x:.{decimals}f},{y:.{decimals}f}l0.01,0"
+    # Catmull-Rom through the samples, converted to cubic Béziers, so the ink curves the way
+    # the nib moved instead of showing the 12 ms polling as corners.
+    out = [f"M{pts[0][0]:.{decimals}f},{pts[0][1]:.{decimals}f}"]
+    for i in range(len(pts) - 1):
+        p0 = pts[i - 1] if i > 0 else pts[i]
+        p1, p2 = pts[i], pts[i + 1]
+        p3 = pts[i + 2] if i + 2 < len(pts) else p2
+        c1 = (p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6)
+        c2 = (p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6)
+        out.append(
+            f"C{c1[0]:.{decimals}f},{c1[1]:.{decimals}f} "
+            f"{c2[0]:.{decimals}f},{c2[1]:.{decimals}f} "
+            f"{p2[0]:.{decimals}f},{p2[1]:.{decimals}f}"
+        )
+    return "".join(out)
+
+
+def render_svg(strokes: list[Stroke], geom: dict, nib_mm: float = 0.5, crop: bool = False) -> str:
+    w, h = geom["width_mm"], geom["height_mm"]
+    ox = oy = 0.0
+    if crop:
+        xs = [d[0] * MM_PER_CELL for s in strokes for d in s.dots]
+        ys = [d[1] * MM_PER_CELL for s in strokes for d in s.dots]
+        pad = 5.0
+        ox, oy = max(0.0, min(xs) - pad), max(0.0, min(ys) - pad)
+        w, h = min(w, max(xs) + pad) - ox, min(h, max(ys) + pad) - oy
+
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.2f}mm" height="{h:.2f}mm" '
+        f'viewBox="{ox:.2f} {oy:.2f} {w:.2f} {h:.2f}">',
+        f'<rect x="{ox:.2f}" y="{oy:.2f}" width="{w:.2f}" height="{h:.2f}" fill="#ffffff"/>',
+        '<g fill="none" stroke-linecap="round" stroke-linejoin="round">',
+    ]
+    for s in strokes:
+        if s.tip == "eraser":
+            continue
+        # One path per run of similar pressure keeps the file small while still varying width.
+        runs, cur, cur_w = [], [s.dots[0]], width_for(s.dots[0][2], nib_mm)
+        for d in s.dots[1:]:
+            wd = width_for(d[2], nib_mm)
+            if abs(wd - cur_w) > nib_mm * 0.12:
+                cur.append(d)
+                runs.append((cur, cur_w))
+                cur, cur_w = [d], wd
+            else:
+                cur.append(d)
+        runs.append((cur, cur_w))
+        for dots, wd in runs:
+            parts.append(f'<path d="{path_data(dots)}" stroke="{s.color}" stroke-width="{wd:.3f}"/>')
+    parts.append("</g></svg>")
+    return "\n".join(parts)
+
+
+def svg_to_png(svg_path: pathlib.Path, png_path: pathlib.Path, size: int = 1600) -> bool:
+    """macOS Quick Look renders SVG without any third-party dependency."""
+    with tempfile.TemporaryDirectory() as tmp:
+        r = subprocess.run(
+            ["qlmanage", "-t", "-s", str(size), "-o", tmp, str(svg_path)],
+            capture_output=True, text=True,
+        )
+        made = list(pathlib.Path(tmp).glob("*.png"))
+        if not made:
+            print(f"  png failed: {r.stderr.strip().splitlines()[-1:] or r.stdout.strip()}", file=sys.stderr)
+            return False
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path.write_bytes(made[0].read_bytes())
+        return True
+
+
+def render_file(raw: pathlib.Path, repo: pathlib.Path, out: pathlib.Path | None,
+                png: bool, crop: bool) -> None:
+    book, page = page_id(raw)
+    strokes = read_page(raw)
+    if not strokes:
+        print(f"{book}/{page}: no strokes")
+        return
+    geom = load_geometry(repo, book) or guess_geometry(strokes)
+    svg_path = out or (repo / "pages" / book / f"{page}.svg")
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+    svg_path.write_text(render_svg(strokes, geom, crop=crop))
+    note = f"{book}/{page}: {len(strokes)} strokes -> {svg_path.name}  [{geom['paper']}, {geom.get('source', 'recorded')}]"
+    if png:
+        note += "  +png" if svg_to_png(svg_path, svg_path.with_suffix(".png")) else "  (png failed)"
+    print(note)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("raw", nargs="?", help="a raw page .jsonl file")
+    ap.add_argument("--all", action="store_true", help="render every raw page in the repo")
+    ap.add_argument("--repo", default="~/PenBridge/notes", help="notes repository")
+    ap.add_argument("-o", "--out", help="output .svg path (single file only)")
+    ap.add_argument("--png", action="store_true", help="also write a PNG next to the SVG")
+    ap.add_argument("--crop", action="store_true", help="trim to the written area instead of the whole sheet")
+    a = ap.parse_args()
+
+    repo = pathlib.Path(a.repo).expanduser()
+    if a.all:
+        files = sorted((repo / "raw").rglob("*.jsonl"))
+        if not files:
+            raise SystemExit(f"no raw pages under {repo / 'raw'}")
+        for f in files:
+            render_file(f, repo, None, a.png, a.crop)
+    elif a.raw:
+        render_file(pathlib.Path(a.raw).expanduser(), repo,
+                    pathlib.Path(a.out).expanduser() if a.out else None, a.png, a.crop)
+    else:
+        ap.error("give a raw file or --all")
+
+
+if __name__ == "__main__":
+    main()
