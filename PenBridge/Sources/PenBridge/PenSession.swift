@@ -291,7 +291,9 @@ final class PenSession: NSObject {
         connecting = nil
         draining = nil
         drainQueue = []
-        setting = nil
+        // `setting` is deliberately kept: a sleeping pen's last known battery is still the
+        // best thing to show, and clearing it would hide a low-battery warning exactly when
+        // the pen has powered itself off.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.scanIfNeeded() }
     }
 }
