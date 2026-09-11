@@ -25,6 +25,8 @@ Each line is one JSON object with a `t` type field. Strokes are the unit of capt
 - `tiltX`, `tiltY`: 0…180 degrees; `twist`: 0…359. Present on A1 firmware; write `null` when absent.
 - `src`: `live` (received while connected) or `offline` (drained from pen memory).
 
+Lines are appended in arrival order, which is not chronological: strokes written in the seconds before a Bluetooth connection completes arrive as `offline` after the first `live` strokes. Consumers must sort by `start`.
+
 Optional metadata records:
 
 ```jsonc

@@ -5,7 +5,7 @@ Terms used in this project, kept precise. Update inline when a term is resolved.
 - **Dot** — one sample from the pen: x, y in Ncode cells, force, time delta, tilt, twist, plus the page identity. ~120 per second while writing.
 - **Stroke** — the dots between one pen-down and the next pen-up. The unit of capture and of the raw file.
 - **Page** — one physical sheet side, identified by Ncode (section, owner, book, page). The unit of storage: one raw file, one SVG, one PNG, one Markdown.
-- **Book** — a physical notebook as encoded in Ncode (the `note`/`book` field). Our two books are NeoLAB's A4 Ncode paper and LAMY digital paper, both owner 27.
+- **Book** — a physical notebook as encoded in Ncode (the `note`/`book` field). Our two books: NeoLAB A4 Ncode paper is section 3 / owner 27 / book 450; LAMY digital paper is section 3 / owner 1012 / book 3017 (LAMY has its own owner code).
 - **Ncode cell** — the pattern's unit of length, 2.371 mm. All raw coordinates are in cells.
 - **Geometry** — a book's page rectangle and margins in cells, from a `.nproj` file or measured. Needed only to render.
 - **Raw** — the append-only JSONL stroke log per page. Source of truth. Never edited.

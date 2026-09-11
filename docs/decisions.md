@@ -5,7 +5,7 @@ Running log. Newest at the bottom. Each entry: what was decided, why, what it ru
 ## 2026-09-10 — Hardware
 
 - Pen: **Neo smartpen A1** (NWP-F151), Bluetooth 5.0, 160 A4 pages offline memory, C1 gel refill 0.5 mm.
-- Paper: NeoLAB **Ncode A4** bundle (NC-P0081E) and **LAMY digital paper** (NC-P0198E). Both are NeoLAB notebooks (Ncode owner 27).
+- Paper: NeoLAB **Ncode A4** bundle (NC-P0081E) and **LAMY digital paper** (NC-P0198E). Measured 2026-09-11: A4 pad is s3/o27/b450, LAMY paper is s3/o1012/b3017 (not owner 27; LAMY has its own owner code).
 - Consequence: page geometry for these two books must come from NeoLAB's `.nproj` data or be measured from strokes. See `docs/stroke-format.md`.
 
 ## 2026-09-10 — Client is macOS, not iOS
@@ -40,3 +40,5 @@ Running log. Newest at the bottom. Each entry: what was decided, why, what it ru
 - Pen colour for live strokes arrives as 0xFFFFFF ("unset"); stored as black.
 - Notes repo stays local for now (`~/PenBridge/notes`, no remote); the user does not want it on GitHub yet.
 - Later: pen auto power-off is 5 min and auto power-on is off. Keep the defaults for now; add config options to set both from PenBridge.
+- LAMY digital paper is owner 1012, book 3017 (not owner 27). Owner codes belong to the paper brand, not the pen maker.
+- The stroke in progress when a Bluetooth connection completes arrives twice, from memory and live, with ~23 ms clock offset. The store now drops a stroke matching an existing one on the same page (dot count, first and last dot, start within 500 ms).

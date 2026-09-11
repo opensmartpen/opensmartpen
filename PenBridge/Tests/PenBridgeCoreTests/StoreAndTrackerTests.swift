@@ -98,4 +98,32 @@ final class StoreAndTrackerTests: XCTestCase {
         d.post(Notice(key: "k", title: "d", body: ""))
         XCTAssertEqual(rec.notices.count, 3)
     }
+
+    func testDuplicateStrokeAcrossSourcesIsDropped() throws {
+        let store = RawStore(root: root, client: "c", sdk: "s")
+        let page = PageID(section: 3, owner: 1012, book: 3017, page: 4)
+        let dots = [DotSample(x: 19.52, y: 14.55, force: 0.862, dt: 0), DotSample(x: 20.1, y: 14.8, force: 0.5, dt: 12),
+                    DotSample(x: 20.64, y: 15.04, force: 0.286, dt: 12)]
+        let live = Stroke(page: page, start: 1_789_137_717_059, end: 1_789_137_717_324, dots: dots, source: .live, penMac: "M", firmware: "F")
+        var offline = live
+        offline.id = UUID()
+        offline.start = 1_789_137_717_036 // 23 ms clock offset
+        offline.end = 1_789_137_717_301
+        offline.source = .offline
+        var other = live
+        other.id = UUID()
+        other.start = live.start + 2000 // same shape drawn again later is a real stroke
+        other.end = other.start + 100
+
+        XCTAssertEqual(try store.append([live]), [page])
+        XCTAssertEqual(try store.append([offline]), [], "duplicate contributes no touched page")
+        XCTAssertEqual(try store.append([other]), [page])
+        let lines = try String(contentsOf: store.fileURL(for: page), encoding: .utf8).split(separator: "\n")
+        XCTAssertEqual(lines.count, 3, "meta + 2 strokes")
+
+        // A fresh store instance re-reads signatures from disk (restart safety).
+        let again = RawStore(root: root, client: "c", sdk: "s")
+        XCTAssertEqual(try again.append([offline]), [])
+        XCTAssertEqual(try String(contentsOf: store.fileURL(for: page), encoding: .utf8).split(separator: "\n").count, 3)
+    }
 }
