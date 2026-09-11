@@ -58,3 +58,12 @@ Running log. Newest at the bottom. Each entry: what was decided, why, what it ru
 - The PNG is cropped to the written area; the SVG keeps the true page. A line of writing marooned in an A4 of white space transcribes badly.
 - Naming: raw capture stays keyed by Ncode (`raw/s3/o27/b450/p12.jsonl`) because that is the only identifier the hardware knows and it must not depend on a name a person might change. Everything readable goes through a book record in `books/<slug>.json`, which carries the Ncode id, a title, the paper size and `first_page`. Derived files land at `pages/<slug>/page-NN.{svg,png,md}`, and `first_page` absorbs the Ncode page offset, so the LAMY pad's first sheet is `page-01` rather than p4.
 - Commands: a line the writer opens with `>>` is transcribed as `- [ ] >> instruction`. The executing side marks it `[·]` while running and `[x]` when done. Because the Markdown is derived and the paper cannot be un-written, transcription carries previous states forward by matching normalised command text; without that, every re-transcription would offer finished commands as new work.
+- LAMY page numbers are left alone (`first_page: 1`). The notebook has specially formatted sheets at the front, so its Ncode page numbers are the physical page numbers, not an offset to correct. `first_page` stays available for a notebook that genuinely starts elsewhere.
+
+## Known issue: a second notebook of the same kind will collide
+
+Ncode section 3 gives 13 bits of book code, 8192 per owner, so a book code identifies a **product**, not a physical copy. Two identical A4 pads therefore report the same section, owner and book, and their page 1s are the same address. Writing in a fresh pad would append to the previous pad's page files.
+
+This does not affect the two notebooks in use today, which differ. It bites the first time a notebook is replaced with another of the same kind.
+
+The intended fix keeps raw capture untouched, because mixed strokes are what the pen actually reported and the file should stay honest. Instead a notebook record gains **instances**, each a slug plus the date it was started, and the derived layer routes each stroke to an instance by its timestamp. Replacing a pad becomes one explicit action that records a boundary date, after which `pages/a4-pad-2/` fills up while `pages/a4-pad-1/` stays frozen. Nothing in PenBridge changes.
