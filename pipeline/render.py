@@ -19,9 +19,7 @@ import argparse
 import json
 import pathlib
 import re
-import subprocess
 import sys
-import tempfile
 
 MM_PER_CELL = 2.371
 
@@ -153,20 +151,63 @@ def render_svg(strokes: list[Stroke], geom: dict, nib_mm: float = 0.5, crop: boo
     return "\n".join(parts)
 
 
-def svg_to_png(svg_path: pathlib.Path, png_path: pathlib.Path, size: int = 1600) -> bool:
-    """macOS Quick Look renders SVG without any third-party dependency."""
-    with tempfile.TemporaryDirectory() as tmp:
-        r = subprocess.run(
-            ["qlmanage", "-t", "-s", str(size), "-o", tmp, str(svg_path)],
-            capture_output=True, text=True,
-        )
-        made = list(pathlib.Path(tmp).glob("*.png"))
-        if not made:
-            print(f"  png failed: {r.stderr.strip().splitlines()[-1:] or r.stdout.strip()}", file=sys.stderr)
-            return False
-        png_path.parent.mkdir(parents=True, exist_ok=True)
-        png_path.write_bytes(made[0].read_bytes())
-        return True
+def content_box(strokes: list[Stroke], pad_mm: float = 6.0) -> tuple[float, float, float, float]:
+    xs = [d[0] * MM_PER_CELL for s in strokes for d in s.dots]
+    ys = [d[1] * MM_PER_CELL for s in strokes for d in s.dots]
+    return (min(xs) - pad_mm, min(ys) - pad_mm, max(xs) + pad_mm, max(ys) + pad_mm)
+
+
+def render_png(strokes: list[Stroke], png_path: pathlib.Path, nib_mm: float = 0.5,
+               dpi: float = 200, max_px: int = 2200, min_px: int = 700, ss: int = 3) -> bool:
+    """Rasterise the written area straight from the strokes.
+
+    Cropped to the writing rather than the whole sheet: this image is what a vision model
+    reads, and a line of text marooned in an A4 of white space transcribes badly. The SVG
+    beside it keeps the true page. Drawn at `ss` times the target size and scaled down,
+    because PIL has no anti-aliasing of its own.
+    """
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        print("  png needs Pillow (pip install pillow)", file=sys.stderr)
+        return False
+
+    x0, y0, x1, y1 = content_box(strokes)
+    w_mm, h_mm = x1 - x0, y1 - y0
+    scale = dpi / 25.4
+    longest = max(w_mm, h_mm) * scale
+    if longest > max_px:
+        scale *= max_px / longest
+    elif longest < min_px:
+        scale *= min_px / longest
+
+    w = max(1, round(w_mm * scale)) * ss
+    h = max(1, round(h_mm * scale)) * ss
+    img = Image.new("RGB", (w, h), "white")
+    d = ImageDraw.Draw(img)
+
+    def pt(dot):
+        return ((dot[0] * MM_PER_CELL - x0) * scale * ss, (dot[1] * MM_PER_CELL - y0) * scale * ss)
+
+    for s in strokes:
+        if s.tip == "eraser":
+            continue
+        pts = [pt(dd) for dd in s.dots]
+        widths = [max(1.0, width_for(dd[2], nib_mm) * scale * ss) for dd in s.dots]
+        if len(pts) == 1:
+            r = widths[0] / 2
+            d.ellipse([pts[0][0] - r, pts[0][1] - r, pts[0][0] + r, pts[0][1] + r], fill=s.color)
+            continue
+        for i in range(len(pts) - 1):
+            lw = (widths[i] + widths[i + 1]) / 2
+            d.line([pts[i], pts[i + 1]], fill=s.color, width=max(1, round(lw)))
+            # Round the joins by hand; PIL's line joins are square.
+            r = lw / 2
+            d.ellipse([pts[i + 1][0] - r, pts[i + 1][1] - r, pts[i + 1][0] + r, pts[i + 1][1] + r], fill=s.color)
+
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+    img.resize((max(1, w // ss), max(1, h // ss)), Image.LANCZOS).save(png_path)
+    return True
 
 
 def render_file(raw: pathlib.Path, repo: pathlib.Path, out: pathlib.Path | None,
@@ -182,7 +223,7 @@ def render_file(raw: pathlib.Path, repo: pathlib.Path, out: pathlib.Path | None,
     svg_path.write_text(render_svg(strokes, geom, crop=crop))
     note = f"{book}/{page}: {len(strokes)} strokes -> {svg_path.name}  [{geom['paper']}, {geom.get('source', 'recorded')}]"
     if png:
-        note += "  +png" if svg_to_png(svg_path, svg_path.with_suffix(".png")) else "  (png failed)"
+        note += "  +png" if render_png(strokes, svg_path.with_suffix(".png")) else "  (png failed)"
     print(note)
 
 
