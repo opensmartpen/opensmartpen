@@ -34,6 +34,7 @@ final class PenSession: NSObject {
     private var settingTimer: Timer?
     private var passwordTried = false
 
+    private var powerSettingsVerified = false
     private var assembler = StrokeAssembler()
     private var penMac = ""
     private var firmware = ""
@@ -152,6 +153,7 @@ final class PenSession: NSObject {
             }
         }
         state = .ready
+        powerSettingsVerified = false
         Log.info("authorised: \(penName) fw \(firmware)")
         pen.requestSetPenTime()
         pen.requestPenSettingInfo()
@@ -191,17 +193,32 @@ final class PenSession: NSObject {
     /// so a connect costs no writes once the pen already matches the config.
     private func applyPowerSettings(_ s: PenSettingStruct) {
         guard let pen else { return }
+        var wrote = false
         if let want = config.penAutoPowerOn, (s.usePenTipOnOff == .On) != want {
             Log.info("setting pen auto-power-on to \(want)")
             pen.requestSetPenAutoPowerOn(want ? .On : .Off)
+            wrote = true
         }
         if let want = config.penAutoPowerOffMinutes, Int(s.autoPwrOffTime) != want {
             Log.info("setting pen auto-power-off to \(want) min")
             pen.requestSetPenAutoPowerOffTime(UInt16(want))
+            wrote = true
         }
         if let want = config.penCapPowerOff, (s.usePenCapOff == .On) != want {
             Log.info("setting pen cap-power-off to \(want)")
             pen.requestSetPenCapOff(want ? .On : .Off)
+            wrote = true
+        }
+        // Read the settings back once, so a write the pen quietly refused is visible in the log
+        // rather than being re-attempted on every future connection. Guarded to one round trip.
+        guard wrote, !powerSettingsVerified else {
+            if !wrote { powerSettingsVerified = true }
+            return
+        }
+        powerSettingsVerified = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            Log.info("verifying pen power settings")
+            self?.pen?.requestPenSettingInfo()
         }
     }
 
