@@ -15,8 +15,12 @@ final class PublishTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
+    /// Each stroke gets its own geometry, derived from `start`, so distinct strokes never look
+    /// like duplicates of one another (see RawStore's duplicate rejection).
     func stroke(_ page: PageID, start: Int) -> Stroke {
-        Stroke(page: page, start: start, end: start + 10, dots: [DotSample(x: 1, y: 2, force: 0.3, dt: 0)],
+        let x = Double(start % 1000)
+        return Stroke(page: page, start: start, end: start + 10,
+               dots: [DotSample(x: x, y: 2, force: 0.3, dt: 0), DotSample(x: x + 0.5, y: 2.5, force: 0.4, dt: 12)],
                source: .live, penMac: "M", firmware: "F")
     }
 
@@ -132,7 +136,7 @@ final class PublishTests: XCTestCase {
         let b = PageID(section: 3, owner: 27, book: 450, page: 12)
         try store.append([stroke(a, start: 1), stroke(b, start: 1)])
         XCTAssertNotNil(try p.publish(paths: [a.rawRelativePath], message: "a"))
-        try store.append([stroke(a, start: 2)]) // a modified after commit, b never committed
+        try store.append([stroke(a, start: 987)]) // a modified after commit, b never committed
 
         let fresh = SyncCoordinator(store: store, tracker: QuietTracker(), publisher: p, notifier: RecordingNotifier(), quietWindow: 600)
         XCTAssertTrue(fresh.pendingPages.isEmpty)
