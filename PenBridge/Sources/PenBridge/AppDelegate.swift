@@ -5,6 +5,8 @@ import PenBridgeCore
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     static let version = "0.1.0"
     static let sdkVersion = "NISDK3/1.1.5"
+    /// Offline pages the A1 holds when full, per NeoLAB's specification.
+    static let penPageCapacity = 160
 
     private var statusItem: NSStatusItem!
     private var menu = NSMenu()
@@ -72,29 +74,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshMenu()
     }
 
-    /// Battery below the threshold turns the menubar icon red and adds the percentage, so a pen
-    /// about to die is visible without opening the menu. Everything else stays a plain template icon.
+    /// The menubar always shows the pen: it is what the app is, and a familiar shape is easier
+    /// to find than a changing one. Colour is reserved for a problem — a low battery turns the
+    /// pen red and adds the percentage. Everything else stays a template glyph, so it takes the
+    /// menubar's own ink colour in light and dark.
     private func refreshStatusButton() {
         guard let button = statusItem.button else { return }
         let battery = session.setting.map { (pct: Int($0.battLevel), charging: $0.charging == .On) }
         let low = battery.map { $0.pct <= config.lowBatteryPercent && !$0.charging } ?? false
+        let image = NSImage(systemSymbolName: "pencil.and.scribble", accessibilityDescription: "PenBridge")
 
         if low, let battery {
-            let image = NSImage(systemSymbolName: "battery.0", accessibilityDescription: "Pen battery low")?
-                .withSymbolConfiguration(.init(paletteColors: [.systemRed]))
-            image?.isTemplate = false
-            button.image = image
+            let red = image?.withSymbolConfiguration(.init(paletteColors: [.systemRed]))
+            red?.isTemplate = false
+            button.image = red
             button.attributedTitle = NSAttributedString(
                 string: " \(battery.pct)%",
-                attributes: [.foregroundColor: NSColor.systemRed,
-                             .font: NSFont.menuBarFont(ofSize: 0)])
+                attributes: [.foregroundColor: NSColor.systemRed, .font: NSFont.menuBarFont(ofSize: 0)])
             button.toolTip = "Pen battery \(battery.pct)% — charge it"
         } else {
-            let image = NSImage(systemSymbolName: "pencil.and.scribble", accessibilityDescription: "PenBridge")
             image?.isTemplate = true
             button.image = image
             button.attributedTitle = NSAttributedString(string: "")
-            button.toolTip = "PenBridge"
+            button.toolTip = battery.map { "Pen battery \($0.pct)%\($0.charging ? ", charging" : "")" } ?? "PenBridge"
         }
     }
 
@@ -108,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(disabled(stateLine()))
         if let s = session.setting {
             menu.addItem(batteryItem(percent: Int(s.battLevel), charging: s.charging == .On))
-            menu.addItem(memoryItem(percent: Int(s.memoryUsed)))
+            menu.addItem(memoryItem(percentUsed: Int(s.memoryUsed)))
         }
         let pending = coordinator.pendingPages.count
         if pending > 0 {
@@ -177,19 +179,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case (_, ..<88): symbol = "battery.75"
         default: symbol = "battery.100"
         }
-        let tint: NSColor? = charging ? .systemGreen
+        // No colour for a healthy or charging battery: the bolt already says charging, and a
+        // menu where everything is coloured is a menu where nothing stands out.
+        let tint: NSColor? = charging ? nil
             : percent <= config.lowBatteryPercent ? .systemRed
             : percent <= config.lowBatteryPercent * 2 ? .systemOrange : nil
         let label = "Battery \(percent)%\(charging ? " charging" : "")"
         return gaugeItem(symbol: symbol, label: label, fraction: Double(percent) / 100, tint: tint)
     }
 
-    private func memoryItem(percent: Int) -> NSMenuItem {
-        // Pen memory is a buffer, not storage: it only fills when writing happens away from this Mac.
-        let tint: NSColor? = percent >= config.memoryWarnPercent ? .systemOrange : nil
-        let pages = Int((Double(percent) / 100 * 160).rounded())
-        let detail = percent == 0 ? "empty" : "\(percent)% used, about \(pages) of 160 pages"
-        return gaugeItem(symbol: "internaldrive", label: "Pen memory \(detail)", fraction: Double(percent) / 100, tint: tint)
+    private func memoryItem(percentUsed: Int) -> NSMenuItem {
+        // Shown as space *free*, not used, so both gauges read the same way: a full bar is
+        // healthy in each. Pen memory is a buffer that only fills when writing happens away
+        // from this Mac, so emptying it is the good outcome.
+        let free = max(0, 100 - percentUsed)
+        let pagesFree = Int((Double(free) / 100 * Double(Self.penPageCapacity)).rounded())
+        let tint: NSColor? = percentUsed >= config.memoryWarnPercent ? .systemOrange : nil
+        let label = "Pen memory \(free)% free, room for about \(pagesFree) pages"
+        return gaugeItem(symbol: "internaldrive", label: label, fraction: Double(free) / 100, tint: tint)
     }
 
     private func disabled(_ title: String) -> NSMenuItem {
