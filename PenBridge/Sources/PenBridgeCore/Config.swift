@@ -17,6 +17,14 @@ public struct Config: Codable, Equatable {
     public var deleteFromPenAfterPublish: Bool = true
     /// Push after every commit. Turn off to work fully offline.
     public var gitPush: Bool = true
+    /// Pen power settings, applied on every connect when set. Nil leaves the pen's own value alone.
+    /// `penAutoPowerOn` wakes the pen when the tip is pressed or the cap comes off, which is what
+    /// stops strokes being lost to a sleeping pen. `penAutoPowerOffMinutes` is the inactivity timeout.
+    /// `penCapPowerOff` powers the pen down when the cap goes on.
+    public var penAutoPowerOn: Bool?
+    public var penAutoPowerOffMinutes: Int?
+    public var penCapPowerOff: Bool?
+
     /// Notify when battery falls to or below this percentage.
     public var lowBatteryPercent: Int = 20
     /// Notify when pen memory usage reaches this percentage.
@@ -36,6 +44,9 @@ public struct Config: Codable, Equatable {
         penPeripheralId = try c.decodeIfPresent(String.self, forKey: .penPeripheralId)
         penPassword = try c.decodeIfPresent(String.self, forKey: .penPassword)
         deleteFromPenAfterPublish = try c.decodeIfPresent(Bool.self, forKey: .deleteFromPenAfterPublish) ?? d.deleteFromPenAfterPublish
+        penAutoPowerOn = try c.decodeIfPresent(Bool.self, forKey: .penAutoPowerOn)
+        penAutoPowerOffMinutes = try c.decodeIfPresent(Int.self, forKey: .penAutoPowerOffMinutes)
+        penCapPowerOff = try c.decodeIfPresent(Bool.self, forKey: .penCapPowerOff)
         gitPush = try c.decodeIfPresent(Bool.self, forKey: .gitPush) ?? d.gitPush
         lowBatteryPercent = try c.decodeIfPresent(Int.self, forKey: .lowBatteryPercent) ?? d.lowBatteryPercent
         memoryWarnPercent = try c.decodeIfPresent(Int.self, forKey: .memoryWarnPercent) ?? d.memoryWarnPercent

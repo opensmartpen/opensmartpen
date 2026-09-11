@@ -166,7 +166,14 @@ final class PenSession: NSObject {
     private func handleSetting(_ s: PenSettingStruct) {
         setting = s
         onChange?()
-        Log.info("pen status: battery \(s.battLevel)%\(s.charging == .On ? " (charging)" : ""), memory \(s.memoryUsed)% used, auto-off \(s.autoPwrOffTime) min")
+        Log.info("pen status: battery \(s.battLevel)%\(s.charging == .On ? " (charging)" : ""), memory \(s.memoryUsed)% used")
+        Log.info("pen power: auto-off \(s.autoPwrOffTime) min, auto-on-by-tip \(s.usePenTipOnOff), cap-power-off \(s.usePenCapOff), offline-save \(s.offlineOnOff), hover \(s.useHover), beep \(s.beepOnOff)")
+        applyPowerSettings(s)
+        if s.offlineOnOff == .Off {
+            notifier.post(Notice(key: "offline-save-off", title: "Pen is not storing notes offline",
+                                 body: "Anything written away from this Mac would be lost. Turning it back on now."))
+            pen?.requestSetPenOfflineSave(.On)
+        }
         if Int(s.battLevel) <= config.lowBatteryPercent && s.charging == .Off {
             notifier.post(Notice(key: "battery", title: "Pen battery at \(s.battLevel)%", body: "Charge \(penName) soon."))
         } else {
@@ -177,6 +184,24 @@ final class PenSession: NSObject {
                                  body: "Keep the pen near this Mac so it can be drained."))
         } else {
             notifier.reset("memory")
+        }
+    }
+
+    /// Push the configured power settings onto the pen, but only the ones that actually differ,
+    /// so a connect costs no writes once the pen already matches the config.
+    private func applyPowerSettings(_ s: PenSettingStruct) {
+        guard let pen else { return }
+        if let want = config.penAutoPowerOn, (s.usePenTipOnOff == .On) != want {
+            Log.info("setting pen auto-power-on to \(want)")
+            pen.requestSetPenAutoPowerOn(want ? .On : .Off)
+        }
+        if let want = config.penAutoPowerOffMinutes, Int(s.autoPwrOffTime) != want {
+            Log.info("setting pen auto-power-off to \(want) min")
+            pen.requestSetPenAutoPowerOffTime(UInt16(want))
+        }
+        if let want = config.penCapPowerOff, (s.usePenCapOff == .On) != want {
+            Log.info("setting pen cap-power-off to \(want)")
+            pen.requestSetPenCapOff(want ? .On : .Off)
         }
     }
 
