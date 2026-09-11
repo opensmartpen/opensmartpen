@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator = SyncCoordinator(store: store, tracker: QuietTracker(), publisher: publisher,
                                       notifier: notifier, quietWindow: config.quietMinutes * 60)
         coordinator.onChange = { [weak self] in self?.refreshMenu() }
+        coordinator.recoverPending()
 
         session = PenSession(config: config, configURL: configURL, coordinator: coordinator, notifier: notifier)
         session.onChange = { [weak self] in self?.refreshMenu() }

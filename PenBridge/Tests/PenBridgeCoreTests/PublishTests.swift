@@ -105,6 +105,7 @@ final class PublishTests: XCTestCase {
             func publish(paths: [String], message: String) throws -> String? {
                 throw PublishError.git(command: "push", status: 1, output: "no network")
             }
+            func dirtyPaths(under prefix: String) -> [String] { [] }
         }
         let store = RawStore(root: root, client: "c", sdk: "s")
         let rec = RecordingNotifier()
@@ -122,5 +123,32 @@ final class PublishTests: XCTestCase {
         XCTAssertEqual(c.consecutiveFailures, 3)
         XCTAssertEqual(rec.notices.map(\.key), ["publish-failed"])
         XCTAssertEqual(c.pendingPages, [a], "data stays pending")
+    }
+
+    func testRecoverPendingAdoptsUncommittedRawFiles() throws {
+        let p = try makePublisher()
+        let store = RawStore(root: root, client: "c", sdk: "s")
+        let a = PageID(section: 3, owner: 27, book: 5, page: 1)
+        let b = PageID(section: 3, owner: 27, book: 450, page: 12)
+        try store.append([stroke(a, start: 1), stroke(b, start: 1)])
+        XCTAssertNotNil(try p.publish(paths: [a.rawRelativePath], message: "a"))
+        try store.append([stroke(a, start: 2)]) // a modified after commit, b never committed
+
+        let fresh = SyncCoordinator(store: store, tracker: QuietTracker(), publisher: p, notifier: RecordingNotifier(), quietWindow: 600)
+        XCTAssertTrue(fresh.pendingPages.isEmpty)
+        let recovered = fresh.recoverPending()
+        XCTAssertEqual(Set(recovered), [a, b])
+        XCTAssertEqual(Set(fresh.pendingPages), [a, b])
+        // Dated by mtime (just now), so not yet quiet…
+        XCTAssertTrue(fresh.tracker.quietPages(now: Date(), window: 600).isEmpty)
+        // …but quiet once the window passes.
+        XCTAssertEqual(Set(fresh.tracker.quietPages(now: Date().addingTimeInterval(601), window: 600)), [a, b])
+    }
+
+    func testPageIDRoundTripsThroughPath() {
+        let p = PageID(section: 3, owner: 27, book: 450, page: 1)
+        XCTAssertEqual(PageID(rawRelativePath: p.rawRelativePath), p)
+        XCTAssertNil(PageID(rawRelativePath: "raw/s3/o27/b450/notes.md"))
+        XCTAssertNil(PageID(rawRelativePath: "pages/s3/o27/b450/p1.jsonl"))
     }
 }

@@ -3,6 +3,8 @@ import Foundation
 public protocol Publishing: AnyObject {
     var push: Bool { get set }
     func publish(paths: [String], message: String) throws -> String?
+    /// Raw files written but never committed (survivors of a crash or restart).
+    func dirtyPaths(under prefix: String) -> [String]
 }
 
 extension GitPublisher: Publishing {}
@@ -41,6 +43,25 @@ public final class SyncCoordinator {
     }
 
     public var pendingPages: [PageID] { tracker.pendingPages }
+
+    /// The tracker lives in memory. On startup, adopt every uncommitted raw file as pending,
+    /// dated by its modification time, so a restart never strands written strokes.
+    /// Returns the recovered pages.
+    @discardableResult
+    public func recoverPending() -> [PageID] {
+        var recovered: [PageID] = []
+        for path in publisher.dirtyPaths(under: "raw/") {
+            guard let page = PageID(rawRelativePath: path) else { continue }
+            let url = store.root.appendingPathComponent(path)
+            let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? .distantPast
+            tracker.touch([page], at: mtime)
+            recovered.append(page)
+        }
+        if !recovered.isEmpty {
+            Log.info("recovered \(recovered.count) uncommitted page(s): \(recovered.map(\.description).sorted().joined(separator: ", "))")
+        }
+        return recovered
+    }
 
     /// Strokes received live from the pen.
     public func ingestLive(_ strokes: [Stroke], now: Date = Date()) {

@@ -62,6 +62,16 @@ public final class GitPublisher {
         _ = try run(["push", "-q", "-u", "origin", branch])
     }
 
+    /// Repo-relative raw files that are modified or untracked, i.e. written but never committed.
+    public func dirtyPaths(under prefix: String = "raw/") -> [String] {
+        guard let out = try? run(["status", "--porcelain", "--untracked-files=all", "--", prefix]).output else { return [] }
+        return out.split(separator: "\n").compactMap { line in
+            guard line.count > 3 else { return nil }
+            let path = String(line.dropFirst(3))
+            return path.hasPrefix(prefix) ? path : nil
+        }
+    }
+
     /// Commits that were made while pushing was failing.
     public func unpushedCommitCount() -> Int {
         guard let out = try? run(["rev-list", "--count", "@{u}..HEAD"], allowedStatuses: [0, 128]).output else { return 0 }

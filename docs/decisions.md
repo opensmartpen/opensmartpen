@@ -32,3 +32,11 @@ Running log. Newest at the bottom. Each entry: what was decided, why, what it ru
 
 - PenBridge only keeps raw files current in git. Fully autonomous: auto-connect, auto-drain, commit and push, delete from pen after push. Notifies the person only on problems.
 - All rendering and transcription happens in DAM, off the git repo. Recorded as ADR-002; ADR-001 records the raw-log-as-source-of-truth decision.
+
+## 2026-09-11 — First contact with the A1
+
+- End to end worked on the first attempt: pair, authorise, drain (12 offline strokes), delete from pen, live strokes, reconnect in 2 s after a restart.
+- Found and fixed: pending pages lived only in memory, so a restart stranded a written-but-uncommitted page. PenBridge now adopts every uncommitted raw file on startup, dated by its modification time.
+- Pen colour for live strokes arrives as 0xFFFFFF ("unset"); stored as black.
+- Notes repo stays local for now (`~/PenBridge/notes`, no remote); the user does not want it on GitHub yet.
+- Later: pen auto power-off is 5 min and auto power-on is off. Keep the defaults for now; add config options to set both from PenBridge.

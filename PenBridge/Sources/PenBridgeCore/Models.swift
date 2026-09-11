@@ -20,6 +20,17 @@ public struct PageID: Hashable, Codable, CustomStringConvertible {
     }
 
     public var description: String { "s\(section)/o\(owner)/b\(book)/p\(page)" }
+
+    /// Inverse of `rawRelativePath`; nil for paths that are not raw page files.
+    public init?(rawRelativePath: String) {
+        let parts = rawRelativePath.split(separator: "/").map(String.init)
+        guard parts.count == 5, parts[0] == "raw",
+              parts[1].hasPrefix("s"), parts[2].hasPrefix("o"), parts[3].hasPrefix("b"),
+              parts[4].hasPrefix("p"), parts[4].hasSuffix(".jsonl"),
+              let s = Int(parts[1].dropFirst()), let o = Int(parts[2].dropFirst()), let b = Int(parts[3].dropFirst()),
+              let p = Int(parts[4].dropFirst().dropLast(6)) else { return nil }
+        self.init(section: s, owner: o, book: b, page: p)
+    }
 }
 
 /// One sample from the pen, in Ncode cells.
