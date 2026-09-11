@@ -34,7 +34,7 @@ final class PenSession: NSObject {
     private var settingTimer: Timer?
     private var passwordTried = false
 
-    private var powerSettingsVerified = false
+    private var powerWriteAttempted = false
     private var assembler = StrokeAssembler()
     private var penMac = ""
     private var firmware = ""
@@ -153,7 +153,7 @@ final class PenSession: NSObject {
             }
         }
         state = .ready
-        powerSettingsVerified = false
+        powerWriteAttempted = false
         Log.info("authorised: \(penName) fw \(firmware)")
         pen.requestSetPenTime()
         pen.requestPenSettingInfo()
@@ -191,33 +191,35 @@ final class PenSession: NSObject {
 
     /// Push the configured power settings onto the pen, but only the ones that actually differ,
     /// so a connect costs no writes once the pen already matches the config.
+    /// Push the configured power settings onto the pen, but only the ones that differ, and only
+    /// once per connection: the settings are read back afterwards, and a pen that kept its own
+    /// values has refused them, so repeating the write would just loop.
     private func applyPowerSettings(_ s: PenSettingStruct) {
         guard let pen else { return }
-        var wrote = false
+        var pending: [(String, () -> Void)] = []
         if let want = config.penAutoPowerOn, (s.usePenTipOnOff == .On) != want {
-            Log.info("setting pen auto-power-on to \(want)")
-            pen.requestSetPenAutoPowerOn(want ? .On : .Off)
-            wrote = true
+            pending.append(("auto-power-on=\(want)", { pen.requestSetPenAutoPowerOn(want ? .On : .Off) }))
         }
         if let want = config.penAutoPowerOffMinutes, Int(s.autoPwrOffTime) != want {
-            Log.info("setting pen auto-power-off to \(want) min")
-            pen.requestSetPenAutoPowerOffTime(UInt16(want))
-            wrote = true
+            pending.append(("auto-power-off=\(want)min", { pen.requestSetPenAutoPowerOffTime(UInt16(want)) }))
         }
         if let want = config.penCapPowerOff, (s.usePenCapOff == .On) != want {
-            Log.info("setting pen cap-power-off to \(want)")
-            pen.requestSetPenCapOff(want ? .On : .Off)
-            wrote = true
+            pending.append(("cap-power-off=\(want)", { pen.requestSetPenCapOff(want ? .On : .Off) }))
         }
-        // Read the settings back once, so a write the pen quietly refused is visible in the log
-        // rather than being re-attempted on every future connection. Guarded to one round trip.
-        guard wrote, !powerSettingsVerified else {
-            if !wrote { powerSettingsVerified = true }
+        guard !pending.isEmpty else { return }
+        let names = pending.map(\.0).joined(separator: ", ")
+
+        if powerWriteAttempted {
+            Log.warn("pen kept its own values after being asked for \(names); it does not accept these settings")
+            notifier.post(Notice(key: "power-settings-refused", title: "Pen refused a settings change",
+                                 body: "\(penName) would not accept \(names). Its own values stay in force."))
             return
         }
-        powerSettingsVerified = true
+        powerWriteAttempted = true
+        Log.info("setting \(names)")
+        for (_, apply) in pending { apply() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            Log.info("verifying pen power settings")
+            Log.info("reading pen settings back to check they took")
             self?.pen?.requestPenSettingInfo()
         }
     }
@@ -403,6 +405,10 @@ extension PenSession: PenDelegate {
             }
         case let .PEN_SETTING_INFO(s):
             handleSetting(s)
+        case let .PEN_SETUP_SUCCESS(type):
+            Log.info("pen accepted setting: \(type)")
+        case let .PEN_SETUP_FAILURE(code):
+            Log.warn("pen rejected a setting: \(code)")
         case let .EVENT_LOW_BATTERY(pct):
             notifier.post(Notice(key: "battery", title: "Pen battery at \(pct)%", body: "Charge \(penName) soon."))
         case let .EVENT_POWER_OFF(reason):
