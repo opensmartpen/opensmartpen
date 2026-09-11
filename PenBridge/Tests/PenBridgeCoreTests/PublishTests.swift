@@ -155,4 +155,31 @@ final class PublishTests: XCTestCase {
         XCTAssertNil(PageID(rawRelativePath: "raw/s3/o27/b450/notes.md"))
         XCTAssertNil(PageID(rawRelativePath: "pages/s3/o27/b450/p1.jsonl"))
     }
+
+    func testControlSurfaceTapsAreNotFiledAsNotes() throws {
+        let p = try makePublisher()
+        let store = RawStore(root: root, client: "c", sdk: "s")
+        let c = SyncCoordinator(store: store, tracker: QuietTracker(), publisher: p, notifier: RecordingNotifier(), quietWindow: 600)
+        c.controlBooks = ["s3/o1013/b1"]
+        var taps: [Stroke] = []
+        c.onControlTap = { taps.append($0) }
+
+        let note = PageID(section: 3, owner: 1012, book: 3017, page: 4)
+        let control = PageID(section: 3, owner: 1013, book: 1, page: 11)
+        c.ingestLive([stroke(note, start: 1), stroke(control, start: 2)])
+
+        XCTAssertEqual(c.pendingPages, [note], "the tap is a command, not a page")
+        XCTAssertEqual(taps.count, 1)
+        XCTAssertEqual(taps.first?.page, control)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.fileURL(for: control).path))
+
+        // Same for strokes drained from pen memory.
+        var offlineTap = stroke(control, start: 3); offlineTap.source = .offline
+        XCTAssertTrue(c.ingestOffline([offlineTap]).isEmpty)
+        XCTAssertEqual(taps.count, 2)
+    }
+
+    func testBookKey() {
+        XCTAssertEqual(PageID(section: 3, owner: 1013, book: 1, page: 11).bookKey, "s3/o1013/b1")
+    }
 }

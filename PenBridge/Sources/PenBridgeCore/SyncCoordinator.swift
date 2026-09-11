@@ -17,6 +17,10 @@ public final class SyncCoordinator {
     public let publisher: Publishing
     public let notifier: Notifier
     public var quietWindow: TimeInterval
+    /// Books that are control surfaces; strokes on them never become notes.
+    public var controlBooks: Set<String> = []
+    /// Called for every tap on a control surface, so callers can act on it or map it.
+    public var onControlTap: ((Stroke) -> Void)?
 
     public struct PublishRecord: Equatable {
         public let date: Date
@@ -65,6 +69,7 @@ public final class SyncCoordinator {
 
     /// Strokes received live from the pen.
     public func ingestLive(_ strokes: [Stroke], now: Date = Date()) {
+        let strokes = separateControlTaps(strokes)
         guard !strokes.isEmpty else { return }
         do {
             let pages = try store.append(strokes, now: now)
@@ -80,6 +85,7 @@ public final class SyncCoordinator {
     /// Strokes drained from pen memory. Returns the pages they landed on.
     @discardableResult
     public func ingestOffline(_ strokes: [Stroke], now: Date = Date()) -> Set<PageID> {
+        let strokes = separateControlTaps(strokes)
         guard !strokes.isEmpty else { return [] }
         do {
             let pages = try store.append(strokes, now: now)
@@ -92,6 +98,24 @@ public final class SyncCoordinator {
                                  body: "Writing to \(store.root.path) failed: \(error.localizedDescription)"))
             return []
         }
+    }
+
+    /// Removes strokes made on a control surface, reporting each one, and returns the rest.
+    private func separateControlTaps(_ strokes: [Stroke]) -> [Stroke] {
+        guard !controlBooks.isEmpty else { return strokes }
+        var notes: [Stroke] = []
+        for s in strokes {
+            if controlBooks.contains(s.page.bookKey) {
+                let x = s.dots.map(\.x).reduce(0, +) / Double(max(1, s.dots.count))
+                let y = s.dots.map(\.y).reduce(0, +) / Double(max(1, s.dots.count))
+                Log.info(String(format: "control tap on %@ at x %.2f y %.2f cells (%.1f, %.1f mm)",
+                                s.page.description, x, y, x * 2.371, y * 2.371))
+                onControlTap?(s)
+            } else {
+                notes.append(s)
+            }
+        }
+        return notes
     }
 
     /// Periodic check: publish whatever has gone quiet.

@@ -21,6 +21,9 @@ public struct PageID: Hashable, Codable, CustomStringConvertible {
 
     public var description: String { "s\(section)/o\(owner)/b\(book)/p\(page)" }
 
+    /// Identity of the notebook this page belongs to, without the page number.
+    public var bookKey: String { "s\(section)/o\(owner)/b\(book)" }
+
     /// Inverse of `rawRelativePath`; nil for paths that are not raw page files.
     public init?(rawRelativePath: String) {
         let parts = rawRelativePath.split(separator: "/").map(String.init)

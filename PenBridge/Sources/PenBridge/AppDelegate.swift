@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let store = RawStore(root: config.repoURL, client: "penbridge-mac/\(Self.version)", sdk: Self.sdkVersion)
         coordinator = SyncCoordinator(store: store, tracker: QuietTracker(), publisher: publisher,
                                       notifier: notifier, quietWindow: config.quietMinutes * 60)
+        coordinator.controlBooks = Set(config.controlBooks)
         coordinator.onChange = { [weak self] in self?.refreshMenu() }
         coordinator.recoverPending()
 

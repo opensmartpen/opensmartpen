@@ -25,6 +25,11 @@ public struct Config: Codable, Equatable {
     public var penAutoPowerOffMinutes: Int?
     public var penCapPowerOff: Bool?
 
+    /// Notebooks that are printed control surfaces rather than paper to write on, such as the
+    /// colour strip that came with the LAMY pad. Taps on these are commands, not notes, so they
+    /// are logged and discarded instead of being filed as pages.
+    public var controlBooks: [String] = ["s3/o1013/b1"]
+
     /// Notify when battery falls to or below this percentage.
     public var lowBatteryPercent: Int = 20
     /// Notify when pen memory usage reaches this percentage.
@@ -47,6 +52,7 @@ public struct Config: Codable, Equatable {
         penAutoPowerOn = try c.decodeIfPresent(Bool.self, forKey: .penAutoPowerOn)
         penAutoPowerOffMinutes = try c.decodeIfPresent(Int.self, forKey: .penAutoPowerOffMinutes)
         penCapPowerOff = try c.decodeIfPresent(Bool.self, forKey: .penCapPowerOff)
+        controlBooks = try c.decodeIfPresent([String].self, forKey: .controlBooks) ?? d.controlBooks
         gitPush = try c.decodeIfPresent(Bool.self, forKey: .gitPush) ?? d.gitPush
         lowBatteryPercent = try c.decodeIfPresent(Int.self, forKey: .lowBatteryPercent) ?? d.lowBatteryPercent
         memoryWarnPercent = try c.decodeIfPresent(Int.self, forKey: .memoryWarnPercent) ?? d.memoryWarnPercent
