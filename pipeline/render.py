@@ -18,8 +18,9 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
-import re
 import sys
+
+from books import Books, page_dir, page_stem, parse_raw_path
 
 MM_PER_CELL = 2.371
 
@@ -55,19 +56,6 @@ def read_page(path: pathlib.Path) -> list[Stroke]:
             strokes.append(Stroke(o))
     strokes.sort(key=lambda s: s.start)
     return strokes
-
-
-def page_id(path: pathlib.Path) -> tuple[str, str]:
-    """('s3/o27/b450', 'p1') from a raw file path."""
-    m = re.search(r"(s\d+)/(o\d+)/(b\d+)/(p\d+)\.jsonl$", str(path))
-    if not m:
-        raise SystemExit(f"not a raw page file: {path}")
-    return "/".join(m.group(1, 2, 3)), m.group(4)
-
-
-def load_geometry(repo: pathlib.Path, book: str) -> dict | None:
-    f = repo / "geometry" / (book.replace("/", "-") + ".json")
-    return json.loads(f.read_text()) if f.exists() else None
 
 
 def guess_geometry(strokes: list[Stroke]) -> dict:
@@ -210,18 +198,26 @@ def render_png(strokes: list[Stroke], png_path: pathlib.Path, nib_mm: float = 0.
     return True
 
 
-def render_file(raw: pathlib.Path, repo: pathlib.Path, out: pathlib.Path | None,
+def render_file(raw: pathlib.Path, repo: pathlib.Path, books: Books, out: pathlib.Path | None,
                 png: bool, crop: bool) -> None:
-    book, page = page_id(raw)
+    book_id, ncode_page = parse_raw_path(raw)
+    book = books.for_id(book_id)
     strokes = read_page(raw)
     if not strokes:
-        print(f"{book}/{page}: no strokes")
+        print(f"{book_id}/p{ncode_page}: no strokes")
         return
-    geom = load_geometry(repo, book) or guess_geometry(strokes)
-    svg_path = out or (repo / "pages" / book / f"{page}.svg")
+    if book and book.has_geometry:
+        geom = {"paper": book.title, "width_mm": book.width_mm,
+                "height_mm": book.height_mm, "source": book.source}
+    else:
+        geom = guess_geometry(strokes)
+
+    stem = page_stem(book, ncode_page)
+    svg_path = out or (page_dir(repo, book, book_id) / f"{stem}.svg")
     svg_path.parent.mkdir(parents=True, exist_ok=True)
     svg_path.write_text(render_svg(strokes, geom, crop=crop))
-    note = f"{book}/{page}: {len(strokes)} strokes -> {svg_path.name}  [{geom['paper']}, {geom.get('source', 'recorded')}]"
+    where = f"{book.slug if book else book_id}/{stem}"
+    note = f"{where}: {len(strokes)} strokes -> {svg_path.name}  [{geom['paper']}]"
     if png:
         note += "  +png" if render_png(strokes, svg_path.with_suffix(".png")) else "  (png failed)"
     print(note)
@@ -238,14 +234,15 @@ def main() -> None:
     a = ap.parse_args()
 
     repo = pathlib.Path(a.repo).expanduser()
+    books = Books(repo)
     if a.all:
         files = sorted((repo / "raw").rglob("*.jsonl"))
         if not files:
             raise SystemExit(f"no raw pages under {repo / 'raw'}")
         for f in files:
-            render_file(f, repo, None, a.png, a.crop)
+            render_file(f, repo, books, None, a.png, a.crop)
     elif a.raw:
-        render_file(pathlib.Path(a.raw).expanduser(), repo,
+        render_file(pathlib.Path(a.raw).expanduser(), repo, books,
                     pathlib.Path(a.out).expanduser() if a.out else None, a.png, a.crop)
     else:
         ap.error("give a raw file or --all")

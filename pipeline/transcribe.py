@@ -24,6 +24,8 @@ import re
 import subprocess
 import sys
 
+from books import Books, page_dir, parse_raw_path, raw_path
+
 PROMPT = """Transcribe the handwriting in this image into Markdown.
 
 Rules:
@@ -38,7 +40,54 @@ Rules:
 - Ignore printed page furniture such as rules, dot grids, margins and page numbers.
 - Output only the transcription. No preamble, no commentary, no code fences.
 
+Commands: a line the writer began with `>>` is an instruction addressed to an assistant,
+not prose. Write each one as a task line, keeping the marker and the wording:
+
+    - [ ] >> the instruction as written
+
+Leave the box empty. Something downstream fills it in. A `>>` in the middle of a line is
+not a command; only one that opens the line is.
+
 If the page has no handwriting at all, output exactly: (blank page)"""
+
+
+# A command line, in any of its states.
+COMMAND_RE = re.compile(r"^(?P<lead>\s*[-*]\s*)\[(?P<state>.)\](?P<mark>\s*>>\s*)(?P<text>.+?)\s*$")
+
+
+def normalise(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def command_states(md: str) -> dict[str, str]:
+    """What each command in an existing transcription had got to."""
+    out = {}
+    for line in md.splitlines():
+        m = COMMAND_RE.match(line)
+        if m and m.group("state") != " ":
+            out[normalise(m.group("text"))] = m.group("state")
+    return out
+
+
+def carry_states(text: str, states: dict[str, str]) -> tuple[str, int]:
+    """Put previously recorded progress back onto a freshly transcribed page.
+
+    The Markdown is derived: it is rewritten whenever the page is re-rendered, and the
+    command is still there on the paper because paper cannot be un-written. Without this,
+    every re-transcription would present finished commands as new work.
+    """
+    if not states:
+        return text, 0
+    out, carried = [], 0
+    for line in text.splitlines():
+        m = COMMAND_RE.match(line)
+        if m:
+            was = states.get(normalise(m.group("text")))
+            if was and was != m.group("state"):
+                line = f"{m.group('lead')}[{was}]{m.group('mark')}{m.group('text')}"
+                carried += 1
+        out.append(line)
+    return "\n".join(out), carried
 
 
 def run_claude(image: pathlib.Path, timeout: int = 240) -> tuple[str, str]:
@@ -68,22 +117,27 @@ def strip_fences(text: str) -> str:
     return m.group(1).strip() if m else text.strip()
 
 
-def page_meta(png: pathlib.Path, repo: pathlib.Path) -> dict:
+def page_meta(png: pathlib.Path, repo: pathlib.Path, books: Books) -> dict:
     """Stroke counts and times, read back from the raw file this page was rendered from."""
-    m = re.search(r"(s\d+)/(o\d+)/(b\d+)/(p\d+)\.png$", str(png))
-    if not m:
-        return {}
-    rel = "/".join(m.group(1, 2, 3, 4))
-    raw = repo / "raw" / f"{rel}.jsonl"
+    slug = png.parent.name
+    book = books.for_slug(slug)
+    m = re.match(r"page-(\d+)$", png.stem)
+    if not (book and m):
+        return {"page": f"{slug}/{png.stem}"}
+    ncode = book.ncode_page(int(m.group(1)))
+    meta = {"notebook": book.title, "page": png.stem.replace("page-", "").lstrip("0") or "1",
+            "ncode": f"{book.id}/p{ncode}"}
+    raw = raw_path(repo, book.id, ncode)
     if not raw.exists():
-        return {"page": rel}
+        return meta
     strokes = [json.loads(l) for l in raw.read_text().splitlines() if '"stroke"' in l]
     if not strokes:
-        return {"page": rel}
-    first = min(s["start"] for s in strokes) / 1000
-    last = max(s["end"] for s in strokes) / 1000
-    iso = lambda t: datetime.datetime.fromtimestamp(t).isoformat(timespec="seconds")
-    return {"page": rel, "strokes": len(strokes), "written_from": iso(first), "written_to": iso(last)}
+        return meta
+    iso = lambda t: datetime.datetime.fromtimestamp(t / 1000).isoformat(timespec="seconds")
+    meta["strokes"] = len(strokes)
+    meta["written_from"] = iso(min(s["start"] for s in strokes))
+    meta["written_to"] = iso(max(s["end"] for s in strokes))
+    return meta
 
 
 def frontmatter(meta: dict, model: str, image: pathlib.Path) -> str:
@@ -99,19 +153,25 @@ def frontmatter(meta: dict, model: str, image: pathlib.Path) -> str:
     return "\n".join(lines)
 
 
-def transcribe(png: pathlib.Path, repo: pathlib.Path, force: bool) -> None:
+def transcribe(png: pathlib.Path, repo: pathlib.Path, books: Books, force: bool) -> None:
     md = png.with_suffix(".md")
+    where = f"{png.parent.name}/{png.stem}"
     if md.exists() and not force and md.stat().st_mtime >= png.stat().st_mtime:
-        print(f"{png.parent.name}/{png.stem}: up to date")
+        print(f"{where}: up to date")
         return
+    states = command_states(md.read_text()) if md.exists() else {}
     try:
         text, model = run_claude(png)
     except Exception as e:
-        print(f"{png.parent.name}/{png.stem}: FAILED {e}", file=sys.stderr)
+        print(f"{where}: FAILED {e}", file=sys.stderr)
         return
-    md.write_text(frontmatter(page_meta(png, repo), model, png) + "\n\n" + text + "\n")
-    first = next((l for l in text.splitlines() if l.strip()), "")
-    print(f"{png.parent.name}/{png.stem}: {len(text)} chars -> {md.name}   {first[:60]}")
+    text, carried = carry_states(text, states)
+    md.write_text(frontmatter(page_meta(png, repo, books), model, png) + "\n\n" + text + "\n")
+    commands = sum(1 for l in text.splitlines() if COMMAND_RE.match(l))
+    note = f"{where}: {len(text)} chars -> {md.name}"
+    if commands:
+        note += f"   {commands} command(s)" + (f", {carried} carried" if carried else "")
+    print(note)
 
 
 def main() -> None:
@@ -123,15 +183,16 @@ def main() -> None:
     a = ap.parse_args()
 
     repo = pathlib.Path(a.repo).expanduser()
+    books = Books(repo)
     if a.all:
         pngs = sorted((repo / "pages").rglob("*.png"))
         if not pngs:
             raise SystemExit(f"no rendered pages under {repo / 'pages'}; run render.py --png first")
         for p in pngs:
-            transcribe(p, repo, a.force)
+            transcribe(p, repo, books, a.force)
     elif a.png:
         p = pathlib.Path(a.png).expanduser()
-        transcribe(p, repo, a.force)
+        transcribe(p, repo, books, a.force)
     else:
         ap.error("give a png or --all")
 
