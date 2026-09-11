@@ -66,4 +66,10 @@ Ncode section 3 gives 13 bits of book code, 8192 per owner, so a book code ident
 
 This does not affect the two notebooks in use today, which differ. It bites the first time a notebook is replaced with another of the same kind.
 
-The intended fix keeps raw capture untouched, because mixed strokes are what the pen actually reported and the file should stay honest. Instead a notebook record gains **instances**, each a slug plus the date it was started, and the derived layer routes each stroke to an instance by its timestamp. Replacing a pad becomes one explicit action that records a boundary date, after which `pages/a4-pad-2/` fills up while `pages/a4-pad-1/` stays frozen. Nothing in PenBridge changes.
+The intended fix keeps raw capture untouched, because mixed strokes are what the pen actually reported and the file should stay honest. A notebook record gains **instances**, each a slug plus the date it was started, and the derived layer routes each stroke to an instance by its timestamp. `pages/a4-pad-2/` fills up while `pages/a4-pad-1/` stays frozen. Nothing in PenBridge changes.
+
+**The decision can be made late.** Every stroke already carries an absolute timestamp and raw capture is append-only per page, so a boundary date can be applied retroactively at any point and everything downstream re-derives. Getting the date wrong is a re-render, not a loss.
+
+**Detection should suggest, never decide.** At the moment it happens, a new notebook and a return to annotate an old page are indistinguishable: both are fresh strokes on a page that already has ink after a long gap. Two signals beat time alone — a *sequence restart* (ink appears at the front and marches forward, which revisiting does not do) and *ink overlap* (new strokes crossing existing ones cannot be the same sheet, though deliberate underlining and crossing out look the same). When both line up with a gap of weeks, notify and ask; a wrong silent guess merges two notebooks into one file and would go unnoticed.
+
+Not built: there is nothing to test it against until a second notebook of the same kind exists.
