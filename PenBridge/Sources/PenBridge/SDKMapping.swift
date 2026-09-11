@@ -29,6 +29,8 @@ enum SDKMapping {
     static func hex(_ color: NSColor) -> String {
         guard let c = color.usingColorSpace(.sRGB) else { return "#000000" }
         let r = Int(round(c.redComponent * 255)), g = Int(round(c.greenComponent * 255)), b = Int(round(c.blueComponent * 255))
+        // The pen reports 0xFFFFFFFF ("no colour set") for live strokes; that is black ink, not white.
+        if r == 255 && g == 255 && b == 255 { return "#000000" }
         return String(format: "#%02x%02x%02x", r, g, b)
     }
 

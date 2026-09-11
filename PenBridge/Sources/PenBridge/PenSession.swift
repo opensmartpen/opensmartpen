@@ -102,9 +102,9 @@ final class PenSession: NSObject {
         PenFinder.shared.scanStop()
         scanning = false
         connecting = peripheral
-        penName = peripheral.name ?? ad.subName
+        penName = peripheral.name ?? (ad.subName.isEmpty ? "" : ad.subName)
         state = .connecting
-        Log.info("connecting to \(penName) [\(ad.mac)]")
+        Log.info("connecting to \(penName.isEmpty ? "pen" : penName) [\(ad.mac)]")
         PenFinder.shared.connectPeripheral(peripheral)
         armStep(20) { [weak self] in
             guard let self, self.pen == nil, let p = self.connecting else { return }
@@ -136,7 +136,11 @@ final class PenSession: NSObject {
         disarmStep()
         passwordTried = false
         penMac = pen.macAddress
-        firmware = pen.requestPenVersionInfo()?.firmwareVersion ?? ""
+        let version = pen.requestPenVersionInfo()
+        firmware = version?.firmwareVersion ?? ""
+        if penName.isEmpty {
+            penName = [version?.deviceName, version?.subName].compactMap { $0 }.first { !$0.isEmpty } ?? "Neo smartpen"
+        }
         if config.penMac != pen.macAddress || config.penPeripheralId != pen.peripheral?.identifier.uuidString {
             let firstPairing = !isPaired
             config.penMac = pen.macAddress
@@ -162,6 +166,7 @@ final class PenSession: NSObject {
     private func handleSetting(_ s: PenSettingStruct) {
         setting = s
         onChange?()
+        Log.info("pen status: battery \(s.battLevel)%\(s.charging == .On ? " (charging)" : ""), memory \(s.memoryUsed)% used, auto-off \(s.autoPwrOffTime) min")
         if Int(s.battLevel) <= config.lowBatteryPercent && s.charging == .Off {
             notifier.post(Notice(key: "battery", title: "Pen battery at \(s.battLevel)%", body: "Charge \(penName) soon."))
         } else {

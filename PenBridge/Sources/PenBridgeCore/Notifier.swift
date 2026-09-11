@@ -35,6 +35,8 @@ public final class DedupingNotifier: Notifier {
         let t = now()
         if let last = lastSent[notice.key], t.timeIntervalSince(last) < window { return }
         lastSent[notice.key] = t
+        // Every notice also goes to the log, so a run without notification permission is still diagnosable.
+        Log.warn("notice[\(notice.key)] \(notice.title): \(notice.body)")
         inner.post(notice)
     }
 
