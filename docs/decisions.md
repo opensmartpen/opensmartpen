@@ -42,3 +42,6 @@ Running log. Newest at the bottom. Each entry: what was decided, why, what it ru
 - Later: pen auto power-off is 5 min and auto power-on is off. Keep the defaults for now; add config options to set both from PenBridge.
 - LAMY digital paper is owner 1012, book 3017 (not owner 27). Owner codes belong to the paper brand, not the pen maker.
 - The stroke in progress when a Bluetooth connection completes arrives twice, from memory and live, with ~23 ms clock offset. The store now drops a stroke matching an existing one on the same page (dot count, first and last dot, start within 500 ms).
+- Ncode identity is section/owner/book/page, and the pen's memory and delete commands are per book (notebook), so a drain is naturally a batch of pages from one physical notebook.
+- Timestamps: every stroke carries absolute start/end in epoch ms and every dot a millisecond delta (median 12 ms, roughly 80-120 dots/s), so writing can be replayed exactly. PenBridge sets the pen clock on each connect; strokes buffered before a pen's first ever connect may carry an unsynced clock, so treat absolute times on the first drain with suspicion while relative timing stays sound.
+- Observed: dedupe fired on real data (`dropped duplicate offline stroke ... on s3/o1012/b3017/p5`).
