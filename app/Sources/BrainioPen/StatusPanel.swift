@@ -330,13 +330,14 @@ private struct RecentRow: View {
                 // book, the way an unread badge belongs to an app icon — put it at the start of
                 // the line instead and it reads as a bullet, and the title it sits beside is not
                 // the thing it is about.
-                PaperMark(shape: book.shape, binding: book.binding)
-                    .frame(width: 13, height: 13)
+                PaperMark(binding: book.binding)
+                    .frame(width: 15, height: 15)
                     .overlay(alignment: .topTrailing) {
+                        // top:-1, right:-3 against the 15-point mark, as in the design.
                         Circle()
                             .fill(book.latest ? Ink.accent : Color.clear)
                             .frame(width: 5, height: 5)
-                            .offset(x: 3, y: -2)
+                            .offset(x: 3, y: -1)
                     }
                 Text(book.title)
                     .font(.system(size: 13))
@@ -601,39 +602,42 @@ private extension Color {
 ///
 /// Nothing here is invented: the proportions come from the recorded paper size and the band from
 /// the recorded binding.
+/// The two notebook marks, traced from the panel design rather than approximated: every number
+/// below is that drawing's own number, on its 16-unit grid, rendered into 15 points exactly as it
+/// renders there. Keeping the grid means the two can be compared by reading them side by side.
+///
+/// A pad is not a plain rectangle. Its glued head — heavier than the outline, a third of the way
+/// down — is the entire difference between "a pad" and "a box", and drawing the box alone was the
+/// bug this replaces. The bound book's elastic sits *inside* its covers rather than running past
+/// them, which is the other thing the approximation got wrong.
 private struct PaperMark: View {
-    let shape: KnownBooks.Shape
     let binding: KnownBooks.Binding
-
-    private var size: CGSize {
-        switch shape {
-        case .wide: return CGSize(width: 12, height: 8.5)
-        case .page: return CGSize(width: 8.5, height: 11)
-        case .pocket: return CGSize(width: 7.5, height: 11)
-        }
-    }
 
     var body: some View {
         Canvas { context, canvas in
-            let origin = CGPoint(x: (canvas.width - size.width) / 2,
-                                 y: (canvas.height - size.height) / 2)
-            let body = CGRect(origin: origin, size: size)
-            let ink = Color.secondary.opacity(0.65)
+            let k = canvas.width / 16          // the design's viewBox, scaled to the frame
+            let ink = Color.secondary
 
-            context.stroke(Path(roundedRect: body, cornerRadius: 1.5),
-                           with: .color(ink), lineWidth: 1)
-
-            if binding == .bound {
-                // The elastic, closer to the spine side than the middle, running off both edges
-                // exactly as it does on the real thing.
-                let x = body.minX + size.width * 0.72
-                var band = Path()
-                band.move(to: CGPoint(x: x, y: body.minY - 1))
-                band.addLine(to: CGPoint(x: x, y: body.maxY + 1))
-                context.stroke(band, with: .color(ink), lineWidth: 1)
+            switch binding {
+            case .bound:
+                let body = CGRect(x: 2.5 * k, y: 2 * k, width: 10 * k, height: 12 * k)
+                context.stroke(Path(roundedRect: body, cornerRadius: 1.6 * k),
+                               with: .color(ink), lineWidth: 1.1 * k)
+                var elastic = Path()
+                elastic.move(to: CGPoint(x: 10.6 * k, y: 2 * k))
+                elastic.addLine(to: CGPoint(x: 10.6 * k, y: 14 * k))
+                context.stroke(elastic, with: .color(ink), lineWidth: 1.1 * k)
+            case .pad:
+                let body = CGRect(x: 3 * k, y: 2.5 * k, width: 10 * k, height: 11 * k)
+                context.stroke(Path(roundedRect: body, cornerRadius: 1.2 * k),
+                               with: .color(ink), lineWidth: 1.1 * k)
+                var head = Path()
+                head.move(to: CGPoint(x: 3 * k, y: 5.1 * k))
+                head.addLine(to: CGPoint(x: 13 * k, y: 5.1 * k))
+                context.stroke(head, with: .color(ink), lineWidth: 1.6 * k)
             }
         }
-        .frame(width: 14, height: 13)
+        .frame(width: 15, height: 15)
     }
 }
 

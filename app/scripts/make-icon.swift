@@ -38,34 +38,42 @@ func drawIcon(into size: CGFloat) -> NSBitmapImageRep {
                              xRadius: cornerRadius * k, yRadius: cornerRadius * k)
     NSGradient(starting: plateTop, ending: plateBottom)?.draw(in: shape, angle: -90)
 
-    // PaperMark's shape, not its stroke weight. Its 1-in-11 line is right at 13 px and turns
-    // clumsy blown up to 1024, where the same ratio reads as a fat letter rather than a notebook,
-    // so the glyph is drawn larger and lighter while the proportions it is recognised by — the
-    // page ratio, the elastic at 0.72 of the width — are kept exactly.
-    let h = plate.height * 0.56 * k
-    let w = h * (8.5 / 11.0)
-    let book = NSRect(x: plateRect.midX - w / 2, y: plateRect.midY - h / 2, width: w, height: h)
-    let stroke = h / 17
+    // The bound mark from PaperMark, which is itself traced from the panel design: rect at
+    // (2.5, 2) sized 10 x 12 with a 1.6 corner, and the elastic down x = 10.6, all on the same
+    // 16-unit grid. The grid is blown up to fill the plate instead of the panel's 15 points.
+    //
+    // One number is deliberately not the design's: the 1.1 stroke. It is right at 15 pt and reads
+    // as a fat letter at 1024, so it is thinned to 0.75 — the shape is what has to match, and a
+    // line weight copied across a 70x scale change matches the drawing but not the drawing's
+    // intent. Everything else is exact, so the two can be checked against each other.
+    let grid = plate.height * 0.62 * k
+    let u = grid / 16
+    let ox = plateRect.midX - grid / 2
+    let oy = plateRect.midY - grid / 2
+    // The design is authored downward, AppKit draws upward.
+    func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: ox + x * u, y: oy + (16 - y) * u) }
+
+    let book = NSRect(x: ox + 2.5 * u, y: oy + 2 * u, width: 10 * u, height: 12 * u)
     ink.setStroke()
-    let outline = NSBezierPath(roundedRect: book, xRadius: h * 0.085, yRadius: h * 0.085)
-    outline.lineWidth = stroke
+    let outline = NSBezierPath(roundedRect: book, xRadius: 1.6 * u, yRadius: 1.6 * u)
+    outline.lineWidth = 0.75 * u
     outline.stroke()
 
-    // The elastic, nearer the spine than the middle, running just off both edges as it does on the
-    // real thing — the one detail that still says "notebook" at 16 px.
-    let bandX = book.minX + w * 0.72
-    let band = NSBezierPath()
-    band.move(to: NSPoint(x: bandX, y: book.minY - stroke * 1.1))
-    band.line(to: NSPoint(x: bandX, y: book.maxY + stroke * 1.1))
-    band.lineWidth = stroke
-    band.lineCapStyle = .round
-    band.stroke()
+    let elastic = NSBezierPath()
+    elastic.move(to: p(10.6, 2))
+    elastic.line(to: p(10.6, 14))
+    elastic.lineWidth = 0.75 * u
+    elastic.stroke()
 
-    // The ink dot on the top corner, as in the panel, where it marks the book being written in.
-    // Here it is simply the one thing carrying colour — and at 16 px it is the only thing that
-    // still does, which is why it is worth keeping.
-    let d = w * 0.30
-    let dot = NSRect(x: book.maxX - d * 0.5, y: book.maxY - d * 0.5, width: d, height: d)
+    // The ink dot, exactly where the panel puts it on the book being written in: 5 px across,
+    // top:-1 and right:-3 against a 15-point mark. The design measures that mark in CSS pixels
+    // while the glyph inside it is a 16-unit viewBox, so every one of those numbers is 16/15 of a
+    // unit — the conversion that has to happen once, here, or the dot floats off the corner.
+    let s = 16.0 / 15.0
+    let d = 5 * s * u
+    let dot = NSRect(x: ox + (18 * s - 5 * s) * u,        // right edge at 15 + 3, less its width
+                     y: oy + (16 - (-1 * s + 5 * s)) * u, // top at -1, flipped for AppKit
+                     width: d, height: d)
     accent.setFill()
     NSBezierPath(ovalIn: dot).fill()
 
