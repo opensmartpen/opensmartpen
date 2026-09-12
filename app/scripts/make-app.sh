@@ -22,6 +22,9 @@ cp "$BIN" "$APP/Contents/MacOS/brainio-pen"
 # pencil it is copied from, and a stale .icns on disk would do exactly that.
 swift scripts/make-icon.swift >/dev/null
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Assets.car alongside it: Notification Center resolves the icon through
+# CFBundleIconName and the compiled catalog, and ignores CFBundleIconFile entirely.
+cp Resources/Assets.car "$APP/Contents/Resources/Assets.car"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -31,6 +34,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleExecutable</key><string>brainio-pen</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Brainio Pen</string>

@@ -65,17 +65,19 @@ func drawIcon(into size: CGFloat) -> NSBitmapImageRep {
     elastic.lineWidth = 0.75 * u
     elastic.stroke()
 
-    // The ink dot, exactly where the panel puts it on the book being written in: 5 px across,
-    // top:-1 and right:-3 against a 15-point mark. The design measures that mark in CSS pixels
-    // while the glyph inside it is a 16-unit viewBox, so every one of those numbers is 16/15 of a
-    // unit — the conversion that has to happen once, here, or the dot floats off the corner.
-    let s = 16.0 / 15.0
-    let d = 5 * s * u
-    let dot = NSRect(x: ox + (18 * s - 5 * s) * u,        // right edge at 15 + 3, less its width
-                     y: oy + (16 - (-1 * s + 5 * s)) * u, // top at -1, flipped for AppKit
-                     width: d, height: d)
+    // The ink dot, centred on the cover's top right corner so it straddles it evenly.
+    //
+    // Not the panel's own offset. There the dot is a badge hung off a 15-point row-mark, clear of
+    // the glyph so it cannot be mistaken for part of the book; at icon size that same offset reads
+    // as a dot floating loose in the plate. The corner is what the eye goes to, so the dot sits on
+    // it — the one place it belongs to the notebook rather than to the empty square around it.
+    let d = 4.4 * u
+    // A shade outward along both axes: dead-centre on the corner, the dot eats the head of the
+    // elastic and the whole thing reads as a pin stuck in a page.
+    let corner = NSPoint(x: book.maxX + 0.6 * u, y: book.maxY + 0.6 * u)
     accent.setFill()
-    NSBezierPath(ovalIn: dot).fill()
+    NSBezierPath(ovalIn: NSRect(x: corner.x - d / 2, y: corner.y - d / 2,
+                                width: d, height: d)).fill()
 
     NSGraphicsContext.restoreGraphicsState()
     return rep
@@ -87,7 +89,7 @@ try? FileManager.default.removeItem(at: iconset)
 try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 
 // Each size is redrawn rather than downsampled from one big bitmap: the glyph is an outline, and
-// a 1.35-unit stroke resampled down to 16 px turns to mush.
+// a hairline stroke resampled down to 16 px turns to mush.
 for (name, px) in [("icon_16x16", 16), ("icon_16x16@2x", 32),
                    ("icon_32x32", 32), ("icon_32x32@2x", 64),
                    ("icon_128x128", 128), ("icon_128x128@2x", 256),
@@ -101,14 +103,83 @@ for (name, px) in [("icon_16x16", 16), ("icon_16x16@2x", 32),
     try data.write(to: iconset.appendingPathComponent("\(name).png"))
 }
 
-let out = root.appendingPathComponent("Resources/AppIcon.icns")
-try FileManager.default.createDirectory(at: out.deletingLastPathComponent(),
-                                        withIntermediateDirectories: true)
-let task = Process()
-task.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
-task.arguments = ["-c", "icns", iconset.path, "-o", out.path]
-try task.run()
-task.waitUntilExit()
+let resources = root.appendingPathComponent("Resources")
+try FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+
+func run(_ tool: String, _ args: [String]) throws -> Int32 {
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: tool)
+    task.arguments = args
+    let quiet = Pipe()
+    task.standardOutput = quiet
+    task.standardError = quiet
+    try task.run()
+    _ = quiet.fileHandleForReading.readDataToEndOfFile()
+    task.waitUntilExit()
+    return task.terminationStatus
+}
+
+// 1. Assets.car, which is a different thing from the .icns and the reason this script grew.
+//
+// Notification Center does not read CFBundleIconFile. It resolves an app's icon through
+// CFBundleIconName and the compiled asset catalog, so an .icns-only bundle shows a blank grey
+// square on every banner while Finder shows the icon perfectly. Both forms have to ship: the
+// catalog for notifications, the .icns for everything that still expects one.
+let catalog = root.appendingPathComponent("build-icon.xcassets")
+let appiconset = catalog.appendingPathComponent("AppIcon.appiconset")
+try? FileManager.default.removeItem(at: catalog)
+try FileManager.default.createDirectory(at: appiconset, withIntermediateDirectories: true)
+try Data(#"{"info":{"version":1,"author":"make-icon.swift"}}"#.utf8)
+    .write(to: catalog.appendingPathComponent("Contents.json"))
+
+// macOS icons are declared as a point size plus a scale; the files are already both.
+var images: [String] = []
+for (pt, scale, px) in [(16, 1, 16), (16, 2, 32), (32, 1, 32), (32, 2, 64),
+                        (128, 1, 128), (128, 2, 256), (256, 1, 256), (256, 2, 512),
+                        (512, 1, 512), (512, 2, 1024)] {
+    let name = "icon_\(px).png"
+    let file = appiconset.appendingPathComponent(name)
+    if !FileManager.default.fileExists(atPath: file.path) {
+        try drawIcon(into: CGFloat(px)).representation(using: .png, properties: [:])!.write(to: file)
+    }
+    images.append(#"{"idiom":"mac","size":"\#(pt)x\#(pt)","scale":"\#(scale)x","filename":"\#(name)"}"#)
+}
+try Data(#"{"images":[\#(images.joined(separator: ","))],"info":{"version":1}}"#.utf8)
+    .write(to: appiconset.appendingPathComponent("Contents.json"))
+
+// Compiled somewhere of its own, then only Assets.car is taken. actool also emits an AppIcon.icns
+// carrying just the handful of sizes it thinks are needed, and pointed straight at Resources it
+// drops that on top of the ten-size one below — which is how this arrived with a 256-pixel icon
+// and no explanation.
+let staging = root.appendingPathComponent("build-icon-out")
+try? FileManager.default.removeItem(at: staging)
+try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+let partial = root.appendingPathComponent("build-icon-plist.plist")
+let actool = try run("/usr/bin/xcrun", ["actool", catalog.path,
+    "--compile", staging.path,
+    "--app-icon", "AppIcon",
+    "--output-partial-info-plist", partial.path,
+    "--platform", "macosx", "--minimum-deployment-target", "13.0"])
+
+let car = staging.appendingPathComponent("Assets.car")
+guard actool == 0, FileManager.default.fileExists(atPath: car.path) else {
+    FileHandle.standardError.write("actool did not produce Assets.car\n".data(using: .utf8)!)
+    exit(1)
+}
+let carOut = resources.appendingPathComponent("Assets.car")
+try? FileManager.default.removeItem(at: carOut)
+try FileManager.default.copyItem(at: car, to: carOut)
+
+// 2. The .icns, written last so nothing can overwrite it. Finder, the Dock and Get Info read this.
+let icns = resources.appendingPathComponent("AppIcon.icns")
+guard try run("/usr/bin/iconutil", ["-c", "icns", iconset.path, "-o", icns.path]) == 0 else {
+    FileHandle.standardError.write("iconutil failed\n".data(using: .utf8)!)
+    exit(1)
+}
+
 try? FileManager.default.removeItem(at: iconset)
-guard task.terminationStatus == 0 else { exit(task.terminationStatus) }
-print("wrote \(out.path)")
+try? FileManager.default.removeItem(at: catalog)
+try? FileManager.default.removeItem(at: staging)
+try? FileManager.default.removeItem(at: partial)
+
+print("wrote \(icns.path) and Assets.car")
