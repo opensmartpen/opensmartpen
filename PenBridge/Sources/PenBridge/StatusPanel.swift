@@ -448,14 +448,13 @@ private struct BatteryBar: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill((onInk ?? Color.primary).opacity(0.2))
-                // The app's own violet, not a grey. A grey level on a grey track is two greys
-                // and reads as an underline; the violet is the one colour the panel already owns
-                // and it separates the level from its track at a glance. Red only when flat,
-                // which is the one thing about a battery worth interrupting you for.
+                // Grey. The violet is how the panel says "this one is live" — on the notebook
+                // being written in, and nowhere else — and a charge of 82% is not that. Red
+                // only when flat, which is the one thing about a battery worth a colour.
                 //
-                // Held back on a filled tile, where the usual colours disappear into the ink.
-                Capsule().fill(low ? Ink.critical : (onInk ?? Ink.accent))
-                    .opacity(onInk == nil ? 0.8 : 0.65)
+                // Held back on a filled tile, where the usual greys disappear into the ink.
+                Capsule().fill(low ? Ink.critical : (onInk ?? Color.secondary))
+                    .opacity(onInk == nil ? 0.75 : 0.65)
                     .frame(width: max(4, geo.size.width * CGFloat(percent) / 100))
             }
         }
