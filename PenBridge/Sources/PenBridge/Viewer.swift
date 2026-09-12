@@ -468,6 +468,8 @@ extension Color {
 /// Resizable, floating so it survives being presented over, and locked to the shape of the paper.
 final class ViewerWindowController: NSWindowController {
     private let viewer: Viewer
+    /// The window keeps whatever size you give it, but it has to start somewhere sensible.
+    private var hasSized = false
     /// The bar along the bottom, which is not paper and has to be allowed for when the window is
     /// locked to the paper's proportions.
     private static let barHeight: CGFloat = 31
@@ -480,7 +482,6 @@ final class ViewerWindowController: NSWindowController {
             backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: ViewerView(viewer: viewer))
-        window.setFrameAutosaveName("penbridge-viewer")
         window.minSize = NSSize(width: 320, height: 260)
         window.level = .floating
         window.collectionBehavior = [.managed, .fullScreenAuxiliary]
@@ -502,33 +503,49 @@ final class ViewerWindowController: NSWindowController {
         return true
     }
 
-    /// Open at the paper's own proportions rather than at whatever the last window happened to be,
-    /// and lock resizing to them so a dragged corner keeps the page the right shape.
-    func fit() {
+    /// Size the window to the paper.
+    ///
+    /// The first time it opens there is nothing to take a size from, so it is taken from the
+    /// screen: a document window that appears at 240 points on a 2000 point display is not a
+    /// choice anybody made. After that the size is yours, and only the proportions are enforced —
+    /// switching a bound notebook between a spread and a single sheet changes the width and leaves
+    /// the height where you put it.
+    func fit(initial: Bool = false) {
         guard let window else { return }
         let paper = viewer.aspect
         guard paper > 0 else { return }
+        let visible = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
 
         // Height carries the bar as well as the sheet, so the locked ratio is the paper's adjusted
         // for it. Any residual difference is absorbed by the letterboxing the canvas already does.
-        let width = max(window.minSize.width, window.contentLayoutRect.width)
-        let height = width / paper + Self.barHeight
-        window.contentAspectRatio = NSSize(width: width, height: height)
-
-        var target = NSSize(width: width, height: height)
-        if let visible = window.screen?.visibleFrame {
-            let cap = min(visible.height - 60, target.height)
-            if cap < target.height {
-                target = NSSize(width: (cap - Self.barHeight) * paper, height: cap)
-            }
+        var height: CGFloat
+        if initial {
+            height = min(visible.height * 0.82, 940)
+        } else {
+            height = window.contentLayoutRect.height
         }
-        window.setContentSize(target)
+        height = max(window.minSize.height, height)
+        var width = (height - Self.barHeight) * paper
+
+        // A spread on a narrow screen would otherwise run off both sides.
+        let maxWidth = visible.width * 0.92
+        if width > maxWidth {
+            width = maxWidth
+            height = width / paper + Self.barHeight
+        }
+
+        window.contentAspectRatio = NSSize(width: width, height: height)
+        window.setContentSize(NSSize(width: width, height: height))
+        if initial { window.center() }
     }
 
     override func showWindow(_ sender: Any?) {
+        let first = !hasSized
+        hasSized = true
         super.showWindow(sender)
         window?.title = viewer.title
-        fit()
+        fit(initial: first)
     }
 
     /// The window is named for the notebook in it, not for the app.
