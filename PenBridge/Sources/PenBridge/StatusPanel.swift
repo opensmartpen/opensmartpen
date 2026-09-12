@@ -162,8 +162,17 @@ struct StatusPanel: View {
                 Nib(ink: pen.ink, mode: pen.mode, size: 26)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(pen.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                    BatteryBar(percent: pen.percent, low: pen.low)
+                    // Only when there is a reading. An empty bar running the width of the panel
+                    // reads as a rule, not as a battery, and a bar at zero is a lie besides.
+                    if let percent = pen.percent {
+                        BatteryBar(percent: percent, low: pen.low).frame(width: 92)
+                    } else {
+                        Text("not seen yet")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                    }
                 }
+                Spacer(minLength: 6)
                 if let percent = pen.percent {
                     Text("\(percent)%")
                         .font(.system(size: 10.5, weight: pen.low ? .semibold : .regular))
@@ -409,7 +418,7 @@ private struct Nib: View {
 }
 
 private struct BatteryBar: View {
-    let percent: Int?
+    let percent: Int
     let low: Bool
 
     var body: some View {
@@ -417,11 +426,10 @@ private struct BatteryBar: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.14))
                 Capsule().fill(low ? Ink.critical : Color.secondary)
-                    .frame(width: geo.size.width * CGFloat(percent ?? 0) / 100)
+                    .frame(width: max(2, geo.size.width * CGFloat(percent) / 100))
             }
         }
         .frame(height: 3)
-        .opacity(percent == nil ? 0.35 : 1)
     }
 }
 
@@ -439,7 +447,11 @@ private struct PenTile: View {
                 Text(pen.name)
                     .font(.system(size: 10, weight: pen.active ? .semibold : .regular))
                     .lineLimit(1)
-                BatteryBar(percent: pen.percent, low: pen.low).frame(width: 26)
+                if let percent = pen.percent {
+                    BatteryBar(percent: percent, low: pen.low).frame(width: 26)
+                } else {
+                    Color.clear.frame(width: 26, height: 3)
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 7)
