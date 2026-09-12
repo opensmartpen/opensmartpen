@@ -461,10 +461,10 @@ private struct BatteryBar: View {
                 // reads as an underline beneath the name rather than as a level.
                 Capsule().fill(low ? Ink.critical : (onInk ?? Color.secondary))
                     .opacity(onInk == nil ? 1 : 0.65)
-                    .frame(width: max(3, geo.size.width * CGFloat(percent) / 100))
+                    .frame(width: max(4, geo.size.width * CGFloat(percent) / 100))
             }
         }
-        .frame(height: 4)
+        .frame(height: 5)
     }
 }
 
@@ -512,7 +512,7 @@ private struct PenTile: View {
                     if let percent = pen.percent, !filled {
                         BatteryBar(percent: percent, low: pen.low, onInk: nil)
                     } else {
-                        Color.clear.frame(height: 4)
+                        Color.clear.frame(height: 5)
                     }
                 }
                 .padding(.top, 2)
