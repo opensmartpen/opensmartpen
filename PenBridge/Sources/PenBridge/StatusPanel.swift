@@ -208,6 +208,9 @@ struct StatusPanel: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+                // The system accent on the selected segment is the loudest thing in a panel that
+                // otherwise has almost no colour in it.
+                .tint(Color.primary.opacity(0.22))
         }
     }
 
@@ -427,8 +430,11 @@ private struct BatteryBar: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill((onInk ?? Color.primary).opacity(onInk == nil ? 0.14 : 0.3))
+                Capsule().fill((onInk ?? Color.primary).opacity(0.2))
+                // Held well back on a filled tile: at full strength a bar the width of the tile
+                // reads as an underline beneath the name rather than as a level.
                 Capsule().fill(low ? Ink.critical : (onInk ?? Color.secondary))
+                    .opacity(onInk == nil ? 1 : 0.65)
                     .frame(width: max(2, geo.size.width * CGFloat(percent) / 100))
             }
         }
@@ -462,11 +468,13 @@ private struct PenTile: View {
 
     var body: some View {
         Button(action: tap) {
-            VStack(spacing: 3) {
-                Pencil(colour: filled ? onInk : inkColour, size: 16)
-                HStack(spacing: 3) {
-                    if pen.active {
-                        Circle().fill(filled ? onInk : Ink.accent).frame(width: 4, height: 4)
+            VStack(spacing: 5) {
+                Pencil(colour: filled ? onInk : inkColour, size: 17)
+                // No dot on a filled tile: the fill is already the statement that this is the pen
+                // you are using, and "• Pen" reads as a bullet point rather than as a status.
+                HStack(spacing: 3.5) {
+                    if pen.active && !filled {
+                        Circle().fill(Ink.accent).frame(width: 4, height: 4)
                     }
                     Text(pen.name)
                         .font(.system(size: 10.5, weight: .medium))
@@ -479,9 +487,9 @@ private struct PenTile: View {
                     Color.clear.frame(height: 3)
                 }
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .frame(width: 78)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .frame(width: 80)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(filled ? inkColour : hovering ? Color.primary.opacity(0.07) : Color.clear))
             // A black pen filled with black ink would vanish into a dark panel, so a filled tile

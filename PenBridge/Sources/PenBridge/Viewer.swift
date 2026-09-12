@@ -23,6 +23,56 @@ struct DrawnStroke: Equatable {
     var colour: Color
 }
 
+/// How many sheets are on screen and how they are arranged.
+///
+/// The binding decides the default — a pad is loose sheets, a bound notebook falls open at two —
+/// but every layout is available for every notebook, because how you want to read something is
+/// not always how it was bound.
+enum ViewerLayout: String, CaseIterable, Identifiable {
+    /// One sheet.
+    case single
+    /// Facing pages, paired as the book is bound: page 1 is a right-hand page.
+    case spread
+    /// Two sheets side by side, taken in order rather than paired. Turns one page at a time, so
+    /// you can put any two pages next to each other.
+    case pair
+    /// Four sheets, two over two.
+    case grid
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .single: return "rectangle.portrait"
+        case .spread: return "book"
+        case .pair: return "rectangle.split.2x1"
+        case .grid: return "rectangle.split.2x2"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .single: return "One page"
+        case .spread: return "Facing pages"
+        case .pair: return "Two across"
+        case .grid: return "Four pages"
+        }
+    }
+
+    /// Sheets across, and down.
+    var shape: (columns: Int, rows: Int) {
+        switch self {
+        case .single: return (1, 1)
+        case .spread, .pair: return (2, 1)
+        case .grid: return (2, 2)
+        }
+    }
+
+    static func `default`(for binding: KnownBooks.Binding) -> ViewerLayout {
+        binding == .bound ? .spread : .single
+    }
+}
+
 /// Everything the viewer shows. One object serves both jobs — the page under your pen right now,
 /// and any page you page back to — because they are the same thing seen at different moments, and
 /// two viewers would be two chances to disagree about what a page looks like.
@@ -38,8 +88,12 @@ final class Viewer: ObservableObject {
     @Published private(set) var activeBook: String?
     /// While true, the viewer follows the pen instead of staying where you paged to.
     @Published var following = true
-    /// A bound notebook shows both halves unless you ask for one.
-    @Published var focused = false
+    /// How the sheets are arranged. Set from the notebook's binding the first time, and yours
+    /// from then on — a layout you chose should not be undone by opening a different notebook.
+    @Published var layout: ViewerLayout = .single {
+        didSet { if layout != oldValue { chosenLayout = true; loadVisible() } }
+    }
+    private var chosenLayout = false
     @Published private(set) var strokes: [Int: [DrawnStroke]] = [:]
     /// The stroke under the pen, kept apart so it can be drawn before it is finished.
     @Published private(set) var wet: [InkPoint] = []
@@ -79,8 +133,9 @@ final class Viewer: ObservableObject {
     /// The shape of what is on screen: one sheet, or two side by side. The window opens at these
     /// proportions so the paper arrives looking like the paper.
     var aspect: Double {
-        let sheets = spread.left == nil ? 1.0 : 2.0
-        return (geometry.widthCells * sheets) / geometry.heightCells
+        let shape = layout.shape
+        return (geometry.widthCells * Double(shape.columns))
+            / (geometry.heightCells * Double(shape.rows))
     }
 
     /// The pages to offer in the pager: the ones that have ink on them.
@@ -95,11 +150,11 @@ final class Viewer: ObservableObject {
         return Array(known[start..<(start + 9)])
     }
 
-    /// The next page with ink on it, in either direction. For a bound notebook that means the next
-    /// one outside the spread already on screen, because turning a leaf shows two.
+    /// The next page with ink on it, in either direction — and outside whatever is already on
+    /// screen, because turning a leaf of a spread shows two and stepping onto one of them would
+    /// not move anything.
     private func neighbour(_ delta: Int) -> Int? {
-        let here = spread
-        let onScreen = [here.left, here.right].compactMap { $0 }
+        let onScreen = visible.compactMap { $0 }
         let candidates = delta > 0 ? pages.filter { $0 > (onScreen.max() ?? page) }
                                    : pages.filter { $0 < (onScreen.min() ?? page) }.reversed().map { $0 }
         return candidates.first
@@ -107,19 +162,12 @@ final class Viewer: ObservableObject {
 
     var canStep: (back: Bool, forward: Bool) { (neighbour(-1) != nil, neighbour(1) != nil) }
 
-    /// True for either half of the spread on screen, so both are lit in the pager.
-    func isOnScreen(_ human: Int) -> Bool {
-        let s = spread
-        return s.left == human || s.right == human
-    }
-
     /// Go straight to a page by its printed number.
     func go(to human: Int) {
         guard human >= 1 else { return }
         following = false
         page = human
-        loadIfNeeded(human)
-        if let other = spread.left, other != human { loadIfNeeded(other) }
+        loadVisible()
     }
 
     var title: String {
@@ -127,11 +175,33 @@ final class Viewer: ObservableObject {
         return book.title
     }
 
-    /// The two halves on screen. A pad has only a right-hand page, which is simply "the page".
-    var spread: (left: Int?, right: Int?) {
-        guard let book, !focused else { return (nil, page) }
-        return book.spread(containing: page)
+    /// The sheets on screen, in reading order. A nil is a sheet that is physically there and has
+    /// nothing on it — the left half of the first spread, which faces the inside cover.
+    var visible: [Int?] {
+        switch layout {
+        case .single:
+            return [page]
+        case .spread:
+            guard let book else { return [page] }
+            let s = book.spread(containing: page)
+            return [s.left, s.right]
+        case .pair:
+            return [page, page + 1]
+        case .grid:
+            if let book, book.binding == .bound {
+                let first = book.spread(containing: page)
+                let second = book.spread(containing: (first.right ?? page) + 1)
+                return [first.left, first.right, second.left, second.right]
+            }
+            return [page, page + 1, page + 2, page + 3]
+        }
     }
+
+    /// What this notebook opens as, before you choose otherwise.
+    var defaultLayout: ViewerLayout { .default(for: book?.binding ?? .pad) }
+
+    /// True for any sheet on screen.
+    func isOnScreen(_ human: Int) -> Bool { visible.contains(human) }
 
     // MARK: loading
 
@@ -144,12 +214,20 @@ final class Viewer: ObservableObject {
             palette = Palette.load(root: repo)
             strokes = [:]
             pages = availablePages(for: ncode.bookKey)
+            if !chosenLayout {
+                layout = .default(for: record?.binding ?? .pad)
+                chosenLayout = false        // still the notebook's choice, not yours
+            }
         }
         let human = record?.humanPage(ncode.page) ?? ncode.page
         page = human
         if !pages.contains(human) { pages = availablePages(for: ncode.bookKey) }
-        loadIfNeeded(human)
-        if let other = spread.left, other != human { loadIfNeeded(other) }
+        loadVisible()
+    }
+
+    /// Load every sheet the current layout puts on screen.
+    private func loadVisible() {
+        for sheet in visible.compactMap({ $0 }) { loadIfNeeded(sheet) }
     }
 
     /// Jump back to whatever was written last, and follow it from now on.
@@ -169,7 +247,10 @@ final class Viewer: ObservableObject {
     func handle(key: String) -> Bool {
         switch key {
         case "h", "H": goLatest(); return true
-        case "f", "F": focused.toggle(); return true
+        case "1": layout = .single; return true
+        case "2": layout = .spread; return true
+        case "3": layout = .pair; return true
+        case "4": layout = .grid; return true
         default: return false
         }
     }
@@ -295,18 +376,27 @@ struct ViewerView: View {
 
     private var sheets: some View {
         GeometryReader { geo in
-            let spread = viewer.spread
-            let count = (spread.left == nil ? 0 : 1) + (spread.right == nil ? 0 : 1)
+            let shape = viewer.layout.shape
             let gap: CGFloat = 10
-            let available = CGSize(width: (geo.size.width - 34 - gap * CGFloat(max(0, count - 1)))
-                                    / CGFloat(max(1, count)),
-                                   height: geo.size.height - 34)
-            HStack(spacing: gap) {
-                if let left = spread.left {
-                    Sheet(viewer: viewer, page: left, fit: available)
-                }
-                if let right = spread.right {
-                    Sheet(viewer: viewer, page: right, fit: available)
+            let available = CGSize(
+                width: (geo.size.width - 34 - gap * CGFloat(shape.columns - 1)) / CGFloat(shape.columns),
+                height: (geo.size.height - 34 - gap * CGFloat(shape.rows - 1)) / CGFloat(shape.rows))
+            let slots = viewer.visible
+
+            VStack(spacing: gap) {
+                ForEach(0..<shape.rows, id: \.self) { row in
+                    HStack(spacing: gap) {
+                        ForEach(0..<shape.columns, id: \.self) { column in
+                            let index = row * shape.columns + column
+                            if index < slots.count, let page = slots[index] {
+                                Sheet(viewer: viewer, page: page, fit: available)
+                            } else {
+                                // The inside cover, or past the end. The gap is the sheet that
+                                // is not there.
+                                Color.clear.frame(width: available.width, height: available.height)
+                            }
+                        }
+                    }
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -346,13 +436,15 @@ struct ViewerView: View {
 
             Spacer(minLength: 8)
 
-            if viewer.book?.binding == .bound {
-                Button { viewer.focused.toggle() } label: {
-                    Image(systemName: viewer.focused ? "book" : "doc")
+            Picker("", selection: $viewer.layout) {
+                ForEach(ViewerLayout.allCases) { option in
+                    Image(systemName: option.symbol).tag(option)
                 }
-                .buttonStyle(.borderless)
-                .help(viewer.focused ? "Both pages (F)" : "One page (F)")
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help("How the pages are arranged (1–4)")
 
             // One click back to whatever the pen touched last — the page you almost always want.
             Button(action: viewer.goLatest) {
@@ -437,7 +529,11 @@ private struct Sheet: View {
         .overlay(Rectangle().stroke(isActive ? Ink.accent : Color.black.opacity(0.13),
                                     lineWidth: isActive ? 1.5 : 0.5))
         .shadow(color: .black.opacity(0.18), radius: 7, y: 2)
-        .onTapGesture { viewer.focused.toggle() }
+        // Double-click a sheet to have it to yourself, and again to go back to the layout.
+        .onTapGesture(count: 2) {
+            viewer.layout = viewer.layout == .single ? viewer.defaultLayout : .single
+            viewer.go(to: page)
+        }
     }
 
     /// Ink is drawn segment by segment because its width changes along the stroke: the pen
