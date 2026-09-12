@@ -292,16 +292,22 @@ struct StatusPanel: View {
 
     // MARK: chrome
 
+    /// Menu items, because that is what they are. A row of equal-width tabs implied four peers of
+    /// the same kind; these are two places to go and two things to do, and macOS already has a
+    /// shape for that.
     private var footer: some View {
-        HStack(spacing: 2) {
-            FooterButton(title: "Open", action: model.showLive)
-            FooterButton(title: "Notes", action: model.openNotes)
-            FooterButton(title: "Settings", action: model.openConfig)
-            FooterButton(title: "Quit") { NSApp.terminate(nil) }
+        VStack(spacing: 0) {
+            hairline
+            VStack(spacing: 1) {
+                MenuItem(title: "Open notebook", action: model.showLive)
+                MenuItem(title: "Reveal notes", action: model.openNotes)
+                Divider().padding(.vertical, 3).padding(.horizontal, 8)
+                MenuItem(title: "Settings…", shortcut: "⌘,", action: model.openConfig)
+                MenuItem(title: "Quit PenBridge", shortcut: "⌘Q") { NSApp.terminate(nil) }
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 4)
         }
-        .padding(4)
-        .background(Color.primary.opacity(0.04))
-        .overlay(alignment: .top) { hairline }
     }
 
     /// Every section is a hairline plus the same padding, so the layout does not repeat either.
@@ -622,23 +628,31 @@ private struct PinButton: View {
     }
 }
 
-private struct FooterButton: View {
+private struct MenuItem: View {
     let title: String
+    var shortcut: String?
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Text(title)
-                .font(.system(size: 11))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+            HStack(spacing: 8) {
+                Text(title).font(.system(size: 12))
+                Spacer(minLength: 8)
+                if let shortcut {
+                    Text(shortcut)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(hovering ? Color.primary : Color.secondary)
-        .background(RoundedRectangle(cornerRadius: 5)
-            .fill(hovering ? Color.primary.opacity(0.07) : Color.clear))
+        .foregroundStyle(Color.primary)
+        .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .fill(hovering ? Color.primary.opacity(0.08) : Color.clear))
         .onHover { hovering = $0 }
     }
 }

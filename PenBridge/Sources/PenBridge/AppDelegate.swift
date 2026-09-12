@@ -138,6 +138,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panelHost = NSHostingController(rootView: StatusPanel(model: model, now: panelNow))
         panel = MenuBarPanel(content: panelHost)
+        panel.onCommand = { [weak self] key in
+            switch key {
+            case ",": self?.showSettings(); return true
+            case "q": NSApp.terminate(nil); return true
+            default: return false
+            }
+        }
     }
 
     /// Any change from the pen or the publisher lands here: recompute the panel's snapshot, then

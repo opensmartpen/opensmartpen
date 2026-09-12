@@ -107,6 +107,17 @@ final class MenuBarPanel: NSPanel {
     /// Escape closes it, as it closes a menu.
     override func cancelOperation(_ sender: Any?) { dismiss() }
 
+    /// The footer advertises ⌘, and ⌘Q, so they have to work. A borderless panel has no menu bar
+    /// of its own to route them through.
+    var onCommand: ((String) -> Bool)?
+
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command),
+           let key = event.charactersIgnoringModifiers,
+           onCommand?(key) == true { return }
+        super.keyDown(with: event)
+    }
+
     /// Re-measure after the content changes height — a page arriving, a countdown ending — keeping
     /// the top edge still so the panel grows downward rather than jumping.
     func resizeToContent() {
