@@ -171,7 +171,9 @@ final class PublishTests: XCTestCase {
         XCTAssertEqual(c.pendingPages, [note], "the tap is a command, not a page")
         XCTAssertEqual(taps.count, 1)
         XCTAssertEqual(taps.first?.page, control)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: store.fileURL(for: control).path))
+        // The tap is stored: the pen saw it, so raw says so, and the mode event points back at it.
+        // What makes it "not a page" is that it never enters the tracker, asserted above.
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.fileURL(for: control).path))
 
         // Same for strokes drained from pen memory.
         var offlineTap = stroke(control, start: 3); offlineTap.source = .offline

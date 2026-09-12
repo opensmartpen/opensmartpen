@@ -21,6 +21,8 @@ public final class SyncCoordinator {
     public var controlBooks: Set<String> = []
     /// Called for every tap on a control surface, so callers can act on it or map it.
     public var onControlTap: ((Stroke) -> Void)?
+    /// Where ink colour and line width changes are recorded. Nil leaves the strip inert.
+    public var modeLog: ModeLog?
 
     public struct PublishRecord: Equatable {
         public let date: Date
@@ -58,6 +60,7 @@ public final class SyncCoordinator {
             guard let page = PageID(rawRelativePath: path) else { continue }
             let url = store.root.appendingPathComponent(path)
             let mtime = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date) ?? .distantPast
+            guard !admit([page]).isEmpty else { continue }
             tracker.touch([page], at: mtime)
             recovered.append(page)
         }
@@ -69,11 +72,11 @@ public final class SyncCoordinator {
 
     /// Strokes received live from the pen.
     public func ingestLive(_ strokes: [Stroke], now: Date = Date()) {
-        let strokes = separateControlTaps(strokes)
         guard !strokes.isEmpty else { return }
+        decodeControlTaps(strokes)
         do {
             let pages = try store.append(strokes, now: now)
-            tracker.touch(pages, at: now)
+            tracker.touch(admit(pages), at: now)
             Log.debug("live: \(strokes.count) stroke(s) on \(pages.map(\.description).sorted().joined(separator: ", "))")
         } catch {
             Log.error("writing live strokes failed: \(error)")
@@ -85,10 +88,10 @@ public final class SyncCoordinator {
     /// Strokes drained from pen memory. Returns the pages they landed on.
     @discardableResult
     public func ingestOffline(_ strokes: [Stroke], now: Date = Date()) -> Set<PageID> {
-        let strokes = separateControlTaps(strokes)
         guard !strokes.isEmpty else { return [] }
+        decodeControlTaps(strokes)
         do {
-            let pages = try store.append(strokes, now: now)
+            let pages = Set(admit(try store.append(strokes, now: now)))
             tracker.markQuiet(pages)
             Log.info("offline: \(strokes.count) stroke(s) on \(pages.count) page(s)")
             return pages
@@ -100,22 +103,36 @@ public final class SyncCoordinator {
         }
     }
 
-    /// Removes strokes made on a control surface, reporting each one, and returns the rest.
-    private func separateControlTaps(_ strokes: [Stroke]) -> [Stroke] {
-        guard !controlBooks.isEmpty else { return strokes }
-        var notes: [Stroke] = []
-        for s in strokes {
-            if controlBooks.contains(s.page.bookKey) {
-                let x = s.dots.map(\.x).reduce(0, +) / Double(max(1, s.dots.count))
-                let y = s.dots.map(\.y).reduce(0, +) / Double(max(1, s.dots.count))
-                Log.info(String(format: "control tap on %@ at x %.2f y %.2f cells (%.1f, %.1f mm)",
-                                s.page.description, x, y, x * 2.371, y * 2.371))
-                onControlTap?(s)
-            } else {
-                notes.append(s)
-            }
+    /// Reports and decodes taps on a control surface.
+    ///
+    /// The taps are stored in raw like any other stroke — the pen saw them, so raw says so, which
+    /// is ADR-001 — but they never enter the tracker, so a tap alone never starts a publish
+    /// countdown and never appears in the pending list as an unclickable notebook.
+    private func decodeControlTaps(_ strokes: [Stroke]) {
+        guard !controlBooks.isEmpty else { return }
+        for s in strokes where controlBooks.contains(s.page.bookKey) {
+            let x = s.dots.map(\.x).reduce(0, +) / Double(max(1, s.dots.count))
+            let y = s.dots.map(\.y).reduce(0, +) / Double(max(1, s.dots.count))
+            let button = ControlMap.button(for: s)
+            Log.info(String(format: "control tap on %@ at x %.2f y %.2f cells -> %@",
+                            s.page.description, x, y, describe(button)))
+            if let button { modeLog?.record(button, at: s.start, source: .paper, tap: s.id) }
+            onControlTap?(s)
         }
-        return notes
+    }
+
+    private func describe(_ button: ControlButton?) -> String {
+        switch button {
+        case let .ink(c): return "ink \(c.rawValue)"
+        case let .width(w): return "width \(w.rawValue)"
+        case nil: return "no button"
+        }
+    }
+
+    /// The single point at which a page may enter the tracker. Control books never do, whether
+    /// they arrive live, from a drain, or from recovery after a restart.
+    private func admit(_ pages: some Sequence<PageID>) -> [PageID] {
+        pages.filter { !controlBooks.contains($0.bookKey) }
     }
 
     /// Periodic check: publish whatever has gone quiet.
@@ -141,7 +158,7 @@ public final class SyncCoordinator {
                         completion: ((Result<String?, Error>) -> Void)? = nil) {
         let sorted = pages.sorted { $0.description < $1.description }
         let snapshot = tracker.snapshot(of: sorted)
-        let paths = sorted.map(\.rawRelativePath)
+        let paths = sorted.map(\.rawRelativePath) + untrackedRawPaths()
         var message = "notes: \(sorted.count) page\(sorted.count == 1 ? "" : "s") (\(reason))\n\n"
         message += sorted.map { "- \($0.description)" }.joined(separator: "\n")
         inFlight = true
@@ -160,7 +177,20 @@ public final class SyncCoordinator {
         }
     }
 
+    /// Raw files that belong in a commit but never enter the tracker: control-surface taps and the
+    /// mode log. They ride whatever publish happens next instead of starting one of their own. The
+    /// files are on disk the moment they arrive, so waiting leaves them unpublished, never unsaved.
+    private func untrackedRawPaths() -> [String] {
+        publisher.dirtyPaths(under: "raw/").filter { path in
+            guard let page = PageID(rawRelativePath: path) else { return true }
+            return controlBooks.contains(page.bookKey)
+        }
+    }
+
     public var isPublishing: Bool { inFlight }
+
+    /// When the next publish attempt is due after a failure; nil when nothing is being backed off.
+    public var nextRetryAt: Date? { nextRetry == .distantPast ? nil : nextRetry }
 
     private func finish(_ result: Result<String?, Error>, snapshot: [PageID: Date], pages: Int, now: Date) {
         switch result {
