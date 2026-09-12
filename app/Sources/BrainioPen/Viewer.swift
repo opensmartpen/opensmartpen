@@ -557,17 +557,26 @@ struct ViewerView: View {
 
             Spacer(minLength: 8)
 
-            // Nothing to say at fit: the page is the page. Once you are in closer, the number is
-            // also the way back out.
-            if viewer.canZoomOut {
-                Button(action: viewer.zoomToFit) {
-                    Text("\(Int((viewer.zoom * 100).rounded()))%")
-                        .font(.system(size: 11))
-                        .monospacedDigit()
-                }
-                .buttonStyle(.borderless)
-                .help("The whole page again (0)")
+            // Always there, even at 100%. It used to appear only once you had zoomed in, which
+            // meant the toolbar grew a control under your pointer at the moment you were using
+            // the pointer — everything to the right of it jumped sideways. A number that is
+            // always present costs four characters and moves nothing.
+            //
+            // Fixed width, because 100 and 800 are the same four characters but 25 is not.
+            Text("\(Int((viewer.zoom * 100).rounded()))%")
+                .font(.system(size: 11))
+                .monospacedDigit()
+                .foregroundStyle(viewer.canZoomOut ? .primary : .secondary)
+                .frame(width: 36, alignment: .trailing)
+
+            // The way back out, as a glyph rather than as the number doing double duty. Disabled
+            // rather than hidden at fit, so it keeps its place in the row.
+            Button(action: viewer.zoomToFit) {
+                Image(systemName: "arrow.counterclockwise")
             }
+            .buttonStyle(.borderless)
+            .disabled(!viewer.canZoomOut)
+            .help("The whole page again (0)")
 
             Picker("", selection: $viewer.layout) {
                 ForEach(ViewerLayout.allCases) { option in
