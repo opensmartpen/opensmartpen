@@ -83,15 +83,29 @@ final class Viewer: ObservableObject {
         return (geometry.widthCells * sheets) / geometry.heightCells
     }
 
-    /// The run of page numbers to offer in the pager, centred on where you are and never running
-    /// off the front of the notebook.
+    /// The pages to offer in the pager: the ones that have ink on them.
+    ///
+    /// A notebook has 192 sheets and you have written on four. Offering the other 188 is offering
+    /// blank paper — the pager would be mostly a way to look at nothing.
     var window: [Int] {
-        let span = 7
-        let known = max(pages.last ?? page, page, activePage ?? 1)
-        var start = max(1, page - span / 2)
-        if start + span - 1 > max(known, span) { start = max(1, max(known, span) - span + 1) }
-        return Array(start..<(start + span))
+        let known = pages.contains(page) ? pages : (pages + [page]).sorted()
+        guard known.count > 9, let here = known.firstIndex(of: page) else { return known }
+        // Long notebooks get a window around where you are rather than the whole list.
+        let start = min(max(0, here - 4), known.count - 9)
+        return Array(known[start..<(start + 9)])
     }
+
+    /// The next page with ink on it, in either direction. For a bound notebook that means the next
+    /// one outside the spread already on screen, because turning a leaf shows two.
+    private func neighbour(_ delta: Int) -> Int? {
+        let here = spread
+        let onScreen = [here.left, here.right].compactMap { $0 }
+        let candidates = delta > 0 ? pages.filter { $0 > (onScreen.max() ?? page) }
+                                   : pages.filter { $0 < (onScreen.min() ?? page) }.reversed().map { $0 }
+        return candidates.first
+    }
+
+    var canStep: (back: Bool, forward: Bool) { (neighbour(-1) != nil, neighbour(1) != nil) }
 
     /// True for either half of the spread on screen, so both are lit in the pager.
     func isOnScreen(_ human: Int) -> Bool {
@@ -161,15 +175,8 @@ final class Viewer: ObservableObject {
     }
 
     func step(_ delta: Int) {
-        guard let book else { return }
-        // A bound notebook turns a leaf at a time, which is two pages, not one.
-        let stride = book.binding == .bound && !focused ? 2 : 1
-        let next = page + delta * stride
-        guard next >= 1 else { return }
-        following = false
-        page = next
-        loadIfNeeded(next)
-        if let other = spread.left, other != next { loadIfNeeded(other) }
+        guard let next = neighbour(delta) else { return }
+        go(to: next)
     }
 
     private func availablePages(for key: String) -> [Int] {
@@ -316,7 +323,7 @@ struct ViewerView: View {
 
             Button { viewer.step(-1) } label: { Image(systemName: "chevron.left") }
                 .buttonStyle(.borderless)
-                .disabled(viewer.page <= 1)
+                .disabled(!viewer.canStep.back)
 
             // A range rather than a single number: you can see where you are in the notebook and
             // jump a few pages without paging one at a time.
@@ -332,6 +339,7 @@ struct ViewerView: View {
 
             Button { viewer.step(1) } label: { Image(systemName: "chevron.right") }
                 .buttonStyle(.borderless)
+                .disabled(!viewer.canStep.forward)
 
             Spacer(minLength: 8)
 
