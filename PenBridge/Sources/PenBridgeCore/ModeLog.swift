@@ -69,6 +69,9 @@ public final class ModeLog {
     private let url: URL
     private let fm = FileManager.default
     private(set) var events: [ModeEvent] = []
+    /// Fired after a change is recorded, with the state that is now in force. The pen's LED
+    /// follows this: it cannot be told the ink colour, but it can acknowledge the choice.
+    public var onChange: ((InkColor, LineWidth) -> Void)?
 
     public init(root: URL) {
         url = root.appendingPathComponent(Self.relativePath)
@@ -113,6 +116,8 @@ public final class ModeLog {
             event = ModeEvent(at: ms, width: w, source: source, tap: tap)
         }
         append(event)
+        let after = state(at: ms)
+        onChange?(after.ink, after.width)
         return true
     }
 

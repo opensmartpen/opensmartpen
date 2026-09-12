@@ -34,6 +34,24 @@ enum SDKMapping {
         return String(format: "#%02x%02x%02x", r, g, b)
     }
 
+    /// The pen's LED, which is the only colour NISDK3 can set — there is no ink colour command.
+    /// Eight fixed values, so a chosen ink lands on whichever is nearest rather than on a
+    /// hand-written table that would drift as palette.json gains measured colours.
+    private static let ledColors: [(LEDColor, (Double, Double, Double))] = [
+        (.VIOLET, (0.61, 0.25, 0.80)), (.BLUE, (0.24, 0.42, 0.94)),
+        (.GRAY, (0.74, 0.74, 0.74)), (.YELLOW, (0.98, 0.80, 0.15)),
+        (.PINK, (1.00, 0.13, 0.52)), (.MINT, (0.15, 0.88, 0.78)),
+        (.RED, (0.98, 0.21, 0.06)), (.BLACK, (0.00, 0.00, 0.00)),
+    ]
+
+    static func led(nearest rgb: (r: Double, g: Double, b: Double)) -> LEDColor {
+        ledColors.min {
+            let a = ($0.1.0 - rgb.r, $0.1.1 - rgb.g, $0.1.2 - rgb.b)
+            let b = ($1.1.0 - rgb.r, $1.1.1 - rgb.g, $1.1.2 - rgb.b)
+            return a.0 * a.0 + a.1 * a.1 + a.2 * a.2 < b.0 * b.0 + b.1 * b.1 + b.2 * b.2
+        }!.0
+    }
+
     /// Strokes from one offline transfer packet.
     static func strokes(from data: OffLineData, penMac: String, firmware: String) -> [Stroke] {
         data.strokeArray.compactMap { s in

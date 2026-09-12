@@ -58,6 +58,8 @@ final class PenSession: NSObject {
     private var assembler = StrokeAssembler()
     private var penMac = ""
     private var firmware = ""
+    /// Ink hexes from the notes repo, for the LED. Read once; the file changes rarely.
+    private var palette = Palette()
 
     private struct Note { let section: UInt8; let owner: UInt32; let note: UInt32 }
     private var drainQueue: [Note] = []
@@ -73,6 +75,19 @@ final class PenSession: NSObject {
         self.coordinator = coordinator
         self.notifier = notifier
         super.init()
+        palette = Palette.load(root: config.repoURL)
+        // The pen cannot be told the ink colour, but it can acknowledge the choice. This is the
+        // answer to the objection that a mode set on paper is invisible once set — though only at
+        // the moment of tapping: the A1 sleeps after five minutes and the LED goes with it, so the
+        // LED is the acknowledgement and the panel is the indicator.
+        coordinator.modeLog?.onChange = { [weak self] ink, _ in self?.showOnLED(ink) }
+    }
+
+    /// Put the chosen ink on the pen's LED, as near as its eight fixed colours allow. An ink with
+    /// no measured hex leaves the LED alone rather than guessing at it.
+    private func showOnLED(_ ink: InkColor) {
+        guard let pen, let rgb = palette.components(for: ink) else { return }
+        pen.requestSetPenLEDColor(SDKMapping.led(nearest: rgb))
     }
 
     var isPaired: Bool { config.penMac != nil || config.penPeripheralId != nil }

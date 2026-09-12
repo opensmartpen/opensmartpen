@@ -103,6 +103,55 @@ final class ControlSurfaceTests: XCTestCase {
         XCTAssertEqual(ModeLog(root: root).state(at: 2_000).ink, .green)
     }
 
+    // MARK: the palette
+
+    func writePalette() throws {
+        try """
+        {"ink": {"black": "#000000", "red": "#ff0200", "white": null},
+         "width_mm": {"thin": 0.19, "default": 0.29},
+         "reset_after_hours": 6}
+        """.write(to: root.appendingPathComponent(Palette.relativePath), atomically: true, encoding: .utf8)
+    }
+
+    /// A colour with no hex is unmeasured, not black, so it must not arrive as a usable colour.
+    func testAnUnmeasuredInkIsAbsentRatherThanBlack() throws {
+        try writePalette()
+        let p = Palette.load(root: root)
+        XCTAssertEqual(p.hex(for: .red), "#ff0200")
+        XCTAssertNil(p.hex(for: .white), "null means not measured yet")
+        XCTAssertNil(p.hex(for: .navy), "and so does a name the file has never heard of")
+        XCTAssertEqual(p.width(for: .thin), 0.19)
+        XCTAssertEqual(p.resetAfterHours, 6)
+    }
+
+    func testMissingPaletteLeavesEverythingUnknown() {
+        let p = Palette.load(root: root)
+        XCTAssertNil(p.hex(for: .red))
+        XCTAssertEqual(p.resetAfterHours, 24, "but the reset still has a usable default")
+    }
+
+    func testComponentsReadTheHex() throws {
+        try writePalette()
+        let rgb = try XCTUnwrap(Palette.load(root: root).components(for: .red))
+        XCTAssertEqual(rgb.r, 1.0, accuracy: 0.01)
+        XCTAssertEqual(rgb.g, 0.008, accuracy: 0.01)
+        XCTAssertEqual(rgb.b, 0.0, accuracy: 0.01)
+    }
+
+    /// The pen's LED follows the choice, so a change has to announce itself.
+    func testAChangeIsAnnouncedWithTheStateNowInForce() {
+        let log = ModeLog(root: root)
+        var seen: [(InkColor, LineWidth)] = []
+        log.onChange = { seen.append(($0, $1)) }
+        log.record(.width(.thick), at: 1_000, source: .paper)
+        log.record(.ink(.red), at: 2_000, source: .panel)
+        log.record(.ink(.red), at: 3_000, source: .panel)
+
+        XCTAssertEqual(seen.count, 2, "a re-tap changes nothing, so it announces nothing")
+        XCTAssertEqual(seen.last?.0, .red)
+        XCTAssertEqual(seen.last?.1, .thick, "the whole state, not just the field that moved")
+    }
+
     // MARK: the coordinator
 
     func makeCoordinator() throws -> SyncCoordinator {
