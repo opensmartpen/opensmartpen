@@ -14,6 +14,29 @@ enum Ink {
     private static func dynamic(light: NSColor, dark: NSColor) -> NSColor {
         NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light }
     }
+
+    /// An ink as the panel can actually draw it.
+    ///
+    /// Four of the five inks survive both appearances. Black does not survive dark: a 1.4pt
+    /// stroke of #1C1C1E on a dark menu material is not a dark pen, it is an absent one. So no
+    /// ink is drawn darker than the panel's own text in the dark appearance, nor lighter than it
+    /// in the light one — an ink past that line is drawn at the text colour, and every other ink
+    /// is untouched. Red, blue, green and yellow never cross it.
+    ///
+    /// The swatches in the ink row are exempt: they are a colour picker, and a picker that shows
+    /// you white when you are choosing black has stopped being one.
+    static func legible(_ colour: Color) -> Color {
+        let base = NSColor(colour)
+        return Color(nsColor: NSColor(name: nil) { appearance in
+            guard let srgb = base.usingColorSpace(.sRGB) else { return base }
+            let luminance = 0.299 * srgb.redComponent + 0.587 * srgb.greenComponent
+                + 0.114 * srgb.blueComponent
+            let dark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            if dark, luminance < 0.28 { return .labelColor }
+            if !dark, luminance > 0.86 { return .labelColor }
+            return base
+        })
+    }
 }
 
 /// The panel says each thing once. A page's countdown is the only place its timing appears, the
@@ -481,9 +504,14 @@ private struct PenTile: View {
     /// so it reads as "this is the one showing" rather than "this is the one writing".
     private var chipped: Bool { open && !pen.awake }
 
+    /// The ink itself, for the fill. A tile filled with true black on a dark panel still reads,
+    /// because a filled tile always carries a hairline — it is the 1.4pt glyph that does not.
     private var inkColour: Color {
         Color(inkHex: Palette.hexForPreview(pen.ink)) ?? .primary
     }
+
+    /// The ink as a stroke can carry it, which for black in the dark appearance is not black.
+    private var glyphColour: Color { Ink.legible(inkColour) }
 
     /// What reads on top of the ink when the tile is filled.
     private var onInk: Color {
@@ -495,7 +523,7 @@ private struct PenTile: View {
             // Spaced by hand rather than by one stack gap: the bar belongs to the name above it,
             // so it sits nearly against it, while the glyph keeps its own air.
             VStack(spacing: 0) {
-                Pencil(colour: filled ? onInk : inkColour, size: 17)
+                Pencil(colour: filled ? onInk : glyphColour, size: 17)
                 // No dot on a filled tile: the fill is already the statement that this is the pen
                 // you are using, and "• Pen" reads as a bullet point rather than as a status.
                 Text(pen.name)
