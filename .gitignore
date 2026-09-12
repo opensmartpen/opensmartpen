@@ -10,7 +10,7 @@ __pycache__/
 *.pyc
 # local secrets
 .env
-# PenBridge build output
-PenBridge/.build/
-PenBridge/dist/
-PenBridge/.swiftpm/
+# Brainio Pen build output
+app/.build/
+app/dist/
+app/.swiftpm/

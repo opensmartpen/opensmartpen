@@ -4,11 +4,11 @@ Early stage. This page is the entry point the skills expect; it will grow as com
 
 ## System context
 
-Pen (Neo smartpen A1, Ncode paper) → Bluetooth → **PenBridge** (macOS menubar app on NISDK3) → raw JSONL per page → **GitHub repo** → **pipeline** (render SVG/PNG, transcribe to Markdown) → derived files committed back. A DAM agent may later run the pipeline; see `RESEARCH.md` section 4 for what DAM offers.
+Pen (Neo smartpen A1, Ncode paper) → Bluetooth → **Brainio Pen** (macOS menubar app on NISDK3) → raw JSONL per page → **GitHub repo** → **pipeline** (render SVG/PNG, transcribe to Markdown) → derived files committed back. A DAM agent may later run the pipeline; see `RESEARCH.md` section 4 for what DAM offers.
 
 ## Pages
 
-- `PenBridge/README.md` — the macOS capture app: what it does, config, layout, what is unverified.
+- `app/README.md` — the macOS capture app: what it does, config, layout, what is unverified.
 - `docs/processing.md` — what the DAM agent is expected to do with the raw files.
 - `docs/stroke-format.md` — raw and derived file formats, geometry.
 - `docs/decisions.md` — running decision log; formal records go to `docs/adrs/`.

@@ -19,7 +19,7 @@ The first plan was an iOS app streaming strokes in real time to a DAM agent that
 
 ## Decision
 
-Capture and processing are split by a git repository. A macOS menubar app (PenBridge) owns the pen: it connects whenever the pen is in range, drains offline memory, receives live strokes, and commits each page to the repo once it has been quiet for ten minutes, pushing to GitHub. It deletes a notebook from the pen only after that notebook's commit is pushed. It has no rendering, recognition or DAM knowledge. It runs unattended and reports only problems, through macOS notifications. A DAM agent, always on, watches the repo and produces every derived artefact.
+Capture and processing are split by a git repository. A macOS menubar app (Brainio Pen, called PenBridge when this record was written) owns the pen: it connects whenever the pen is in range, drains offline memory, receives live strokes, and commits each page to the repo once it has been quiet for ten minutes, pushing to GitHub. It deletes a notebook from the pen only after that notebook's commit is pushed. It has no rendering, recognition or DAM knowledge. It runs unattended and reports only problems, through macOS notifications. A DAM agent, always on, watches the repo and produces every derived artefact.
 
 ## Alternatives Considered
 

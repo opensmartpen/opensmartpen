@@ -1,6 +1,6 @@
 # Processing (the DAM side)
 
-Not built yet. This page records what the processing agent is expected to do with the raw files PenBridge publishes, so the two halves stay aligned. See ADR-002.
+Not built yet. This page records what the processing agent is expected to do with the raw files Brainio Pen publishes, so the two halves stay aligned. See ADR-002.
 
 ## Input
 

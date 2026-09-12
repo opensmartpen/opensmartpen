@@ -30,7 +30,7 @@ Lines are appended in arrival order, which is not chronological: strokes written
 Optional metadata records:
 
 ```jsonc
-{"t":"meta","captured":1757530001000,"client":"penbridge-mac/0.1","sdk":"NISDK3/1.1.5"}
+{"t":"meta","captured":1757530001000,"client":"brainio-pen-mac/0.2.0","sdk":"NISDK3/1.1.5"}
 ```
 
 ## Why not SVG or InkML as source
