@@ -17,6 +17,17 @@ Everything a person reads goes through a book record instead, one JSON file per 
       "first_page": 1
     }
 
+A book code identifies a *product*, not a physical copy: two identical A4 pads report the
+same section, owner and book, so their page 1s share an address. A record may therefore carry
+`instances`, each a slug and the moment writing in that copy began:
+
+    "instances": [{"slug": "a4-pad", "startedAt": 0},
+                  {"slug": "a4-pad-2", "startedAt": 1757671234567}]
+
+A stroke belongs to the last instance that began at or before it. One raw page file can hold
+strokes from both copies, so rendering splits it and each copy gets its own directory under
+`pages/`. Without the array there is one copy and nothing changes.
+
 `first_page` is what the pen calls the notebook's first sheet. Ncode page numbers do not
 start at one: the LAMY pad's first sheet reports as page 4. Subtracting it gives the page
 number a human would count to.
@@ -38,6 +49,8 @@ class Book:
         self.height_mm: float | None = data.get("height_mm")
         self.first_page: int = int(data.get("first_page", 1))
         self.source: str = data.get("source", "recorded")
+        self.instances: list[tuple[int, str]] = sorted(
+            (int(i["startedAt"]), i["slug"]) for i in data.get("instances", []) if i.get("slug"))
 
     @property
     def has_geometry(self) -> bool:
@@ -52,6 +65,14 @@ class Book:
 
     def page_stem(self, ncode_page: int) -> str:
         return f"page-{self.human_page(ncode_page):02d}"
+
+    def instance_at(self, ms: int) -> str:
+        """Which physical copy of this notebook was being written in at that moment."""
+        slug = self.slug
+        for started, instance in self.instances:
+            if started <= ms:
+                slug = instance
+        return slug
 
 
 class Books:
@@ -96,3 +117,32 @@ def page_dir(repo: pathlib.Path, book: Book | None, book_id: str) -> pathlib.Pat
 
 def page_stem(book: Book | None, ncode_page: int) -> str:
     return book.page_stem(ncode_page) if book else f"p{ncode_page}"
+
+
+class Pens:
+    """Pens by MAC address, from `pens/*.json` in the notes repo.
+
+    Every stroke records which pen made it, and a pen carries its own default ink and width.
+    Writing that resumes after a long silence starts again at those defaults, so the renderer
+    has to know them; without a record the fallbacks are black at the default width.
+
+    The MAC is matched loosely — case folded, separators removed — because a file written by
+    hand should not have to match the pen's own formatting exactly.
+    """
+
+    def __init__(self, repo: pathlib.Path):
+        self.by_mac: dict[str, dict] = {}
+        for f in sorted((repo / "pens").glob("*.json")):
+            data = json.loads(f.read_text())
+            mac = data.get("mac") or data.get("id") or data.get("penMac")
+            if mac:
+                self.by_mac[self.normalise(mac)] = data
+
+    @staticmethod
+    def normalise(mac: str) -> str:
+        return re.sub(r"[^0-9a-f]", "", mac.lower())
+
+    def defaults(self, mac: str | None) -> tuple[str, str]:
+        """(ink, width) this pen starts from."""
+        data = self.by_mac.get(self.normalise(mac or ""), {})
+        return data.get("ink", "black"), data.get("width", "default")

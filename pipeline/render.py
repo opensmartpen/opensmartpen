@@ -21,7 +21,7 @@ import json
 import pathlib
 import sys
 
-from books import Books, page_dir, page_stem, parse_raw_path
+from books import Books, Pens, page_dir, page_stem, parse_raw_path
 
 MM_PER_CELL = 2.371
 
@@ -45,7 +45,7 @@ CONTROL_BOOKS = {"s3/o1013/b1"}
 
 
 class Stroke:
-    __slots__ = ("start", "end", "color", "tip", "dots", "src", "nib", "ink_name")
+    __slots__ = ("start", "end", "color", "tip", "dots", "src", "nib", "ink_name", "pen")
 
     def __init__(self, o: dict):
         self.start = o["start"]
@@ -58,6 +58,7 @@ class Stroke:
         self.dots = o["dots"]
         self.nib = NIB_MM
         self.ink_name = None
+        self.pen = o.get("pen")
 
 
 def read_page(path: pathlib.Path) -> list[Stroke]:
@@ -146,7 +147,7 @@ def reset_boundaries(timeline: list[int], gap_hours: float) -> list[int]:
 
 
 def apply_modes(strokes: list[Stroke], events: list[dict], palette: dict, nib_mm: float,
-                boundaries: list[int] | None = None) -> list[str]:
+                boundaries: list[int] | None = None, pens: Pens | None = None) -> list[str]:
     """Give each stroke the ink and width in force when it was written. Returns any complaints."""
     inks, widths = palette.get("ink", {}), palette.get("width_mm", {})
     boundaries = boundaries or []
@@ -154,7 +155,9 @@ def apply_modes(strokes: list[Stroke], events: list[dict], palette: dict, nib_mm
     for s in strokes:
         # Everything chosen since writing last resumed, and nothing from before it.
         since = boundaries[bisect.bisect_right(boundaries, s.start) - 1] if boundaries and boundaries[0] <= s.start else None
-        ink_name, width_name = DEFAULT_INK, DEFAULT_WIDTH
+        # Writing starts from the pen's own defaults, not from a constant: a pen kept for
+        # accents is not a black pen that someone keeps re-selecting.
+        ink_name, width_name = pens.defaults(s.pen) if pens else (DEFAULT_INK, DEFAULT_WIDTH)
         for e in events:
             if e["at"] > s.start:
                 break
@@ -315,7 +318,7 @@ def render_png(strokes: list[Stroke], png_path: pathlib.Path, nib_mm: float = NI
 def render_file(raw: pathlib.Path, repo: pathlib.Path, books: Books, out: pathlib.Path | None,
                 png: bool, crop: bool, nib_mm: float = NIB_MM,
                 palette: dict | None = None, modes: list[dict] | None = None,
-                boundaries: list[int] | None = None) -> None:
+                boundaries: list[int] | None = None, pens: Pens | None = None) -> None:
     book_id, ncode_page = parse_raw_path(raw)
     if book_id in CONTROL_BOOKS:
         print(f"{book_id}/p{ncode_page}: control surface, not a page")
@@ -329,22 +332,34 @@ def render_file(raw: pathlib.Path, repo: pathlib.Path, books: Books, out: pathli
     modes = modes if modes is not None else load_modes(repo)
     if boundaries is None:
         boundaries = reset_boundaries(load_timeline(repo), palette.get("reset_after_hours", 24))
-    complaints = apply_modes(strokes, modes, palette, nib_mm, boundaries)
+    complaints = apply_modes(strokes, modes, palette, nib_mm, boundaries, pens or Pens(repo))
     if book and book.has_geometry:
         geom = {"paper": book.title, "width_mm": book.width_mm,
                 "height_mm": book.height_mm, "source": book.source}
     else:
         geom = guess_geometry(strokes)
 
+    # One raw file can hold two physical notebooks. A book code identifies a product, so a second
+    # pad of the same kind writes to the same addresses; the instance boundary is what separates
+    # them, and each copy gets its own directory rather than overwriting the last one's pages.
+    groups: dict[str, list[Stroke]] = {}
+    for st in strokes:
+        groups.setdefault(book.instance_at(st.start) if book else book_id, []).append(st)
+
     stem = page_stem(book, ncode_page)
-    svg_path = out or (page_dir(repo, book, book_id) / f"{stem}.svg")
-    svg_path.parent.mkdir(parents=True, exist_ok=True)
-    svg_path.write_text(render_svg(strokes, geom, nib_mm=nib_mm, crop=crop))
-    where = f"{book.slug if book else book_id}/{stem}"
-    note = f"{where}: {len(strokes)} strokes -> {svg_path.name}  [{geom['paper']}]"
-    if png:
-        note += "  +png" if render_png(strokes, svg_path.with_suffix(".png"), nib_mm=nib_mm) else "  (png failed)"
-    print(note)
+    for slug, group in groups.items():
+        svg_path = out or (repo / "pages" / slug / f"{stem}.svg")
+        svg_path.parent.mkdir(parents=True, exist_ok=True)
+        svg_path.write_text(render_svg(group, geom, nib_mm=nib_mm, crop=crop))
+        where = f"{slug}/{stem}"
+        note = f"{where}: {len(group)} strokes -> {svg_path.name}  [{geom['paper']}]"
+        if png:
+            note += "  +png" if render_png(group, svg_path.with_suffix(".png"), nib_mm=nib_mm) else "  (png failed)"
+        print(note)
+        for c in complaints:
+            print(f"  {where}: {c}")
+        if out:
+            break  # an explicit output path names one file, so only the first instance can use it
 
 
 def main() -> None:
@@ -362,16 +377,17 @@ def main() -> None:
     books = Books(repo)
     palette, modes = load_palette(repo), load_modes(repo)
     boundaries = reset_boundaries(load_timeline(repo), palette.get("reset_after_hours", 24))
+    pens = Pens(repo)
     if a.all:
         files = sorted(f for f in (repo / "raw").rglob("*.jsonl") if f.name != "mode.jsonl")
         if not files:
             raise SystemExit(f"no raw pages under {repo / 'raw'}")
         for f in files:
-            render_file(f, repo, books, None, a.png, a.crop, a.nib, palette, modes, boundaries)
+            render_file(f, repo, books, None, a.png, a.crop, a.nib, palette, modes, boundaries, pens)
     elif a.raw:
         render_file(pathlib.Path(a.raw).expanduser(), repo, books,
                     pathlib.Path(a.out).expanduser() if a.out else None, a.png, a.crop, a.nib,
-                    palette, modes, boundaries)
+                    palette, modes, boundaries, pens)
     else:
         ap.error("give a raw file or --all")
 
