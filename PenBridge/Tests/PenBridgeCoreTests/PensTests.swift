@@ -57,6 +57,48 @@ final class PensTests: XCTestCase {
         XCTAssertEqual(pens.record(mac: "aabbccddeeff")?.mode, .highlight)
     }
 
+    func testARecordWrittenByHandIsRead() throws {
+        // Every other test here creates its record through the registry, so a mismatch between
+        // what we write and what we read would pass all of them. This one writes the file the way
+        // the pipeline and a person do, and reads it back.
+        //
+        // The values are deliberately NOT the fallbacks: a record saying black/default is
+        // indistinguishable from a lookup that found nothing, so it cannot prove the file was read.
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent("pens"),
+                                                withIntermediateDirectories: true)
+        let json = """
+        {
+          "ink" : "purple",
+          "mac" : "9C:7B:D2:48:33:D9",
+          "mode" : "highlight",
+          "name" : "The red one",
+          "width" : "thick"
+        }
+        """
+        try Data(json.utf8).write(to: repo.appendingPathComponent("pens/red.json"))
+
+        let pens = PenRegistry(repo: repo)
+        let record = try XCTUnwrap(pens.record(mac: "9c7bd24833d9"))
+        XCTAssertEqual(record.name, "The red one")
+        XCTAssertEqual(record.mode, .highlight)
+        XCTAssertEqual(pens.defaults(mac: "9c7bd24833d9").ink, .purple)
+        XCTAssertEqual(pens.defaults(mac: "9c7bd24833d9").width, .thick)
+    }
+
+    func testAnUnknownFieldValueFallsBackRatherThanFailing() throws {
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent("pens"),
+                                                withIntermediateDirectories: true)
+        // A newer PenBridge could write a mode this one has never heard of. Read what is
+        // understood, ignore the rest — the same forgiveness the raw reader has.
+        try Data(#"{"mac":"aabbccddeeff","name":"Future","mode":"sketch","ink":"chartreuse"}"#.utf8)
+            .write(to: repo.appendingPathComponent("pens/future.json"))
+        let pens = PenRegistry(repo: repo)
+        let record = try XCTUnwrap(pens.record(mac: "aabbccddeeff"))
+        XCTAssertEqual(record.name, "Future")
+        XCTAssertEqual(record.mode, .writing)
+        XCTAssertEqual(record.ink, .black)
+    }
+
     func testAPenWithNoUsableNameStillGetsAFilename() {
         XCTAssertEqual(PenRecord.slug(from: "   ", mac: "aabbccddeeff"), "pen-eeff")
         XCTAssertEqual(PenRecord.slug(from: "The Red One", mac: "x"), "the-red-one")
