@@ -164,21 +164,45 @@ struct StatusPanel: View {
     /// until somebody opens a PNG days later.
     private var inkRow: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                ForEach(model.inks, id: \.rawValue) { colour in
-                    Swatch(colour: colour,
-                           hex: model.palette.hex(for: colour),
-                           selected: colour == model.ink) { model.choose(ink: colour) }
+            HStack(spacing: 10) {
+                Track {
+                    ForEach(model.inks, id: \.rawValue) { colour in
+                        Segment(selected: colour == model.ink, width: 22) {
+                            Circle()
+                                .fill(Color(inkHex: model.palette.hex(for: colour)) ?? .clear)
+                                .frame(width: 13, height: 13)
+                                // Unchosen inks drop back so only the one in use carries weight.
+                                .opacity(colour == model.ink ? 1 : 0.34)
+                        } choose: { model.choose(ink: colour) }
+                        .help(colour.rawValue)
+                    }
                 }
-                Spacer(minLength: 10)
+                Spacer(minLength: 0)
                 // The strip offers three weights. "Default" is not a button on it — it is the
                 // state before anything is tapped — so it is not one here either.
-                ForEach([LineWidth.thin, .medium, .thick], id: \.rawValue) { weight in
-                    WidthMark(weight: weight, selected: weight == model.width) {
-                        model.choose(width: weight)
+                Track {
+                    ForEach([LineWidth.thin, .medium, .thick], id: \.rawValue) { weight in
+                        Segment(selected: weight == model.width, width: 25) {
+                            // Rectangular, not a capsule: a line of ink has ends, and at three
+                            // points tall a rounded cap is most of what you can see.
+                            Rectangle()
+                                .fill(Color.primary)
+                                .frame(width: 15, height: thickness(weight))
+                                .cornerRadius(0.5)
+                                .opacity(weight == model.width ? 0.95 : 0.4)
+                        } choose: { model.choose(width: weight) }
+                        .help(weight.rawValue)
                     }
                 }
             }
+        }
+    }
+
+    private func thickness(_ weight: LineWidth) -> CGFloat {
+        switch weight {
+        case .thin: return 1
+        case .default, .medium: return 3
+        case .thick: return 6
         }
     }
 
@@ -302,17 +326,17 @@ private struct RecentRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 7) {
+                // Leading, like the status dot in the header: a mark at the start of a line reads
+                // as "this one", and the same mark in the same place means the same thing twice.
+                // Always laid out, so the titles line up whether or not it is drawn.
+                Circle()
+                    .fill(book.latest ? Ink.accent : Color.clear)
+                    .frame(width: 5, height: 5)
                 PaperMark(shape: book.shape, binding: book.binding)
                 Text(book.title)
                     .font(.system(size: 11.5))
                     .lineLimit(1)
                 Spacer(minLength: 6)
-                // Which page it will open at is the viewer's business — it always opens at the
-                // last one you wrote, so the number was telling you something you were about to
-                // be shown anyway. What is worth a mark is which notebook you are actually in.
-                Circle()
-                    .fill(book.latest ? Ink.accent : Color.clear)
-                    .frame(width: 5, height: 5)
             }
             .padding(.horizontal, 5)
             .padding(.vertical, 3.5)
@@ -326,71 +350,45 @@ private struct RecentRow: View {
     }
 }
 
-/// One ink. A colour we have measured is a filled circle; one we have not is a hole with a dashed
-/// edge — plainly empty, and in particular never mistaken for the white swatch beside it.
-private struct Swatch: View {
-    let colour: InkColor
-    let hex: String?
-    let selected: Bool
-    let choose: () -> Void
-    @State private var hovering = false
+/// The sunken track a row of choices sits in — macOS's own segmented control, which is exactly
+/// what this is: several options, one of them current. Using the same track for ink and for weight
+/// makes them read as one thing rather than two unrelated rows.
+private struct Track<Content: View>: View {
+    @ViewBuilder let content: Content
 
     var body: some View {
-        Button(action: choose) {
-            Group {
-                if let fill = Color(hex: hex) {
-                    Circle().fill(fill)
-                        .overlay(Circle().stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
-                } else {
-                    Circle().strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2]))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .frame(width: 19, height: 19)
-            .overlay(Circle().stroke(Color.primary, lineWidth: selected ? 1.5 : 0)
-                .padding(-3))
-            .padding(2)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(hex == nil ? "\(colour.rawValue) — no colour assigned" : colour.rawValue)
-        .opacity(hovering && !selected ? 0.7 : 1)
-        .onHover { hovering = $0 }
+        HStack(spacing: 3) { content }
+            .padding(3)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(Color.primary.opacity(0.10)))
     }
 }
 
-/// One line weight, drawn in relation to the others. Never a millimetre: the renderer widens a
-/// line by pressure, so an absolute claim at this size would be a lie with a number on it.
-private struct WidthMark: View {
-    let weight: LineWidth
+/// One option in the track. The chosen one is lifted out of it on a card rather than ringed: a
+/// ring drawn over a colour competes with the colour, and the whole point of the swatch is that
+/// you can see the ink.
+private struct Segment<Content: View>: View {
     let selected: Bool
+    let width: CGFloat
+    @ViewBuilder let content: Content
     let choose: () -> Void
     @State private var hovering = false
 
-    private var thickness: CGFloat {
-        switch weight {
-        case .thin: return 1
-        case .default: return 2
-        case .medium: return 4
-        case .thick: return 7
-        }
-    }
-
     var body: some View {
         Button(action: choose) {
-            Capsule().fill(Color.primary.opacity(selected ? 0.9 : 0.3))
-                .frame(height: thickness)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, (20 - thickness) / 2)
-                // Selection is a soft ground behind the line, not a border around it: at one point
-                // thick, an outline is the only thing you can see and the weight itself vanishes.
-                .background(RoundedRectangle(cornerRadius: 5)
-                    .fill(selected ? Color.primary.opacity(0.12)
-                          : hovering ? Color.primary.opacity(0.05) : Color.clear))
+            content
+                .frame(width: width, height: 21)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(selected ? Color(nsColor: .controlBackgroundColor)
+                              : hovering ? Color.primary.opacity(0.07) : Color.clear)
+                        .shadow(color: .black.opacity(selected ? 0.22 : 0), radius: 1.5, y: 0.5)
+                )
+                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .stroke(Color.black.opacity(selected ? 0.14 : 0), lineWidth: 0.5))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(weight.rawValue)
         .onHover { hovering = $0 }
     }
 }
