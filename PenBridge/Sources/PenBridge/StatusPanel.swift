@@ -154,40 +154,14 @@ struct StatusPanel: View {
 
     // MARK: pens — who is writing, and how charged they are
 
-    /// One pen fills a row; two or more become tiles. The same component at two widths, so nothing
-    /// is thrown away when a second pen arrives.
-    @ViewBuilder private var penRow: some View {
-        if model.pens.count == 1, let pen = model.pens[0] as PanelModel.PenRow? {
-            HStack(spacing: 9) {
-                Nib(ink: pen.ink, mode: pen.mode, size: 26)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(pen.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                    // Only when there is a reading. An empty bar running the width of the panel
-                    // reads as a rule, not as a battery, and a bar at zero is a lie besides.
-                    if let percent = pen.percent {
-                        BatteryBar(percent: percent, low: pen.low).frame(width: 92)
-                    } else {
-                        Text("not seen yet")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                Spacer(minLength: 6)
-                if let percent = pen.percent {
-                    Text("\(percent)%")
-                        .font(.system(size: 10.5, weight: pen.low ? .semibold : .regular))
-                        .foregroundStyle(pen.low ? Ink.critical : Color.secondary)
-                        .monospacedDigit()
-                }
+    /// Always tiles, whether there is one pen or three. A tile keeps its own width rather than
+    /// stretching, so a single pen is a single tile at the left rather than a box across the panel.
+    private var penRow: some View {
+        HStack(spacing: 6) {
+            ForEach(model.pens) { pen in
+                PenTile(pen: pen) { if !pen.active { model.openConfig() } }
             }
-            .contentShape(Rectangle())
-            .onTapGesture { model.openConfig() }
-        } else {
-            HStack(spacing: 6) {
-                ForEach(model.pens) { pen in
-                    PenTile(pen: pen) { if !pen.active { model.openConfig() } }
-                }
-            }
+            Spacer(minLength: 0)
         }
     }
 
@@ -453,9 +427,8 @@ private struct PenTile: View {
                     Color.clear.frame(width: 26, height: 3)
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(width: 84)
             .padding(.vertical, 7)
-            .padding(.horizontal, 4)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(pen.active ? Ink.accent.opacity(0.13)
                       : hovering ? Color.primary.opacity(0.06) : Color.clear))
