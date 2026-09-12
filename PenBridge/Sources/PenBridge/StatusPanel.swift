@@ -147,12 +147,9 @@ struct StatusPanel: View {
     // MARK: recent — click to open the rendered page
 
     private var recent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("RECENT")
-                .font(.system(size: 9.5))
-                .tracking(0.7)
-                .foregroundStyle(.quaternary)
-                .padding(.bottom, 1)
+        // No heading. The hairline above already says a new thing starts here, and a notebook
+        // with its own mark beside it does not need to be announced as recent.
+        VStack(alignment: .leading, spacing: 2) {
             ForEach(model.recent) { book in
                 RecentRow(book: book) { model.open(book) }
             }
