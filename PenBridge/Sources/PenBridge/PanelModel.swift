@@ -40,6 +40,10 @@ final class PanelModel: ObservableObject {
     @Published private(set) var status: Status = .asleep
     @Published private(set) var penName = ""
     @Published private(set) var battery: Battery?
+    /// The flattest pen used in the last day, whether or not it is the one in your hand. With one
+    /// pen this is the same fact; with three it is the one that matters, because the pen that
+    /// needs charging is rarely the pen you are holding.
+    @Published private(set) var lowPen: (name: String, percent: Int)?
     @Published private(set) var pending: [PendingRow] = []
     @Published private(set) var pagesOnPen: Int?
     @Published private(set) var lastPublish: Publish?
@@ -131,15 +135,16 @@ final class PanelModel: ObservableObject {
         let config: Config
         let books: BookRegistry
         let pens: PenRegistry
+        let penState: PenState
     }
 
     private let live: Live?
     private var lastPaletteLoad = Date.distantPast
 
     init(session: PenSession, coordinator: SyncCoordinator, config: Config,
-         books: BookRegistry, pens: PenRegistry) {
+         books: BookRegistry, pens: PenRegistry, penState: PenState) {
         live = Live(session: session, coordinator: coordinator, config: config,
-                    books: books, pens: pens)
+                    books: books, pens: pens, penState: penState)
     }
 
     /// A model with no pen and no repo behind it, for the design window.
@@ -180,6 +185,9 @@ final class PanelModel: ObservableObject {
                               low: pct <= config.lowBatteryPercent && !charging)
             let held = PenMemory.pages(usedPercent: Int(s.memoryUsed))
             pagesOnPen = held > 0 ? held : nil
+            if let mac = config.penMac {
+                live.penState.record(mac: mac, battery: pct, charging: charging, at: now)
+            }
         } else {
             battery = nil
             pagesOnPen = nil
@@ -196,6 +204,13 @@ final class PanelModel: ObservableObject {
 
         if let record = coordinator.lastPublish {
             lastPublish = Publish(date: record.date, commit: record.commit, pages: record.pages)
+        }
+
+        // Any pen used in the last day, not just the connected one.
+        if let worst = live.penState.lowBatteries(threshold: config.lowBatteryPercent, now: now).first {
+            lowPen = (name: live.pens.name(mac: worst.mac), percent: worst.reading.battery)
+        } else {
+            lowPen = nil
         }
 
         status = currentStatus(now: now)
@@ -382,6 +397,7 @@ final class PanelModel: ObservableObject {
 
         penName = "Pen"
         penDisplayName = "Everyday"
+        lowPen = ("Red one", 14)
         instanceQuestion = nil
         palette = Palette(ink: ["black": "#000000", "red": "#ff0200", "blue": "#00abeb",
                                 "green": "#3cdd00", "yellow": "#ffd400"])

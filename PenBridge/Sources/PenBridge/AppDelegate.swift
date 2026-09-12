@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var model: PanelModel!
     private var books: BookRegistry!
     private var pens: PenRegistry!
+    private var penState: PenState!
     private var settingsWindow: SettingsWindowController?
     /// So a new notebook is only looked up when the pen moves to a different one, rather than on
     /// every dot.
@@ -84,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // in the notes repo, which the processing side also reads. One source, no drift.
         books = BookRegistry(repo: config.repoURL)
         pens = PenRegistry(repo: config.repoURL)
+        penState = PenState(directory: configURL.deletingLastPathComponent())
         // The palette decides which of the strip's ten buttons mean anything. Narrowing the set is
         // an edit to one file in the repo, not a code change.
         coordinator.modeLog?.offered = Set(Palette.load(root: config.repoURL).offered)
@@ -104,7 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             viewer.receive(page: page, dot: dot, event: event)
         }
         model = PanelModel(session: session, coordinator: coordinator, config: config,
-                           books: books, pens: pens)
+                           books: books, pens: pens, penState: penState)
         model.onShowLive = { [weak self] in self?.showViewer(nil) }
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
@@ -151,7 +153,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func refreshStatusButton() {
         guard let button = statusItem.button else { return }
-        let battery = model.battery.map { (percent: $0.percent, low: $0.low) }
+        // The warning follows the flattest pen used recently, not the pen that happens to be
+        // connected: with more than one pen those are different pens most of the time.
+        let battery = model.lowPen.map { (percent: $0.percent, low: true) }
+            ?? model.battery.map { (percent: $0.percent, low: $0.low) }
         // A dimmed icon means PenBridge cannot work, not that the pen is asleep: the A1 powers
         // itself off after five minutes, so a sleeping pen is the normal state and dimming for it
         // would leave the menubar permanently faint.

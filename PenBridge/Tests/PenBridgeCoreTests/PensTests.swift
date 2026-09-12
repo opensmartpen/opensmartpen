@@ -105,6 +105,66 @@ final class PensTests: XCTestCase {
     }
 }
 
+/// The menubar warns about the flattest pen used recently, which with more than one pen is rarely
+/// the pen in your hand.
+final class PenStateTests: XCTestCase {
+    private var dir: URL!
+
+    override func setUpWithError() throws {
+        dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("pen-state-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: dir) }
+
+    func testAFlatPenInADrawerStillWarns() {
+        let state = PenState(directory: dir)
+        let now = Date()
+        state.record(mac: "aaaaaaaaaaaa", battery: 92, charging: false, at: now)
+        // Not the connected pen, and not in your hand — but you will reach for it tomorrow.
+        state.record(mac: "bbbbbbbbbbbb", battery: 9, charging: false,
+                     at: now.addingTimeInterval(-6 * 3600))
+
+        let low = state.lowBatteries(threshold: 15, now: now)
+        XCTAssertEqual(low.count, 1)
+        XCTAssertEqual(low.first?.mac, "bbbbbbbbbbbb")
+    }
+
+    func testAPenNobodyHasTouchedForDaysIsNotUrgent() {
+        let state = PenState(directory: dir)
+        let now = Date()
+        state.record(mac: "cccccccccccc", battery: 4, charging: false,
+                     at: now.addingTimeInterval(-5 * 86_400))
+        // You would find it flat and charge it. That is different from being surprised mid-sentence.
+        XCTAssertTrue(state.lowBatteries(threshold: 15, now: now).isEmpty)
+    }
+
+    func testAChargingPenIsNotAProblem() {
+        let state = PenState(directory: dir)
+        let now = Date()
+        state.record(mac: "dddddddddddd", battery: 6, charging: true, at: now)
+        XCTAssertTrue(state.lowBatteries(threshold: 15, now: now).isEmpty)
+    }
+
+    func testTheFlattestComesFirst() {
+        let state = PenState(directory: dir)
+        let now = Date()
+        state.record(mac: "eeeeeeeeeeee", battery: 14, charging: false, at: now)
+        state.record(mac: "ffffffffffff", battery: 3, charging: false, at: now)
+        XCTAssertEqual(state.lowBatteries(threshold: 15, now: now).first?.mac, "ffffffffffff")
+    }
+
+    func testReadingsSurviveARestart() {
+        let now = Date()
+        PenState(directory: dir).record(mac: "9C:7B:D2:48:33:D9", battery: 11, charging: false, at: now)
+        // A pen that went flat before you quit is still flat when you come back.
+        let reopened = PenState(directory: dir)
+        XCTAssertEqual(reopened.reading(mac: "9c7bd24833d9")?.battery, 11)
+        XCTAssertEqual(reopened.lowBatteries(threshold: 15, now: now).count, 1)
+    }
+}
+
 /// Two identical pads report the same Ncode book, so a second copy has to be noticed rather than
 /// assumed. Detection only ever asks.
 final class InstanceTests: XCTestCase {
