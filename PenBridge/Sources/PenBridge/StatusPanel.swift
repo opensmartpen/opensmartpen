@@ -178,29 +178,39 @@ struct StatusPanel: View {
     /// colour behind it, where the consequence — the page renders black — is otherwise invisible
     /// until somebody opens a PNG days later.
     private func inkRow(for pen: PanelModel.PenRow) -> some View {
-        HStack(spacing: 10) {
-            // The real segmented control, not a lookalike. It brings the system's own selected
-            // appearance, its metrics, its dark mode and its keyboard handling — all things a
-            // hand-drawn track has to imitate and will drift from.
-            Picker("", selection: Binding(
-                get: { pen.active ? model.ink : pen.ink },
-                set: { model.choose(ink: $0, for: pen) })) {
-                    ForEach(model.inks, id: \.rawValue) { colour in
+        let ink = pen.active ? model.ink : pen.ink
+        let width = pen.active ? model.width : pen.width
+        return HStack(spacing: 10) {
+            // A pop-up, not five buttons in a row. Five swatches meant five tap targets and five
+            // blocks of colour for a choice made once in a while, and macOS has one control for
+            // "pick one of a short list" — this one, which also has room to say the name.
+            Menu {
+                ForEach(model.inks, id: \.rawValue) { colour in
+                    Button {
+                        model.choose(ink: colour, for: pen)
+                    } label: {
                         Image(nsImage: Swatches.dot(model.palette.hex(for: colour)))
-                            .tag(colour)
+                        Text(colour.rawValue.capitalized)
                     }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(nsImage: Swatches.dot(model.palette.hex(for: ink)))
+                    Text(ink.rawValue.capitalized).font(.system(size: 11))
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
 
             Spacer(minLength: 0)
 
+            // Width stays a segmented control: three shapes you compare against each other, which
+            // is exactly what a segmented control is for and what a pop-up would hide.
             Picker("", selection: Binding(
-                get: { pen.active ? model.width : pen.width },
+                get: { width },
                 set: { model.choose(width: $0, for: pen) })) {
-                    // The strip offers three weights. "Default" is not a button on it — it is the
-                    // state before anything is tapped — so it is not one here either.
+                    // "Default" is not a button on the strip — it is the state before anything is
+                    // tapped — so it is not one here either.
                     ForEach([LineWidth.thin, .medium, .thick], id: \.rawValue) { weight in
                         Image(nsImage: Swatches.bar(weight)).tag(weight)
                     }
@@ -362,44 +372,34 @@ private struct RecentRow: View {
 
 /// The pen, drawn in its own ink. A highlighter is a band rather than a nib, because that is what
 /// it makes.
-/// The pen, drawn in its own ink — the same outline pencil the menubar uses, on the 16-unit grid
-/// it was authored on. One mark for the app means one mark, not a family resemblance.
-private struct Nib: View {
-    let ink: InkColor
+/// The same outline pencil the menubar draws, on the grid it was authored on. Bare rather than
+/// boxed: a filled square around a 15-point glyph is mostly square, and the tile itself is already
+/// the thing that can be filled.
+private struct Pencil: View {
+    let colour: Color
     let size: CGFloat
 
     var body: some View {
-        let fill = Color(inkHex: Palette.hexForPreview(ink)) ?? Color.primary
-        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-            .fill(fill)
-            .frame(width: size, height: size)
-            .overlay(
-                Canvas { context, canvas in
-                    let scale = canvas.width / 16
-                    func p(_ x: Double, _ y: Double) -> CGPoint {
-                        CGPoint(x: x * scale, y: y * scale)
-                    }
-                    var body = Path()
-                    body.move(to: p(11.2, 1.6))
-                    body.addLine(to: p(14.4, 4.8))
-                    body.addLine(to: p(5.6, 13.6))
-                    body.addLine(to: p(1.9, 14.5))
-                    body.addLine(to: p(2.8, 10.8))
-                    body.closeSubpath()
-                    var ferrule = Path()
-                    ferrule.move(to: p(9.6, 3.2))
-                    ferrule.addLine(to: p(12.8, 6.4))
-
-                    // Yellow ink needs dark strokes on it; everything else takes white.
-                    let stroke: Color = ink == .yellow || ink == .white ? .black : .white
-                    for path in [body, ferrule] {
-                        context.stroke(path, with: .color(stroke),
-                                       style: StrokeStyle(lineWidth: 1.35 * scale,
-                                                          lineCap: .round, lineJoin: .round))
-                    }
-                }
-                .frame(width: size * 0.62, height: size * 0.62)
-            )
+        Canvas { context, canvas in
+            let scale = canvas.width / 16
+            func p(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x * scale, y: y * scale) }
+            var body = Path()
+            body.move(to: p(11.2, 1.6))
+            body.addLine(to: p(14.4, 4.8))
+            body.addLine(to: p(5.6, 13.6))
+            body.addLine(to: p(1.9, 14.5))
+            body.addLine(to: p(2.8, 10.8))
+            body.closeSubpath()
+            var ferrule = Path()
+            ferrule.move(to: p(9.6, 3.2))
+            ferrule.addLine(to: p(12.8, 6.4))
+            for path in [body, ferrule] {
+                context.stroke(path, with: .color(colour),
+                               style: StrokeStyle(lineWidth: 1.4 * scale,
+                                                  lineCap: .round, lineJoin: .round))
+            }
+        }
+        .frame(width: size, height: size)
     }
 }
 
@@ -419,45 +419,57 @@ private struct BatteryBar: View {
     }
 }
 
-/// One pen among several. The violet ground says which one is in your hand — reported, never
-/// chosen: a click that "selected" a pen would be a second, disagreeing answer.
+/// One pen. Open, the tile fills with that pen's own ink — which is both the selection and the
+/// answer to "what does this pen write in". Closed, it shows its battery instead, because a tile
+/// you are not using has nothing else worth saying.
+///
+/// Which pen is in your hand is reported, never chosen: a click that "selected" a pen would be a
+/// second and disagreeing answer to a question the hardware already settled.
 private struct PenTile: View {
     let pen: PanelModel.PenRow
     let open: Bool
     let tap: () -> Void
     @State private var hovering = false
 
+    private var inkColour: Color {
+        Color(inkHex: Palette.hexForPreview(pen.ink)) ?? .primary
+    }
+
+    /// What reads on top of the ink when the tile is filled.
+    private var onInk: Color {
+        pen.ink == .yellow || pen.ink == .white ? .black : .white
+    }
+
     var body: some View {
         Button(action: tap) {
-            VStack(spacing: 4) {
-                Nib(ink: pen.ink, size: 24)
+            VStack(spacing: 3) {
+                Pencil(colour: open ? onInk : inkColour, size: 16)
                 HStack(spacing: 3) {
                     if pen.active {
-                        Circle().fill(Ink.accent).frame(width: 4, height: 4)
+                        Circle().fill(open ? onInk : Ink.accent).frame(width: 4, height: 4)
                     }
                     Text(pen.name)
-                        .font(.system(size: 10, weight: pen.active ? .semibold : .regular))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(open ? onInk : Color.primary)
                         .lineLimit(1)
                 }
-                if let percent = pen.percent {
-                    BatteryBar(percent: percent, low: pen.low).frame(width: 26)
-                } else {
-                    Color.clear.frame(width: 26, height: 3)
+                // The battery gives way to the ink when the tile is open: it is still charged, and
+                // the space is better spent on what you opened the tile for.
+                if open || pen.percent == nil {
+                    Color.clear.frame(height: 3)
+                } else if let percent = pen.percent {
+                    BatteryBar(percent: percent, low: pen.low).frame(width: 30)
                 }
             }
-            .frame(width: 84)
-            .padding(.vertical, 7)
-            // Glass, not paint: the open pen sits on the system's own selected fill, and
-            // everything else is the panel's material showing through.
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(open ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.22)
-                      : hovering ? Color.primary.opacity(0.06) : Color.clear))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(open ? 0.10 : 0), lineWidth: 0.5))
+            .frame(width: 72)
+            .padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(open ? inkColour : hovering ? Color.primary.opacity(0.07) : Color.clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .help(pen.percent.map { "\(pen.name) · \($0)%" } ?? pen.name)
     }
 }
 
