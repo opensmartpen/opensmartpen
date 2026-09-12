@@ -145,6 +145,22 @@ final class ControlSurfaceTests: XCTestCase {
         XCTAssertEqual(rgb.b, 0.0, accuracy: 0.01)
     }
 
+    /// The renderer and anything drawing on screen must widen a line the same way, so the curve
+    /// lives in the repo. width_mm is the width at typical force, so that is the fixed point.
+    func testPressureWidensAroundTheRecordedWidth() throws {
+        try writePalette()
+        let p = Palette.load(root: root)
+        XCTAssertEqual(try XCTUnwrap(p.width(for: .default, force: 0.7)), 0.29, accuracy: 0.001,
+                       "typical force draws exactly the recorded width")
+        XCTAssertLessThan(try XCTUnwrap(p.width(for: .default, force: 0.2)), 0.29)
+        XCTAssertGreaterThan(try XCTUnwrap(p.width(for: .default, force: 1.0)), 0.29)
+        // Gentle on purpose: a nib does not double in width when pressed.
+        let lightest = try XCTUnwrap(p.width(for: .default, force: 0))
+        let heaviest = try XCTUnwrap(p.width(for: .default, force: 1))
+        XCTAssertLessThan(heaviest / lightest, 2.1)
+        XCTAssertNil(p.width(for: .thick, force: 0.7), "a weight the file does not record has no width")
+    }
+
     /// The pen's LED follows the choice, so a change has to announce itself.
     func testAChangeIsAnnouncedWithTheStateNowInForce() {
         let log = ModeLog(root: root)

@@ -13,6 +13,11 @@ public struct Palette: Equatable {
     public private(set) var widthMM: [String: Double] = [:]
     /// Writing that resumes after this long a silence starts again at the defaults.
     public private(set) var resetAfterHours: Double = 24
+    /// How pressure widens a line. Defined in the repo rather than in either codebase, so the
+    /// renderer and anything drawing ink on screen cannot drift apart.
+    public private(set) var pressureBase = 0.65
+    public private(set) var pressureRange = 0.7
+    public private(set) var typicalForce = 0.7
 
     public init() {}
 
@@ -32,6 +37,11 @@ public struct Palette: Equatable {
         p.ink = (o["ink"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
         p.widthMM = (o["width_mm"] as? [String: Any] ?? [:]).compactMapValues { ($0 as? NSNumber)?.doubleValue }
         p.resetAfterHours = (o["reset_after_hours"] as? NSNumber)?.doubleValue ?? p.resetAfterHours
+        if let q = o["pressure"] as? [String: Any] {
+            p.pressureBase = (q["base"] as? NSNumber)?.doubleValue ?? p.pressureBase
+            p.pressureRange = (q["range"] as? NSNumber)?.doubleValue ?? p.pressureRange
+            p.typicalForce = (q["typical_force"] as? NSNumber)?.doubleValue ?? p.typicalForce
+        }
         return p
     }
 
@@ -46,6 +56,16 @@ public struct Palette: Equatable {
 
     public func isOffered(_ colour: InkColor) -> Bool { self.ink[colour.rawValue] != nil }
     public func width(for width: LineWidth) -> Double? { widthMM[width.rawValue] }
+
+    /// The width to draw, in mm, for a line of this weight pressed this hard. Force is 0...1.
+    /// `width_mm` records the width at typical writing force, so this scales around that point:
+    /// pressing harder than usual widens the line and lifting thins it, and the spread is gentle
+    /// because a 0.5 mm nib does not double in width when pressed.
+    public func width(for weight: LineWidth, force: Double) -> Double? {
+        guard let drawn = width(for: weight) else { return nil }
+        let f = max(0, min(1, force))
+        return drawn * (pressureBase + pressureRange * f) / (pressureBase + pressureRange * typicalForce)
+    }
 
     /// Red, green and blue 0...1, for a caller that has to compare colours rather than draw them.
     public func components(for ink: InkColor) -> (r: Double, g: Double, b: Double)? {

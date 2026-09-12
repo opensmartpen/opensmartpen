@@ -105,10 +105,6 @@ def load_modes(repo: pathlib.Path) -> list[dict]:
     return events
 
 
-# width_for widens with pressure; this is the multiplier at typical writing force (0.7). palette.json
-# records the width actually drawn, so divide by this to get the base the renderer wants.
-TYPICAL_PRESSURE = 0.65 + 0.7 * 0.7
-
 DEFAULT_INK, DEFAULT_WIDTH = "black", "default"
 
 
@@ -150,6 +146,7 @@ def apply_modes(strokes: list[Stroke], events: list[dict], palette: dict, nib_mm
                 boundaries: list[int] | None = None, pens: Pens | None = None) -> list[str]:
     """Give each stroke the ink and width in force when it was written. Returns any complaints."""
     inks, widths = palette.get("ink", {}), palette.get("width_mm", {})
+    typical = typical_multiplier(palette.get("pressure"))
     boundaries = boundaries or []
     unmeasured = set()
     for s in strokes:
@@ -171,7 +168,7 @@ def apply_modes(strokes: list[Stroke], events: list[dict], palette: dict, nib_mm
             s.color = hex_value
         elif ink_name != DEFAULT_INK:
             unmeasured.add(ink_name)
-        s.nib = widths[width_name] / TYPICAL_PRESSURE if width_name in widths else nib_mm
+        s.nib = widths[width_name] / typical if width_name in widths else nib_mm
     return [f"ink '{n}' is unmeasured, drawn black" for n in sorted(unmeasured)]
 
 
@@ -192,10 +189,24 @@ def guess_geometry(strokes: list[Stroke]) -> dict:
     return {"paper": "A4", "width_mm": w, "height_mm": h, "source": "guessed (overflows)"}
 
 
-def width_for(force: float, base: float) -> float:
+# The pressure curve, and the multiplier at typical writing force. Both come from palette.json so
+# that the renderer, the live view and anything else drawing ink use one definition; PRESSURE is
+# only the fallback for a repo that has no palette yet.
+PRESSURE = {"base": 0.65, "range": 0.7, "typical_force": 0.7}
+
+
+def width_for(force: float, base: float, pressure: dict | None = None) -> float:
     """Nib width in mm. Force is 0..1 and mostly sits mid-range, so the spread is gentle:
     a 0.5 mm gel nib does not double in width when pressed."""
-    return base * (0.65 + 0.7 * max(0.0, min(1.0, force)))
+    p = pressure or PRESSURE
+    return base * (p["base"] + p["range"] * max(0.0, min(1.0, force)))
+
+
+def typical_multiplier(pressure: dict | None = None) -> float:
+    """What width_for returns at typical writing force, as a multiple of the base. palette.json
+    records the width actually drawn, so dividing by this gives the base the renderer wants."""
+    p = pressure or PRESSURE
+    return p["base"] + p["range"] * p["typical_force"]
 
 
 def path_data(dots: list, decimals: int = 2) -> str:
