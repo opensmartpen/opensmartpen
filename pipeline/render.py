@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import pathlib
 import sys
@@ -23,6 +24,12 @@ import sys
 from books import Books, page_dir, page_stem, parse_raw_path
 
 MM_PER_CELL = 2.371
+
+# Width of the ink line in millimetres at middling pressure, i.e. what the refill actually lays
+# down, not the diameter of the ball. Measured against Neo Studio, which exports each stroke as a
+# filled outline rather than a stroked path: its default black came to 0.29 mm, so 0.25 here lands
+# on the same line once pressure widens it. Override with --nib.
+NIB_MM = 0.25
 
 # Paper sizes in millimetres, widest first, used when a book has no recorded geometry.
 PAPERS = {
@@ -32,16 +39,25 @@ PAPERS = {
 }
 
 
+# Ncode books that are printed control surfaces rather than paper. Mirrors Config.controlBooks in
+# PenBridge; taps on them are stored in raw as evidence but are never pages, so they are not drawn.
+CONTROL_BOOKS = {"s3/o1013/b1"}
+
+
 class Stroke:
-    __slots__ = ("start", "end", "color", "tip", "dots", "src")
+    __slots__ = ("start", "end", "color", "tip", "dots", "src", "nib", "ink_name")
 
     def __init__(self, o: dict):
         self.start = o["start"]
         self.end = o["end"]
+        # The pen always stamps black: it has no idea what the paper controller selected, and
+        # NISDK3 cannot tell it. Colour is decided here, from the mode log.
         self.color = o.get("color", "#000000")
         self.tip = o.get("tip", "pen")
         self.src = o.get("src", "live")
         self.dots = o["dots"]
+        self.nib = NIB_MM
+        self.ink_name = None
 
 
 def read_page(path: pathlib.Path) -> list[Stroke]:
@@ -56,6 +72,104 @@ def read_page(path: pathlib.Path) -> list[Stroke]:
             strokes.append(Stroke(o))
     strokes.sort(key=lambda s: s.start)
     return strokes
+
+
+def load_palette(repo: pathlib.Path) -> dict:
+    """Ink hexes and line widths, from the repo rather than from code, so the panel and the
+    renderer cannot disagree about what `red` looks like."""
+    path = repo / "palette.json"
+    if not path.exists():
+        return {"ink": {}, "width_mm": {}}
+    return json.loads(path.read_text())
+
+
+def load_modes(repo: pathlib.Path) -> list[dict]:
+    """Every ink and width change, oldest first *by its own timestamp*.
+
+    The file is not in time order. A tap made away from the Mac waits in pen memory and is
+    appended at the next drain, long after events that happened later. Each line therefore records
+    only what changed, and the state at any moment is the replay of everything at or before it.
+    """
+    path = repo / "raw" / "mode.jsonl"
+    if not path.exists():
+        return []
+    events = []
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        o = json.loads(line)
+        if o.get("t") == "mode":
+            events.append(o)
+    events.sort(key=lambda e: e["at"])
+    return events
+
+
+# width_for widens with pressure; this is the multiplier at typical writing force (0.7). palette.json
+# records the width actually drawn, so divide by this to get the base the renderer wants.
+TYPICAL_PRESSURE = 0.65 + 0.7 * 0.7
+
+DEFAULT_INK, DEFAULT_WIDTH = "black", "default"
+
+
+def load_timeline(repo: pathlib.Path) -> list[int]:
+    """Every stroke start time in the repo, sorted, taps included.
+
+    The pen returns to its defaults after a long enough gap in writing, and that gap is measured
+    between consecutive strokes anywhere — not within a page. Turning a page is not a reset, and
+    writing on page 3 after page 7 is not one either. Nothing records the reset: every stroke
+    already carries an absolute timestamp, so the boundary is derived, and there is no third
+    writer to keep in step.
+
+    Taps count as writing here. Otherwise tapping red after a week away, then writing, would put
+    the boundary *after* the tap and throw the colour away — which is the opposite of what the
+    person just asked for.
+    """
+    starts = []
+    for f in (repo / "raw").rglob("*.jsonl"):
+        if f.name == "mode.jsonl":
+            continue
+        for line in f.read_text().splitlines():
+            if not line.strip():
+                continue
+            o = json.loads(line)
+            if o.get("t") == "stroke" and o.get("dots"):
+                starts.append(o["start"])
+    starts.sort()
+    return starts
+
+
+def reset_boundaries(timeline: list[int], gap_hours: float) -> list[int]:
+    """The moments at which writing resumed after a long enough silence. Everything chosen before
+    such a moment stops applying: a colour picked last week must not still be in force today."""
+    gap_ms = gap_hours * 3600_000
+    return [t for prev, t in zip(timeline, timeline[1:]) if t - prev > gap_ms]
+
+
+def apply_modes(strokes: list[Stroke], events: list[dict], palette: dict, nib_mm: float,
+                boundaries: list[int] | None = None) -> list[str]:
+    """Give each stroke the ink and width in force when it was written. Returns any complaints."""
+    inks, widths = palette.get("ink", {}), palette.get("width_mm", {})
+    boundaries = boundaries or []
+    unmeasured = set()
+    for s in strokes:
+        # Everything chosen since writing last resumed, and nothing from before it.
+        since = boundaries[bisect.bisect_right(boundaries, s.start) - 1] if boundaries and boundaries[0] <= s.start else None
+        ink_name, width_name = DEFAULT_INK, DEFAULT_WIDTH
+        for e in events:
+            if e["at"] > s.start:
+                break
+            if since is not None and e["at"] < since:
+                continue
+            ink_name = e.get("ink", ink_name)
+            width_name = e.get("width", width_name)
+        s.ink_name = ink_name
+        hex_value = inks.get(ink_name)
+        if hex_value:
+            s.color = hex_value
+        elif ink_name != DEFAULT_INK:
+            unmeasured.add(ink_name)
+        s.nib = widths[width_name] / TYPICAL_PRESSURE if width_name in widths else nib_mm
+    return [f"ink '{n}' is unmeasured, drawn black" for n in sorted(unmeasured)]
 
 
 def guess_geometry(strokes: list[Stroke]) -> dict:
@@ -103,7 +217,7 @@ def path_data(dots: list, decimals: int = 2) -> str:
     return "".join(out)
 
 
-def render_svg(strokes: list[Stroke], geom: dict, nib_mm: float = 0.5, crop: bool = False) -> str:
+def render_svg(strokes: list[Stroke], geom: dict, nib_mm: float = NIB_MM, crop: bool = False) -> str:
     w, h = geom["width_mm"], geom["height_mm"]
     ox = oy = 0.0
     if crop:
@@ -123,10 +237,10 @@ def render_svg(strokes: list[Stroke], geom: dict, nib_mm: float = 0.5, crop: boo
         if s.tip == "eraser":
             continue
         # One path per run of similar pressure keeps the file small while still varying width.
-        runs, cur, cur_w = [], [s.dots[0]], width_for(s.dots[0][2], nib_mm)
+        runs, cur, cur_w = [], [s.dots[0]], width_for(s.dots[0][2], s.nib)
         for d in s.dots[1:]:
-            wd = width_for(d[2], nib_mm)
-            if abs(wd - cur_w) > nib_mm * 0.12:
+            wd = width_for(d[2], s.nib)
+            if abs(wd - cur_w) > s.nib * 0.12:
                 cur.append(d)
                 runs.append((cur, cur_w))
                 cur, cur_w = [d], wd
@@ -145,7 +259,7 @@ def content_box(strokes: list[Stroke], pad_mm: float = 6.0) -> tuple[float, floa
     return (min(xs) - pad_mm, min(ys) - pad_mm, max(xs) + pad_mm, max(ys) + pad_mm)
 
 
-def render_png(strokes: list[Stroke], png_path: pathlib.Path, nib_mm: float = 0.5,
+def render_png(strokes: list[Stroke], png_path: pathlib.Path, nib_mm: float = NIB_MM,
                dpi: float = 200, max_px: int = 2200, min_px: int = 700, ss: int = 3) -> bool:
     """Rasterise the written area straight from the strokes.
 
@@ -181,7 +295,7 @@ def render_png(strokes: list[Stroke], png_path: pathlib.Path, nib_mm: float = 0.
         if s.tip == "eraser":
             continue
         pts = [pt(dd) for dd in s.dots]
-        widths = [max(1.0, width_for(dd[2], nib_mm) * scale * ss) for dd in s.dots]
+        widths = [max(1.0, width_for(dd[2], s.nib) * scale * ss) for dd in s.dots]
         if len(pts) == 1:
             r = widths[0] / 2
             d.ellipse([pts[0][0] - r, pts[0][1] - r, pts[0][0] + r, pts[0][1] + r], fill=s.color)
@@ -199,13 +313,23 @@ def render_png(strokes: list[Stroke], png_path: pathlib.Path, nib_mm: float = 0.
 
 
 def render_file(raw: pathlib.Path, repo: pathlib.Path, books: Books, out: pathlib.Path | None,
-                png: bool, crop: bool) -> None:
+                png: bool, crop: bool, nib_mm: float = NIB_MM,
+                palette: dict | None = None, modes: list[dict] | None = None,
+                boundaries: list[int] | None = None) -> None:
     book_id, ncode_page = parse_raw_path(raw)
+    if book_id in CONTROL_BOOKS:
+        print(f"{book_id}/p{ncode_page}: control surface, not a page")
+        return
     book = books.for_id(book_id)
     strokes = read_page(raw)
     if not strokes:
         print(f"{book_id}/p{ncode_page}: no strokes")
         return
+    palette = palette if palette is not None else load_palette(repo)
+    modes = modes if modes is not None else load_modes(repo)
+    if boundaries is None:
+        boundaries = reset_boundaries(load_timeline(repo), palette.get("reset_after_hours", 24))
+    complaints = apply_modes(strokes, modes, palette, nib_mm, boundaries)
     if book and book.has_geometry:
         geom = {"paper": book.title, "width_mm": book.width_mm,
                 "height_mm": book.height_mm, "source": book.source}
@@ -215,11 +339,11 @@ def render_file(raw: pathlib.Path, repo: pathlib.Path, books: Books, out: pathli
     stem = page_stem(book, ncode_page)
     svg_path = out or (page_dir(repo, book, book_id) / f"{stem}.svg")
     svg_path.parent.mkdir(parents=True, exist_ok=True)
-    svg_path.write_text(render_svg(strokes, geom, crop=crop))
+    svg_path.write_text(render_svg(strokes, geom, nib_mm=nib_mm, crop=crop))
     where = f"{book.slug if book else book_id}/{stem}"
     note = f"{where}: {len(strokes)} strokes -> {svg_path.name}  [{geom['paper']}]"
     if png:
-        note += "  +png" if render_png(strokes, svg_path.with_suffix(".png")) else "  (png failed)"
+        note += "  +png" if render_png(strokes, svg_path.with_suffix(".png"), nib_mm=nib_mm) else "  (png failed)"
     print(note)
 
 
@@ -231,19 +355,23 @@ def main() -> None:
     ap.add_argument("-o", "--out", help="output .svg path (single file only)")
     ap.add_argument("--png", action="store_true", help="also write a PNG next to the SVG")
     ap.add_argument("--crop", action="store_true", help="trim to the written area instead of the whole sheet")
+    ap.add_argument("--nib", type=float, default=NIB_MM, help=f"ink width in mm at middling pressure (default {NIB_MM})")
     a = ap.parse_args()
 
     repo = pathlib.Path(a.repo).expanduser()
     books = Books(repo)
+    palette, modes = load_palette(repo), load_modes(repo)
+    boundaries = reset_boundaries(load_timeline(repo), palette.get("reset_after_hours", 24))
     if a.all:
-        files = sorted((repo / "raw").rglob("*.jsonl"))
+        files = sorted(f for f in (repo / "raw").rglob("*.jsonl") if f.name != "mode.jsonl")
         if not files:
             raise SystemExit(f"no raw pages under {repo / 'raw'}")
         for f in files:
-            render_file(f, repo, books, None, a.png, a.crop)
+            render_file(f, repo, books, None, a.png, a.crop, a.nib, palette, modes, boundaries)
     elif a.raw:
         render_file(pathlib.Path(a.raw).expanduser(), repo, books,
-                    pathlib.Path(a.out).expanduser() if a.out else None, a.png, a.crop)
+                    pathlib.Path(a.out).expanduser() if a.out else None, a.png, a.crop, a.nib,
+                    palette, modes, boundaries)
     else:
         ap.error("give a raw file or --all")
 
