@@ -91,16 +91,17 @@ struct StatusPanel: View {
         }
     }
 
-    /// Time since the last sync — the one thing the headline cannot carry on its own. While the pen
-    /// is away it gives way to how long it has been away, but only once that is long enough to be
-    /// odd: an absent pen may be holding pages, and nothing here can count them.
+    /// How long the pen has been away, and only that.
+    ///
+    /// Time since the last sync used to live here too, and it earned nothing: when the headline
+    /// already says "All synced", the age of that sync answers a question nobody asked — and if it
+    /// is old with nothing pending, that only means you have not written, which the recent list
+    /// says better. A pen that has not been seen for days is different: it may be holding pages,
+    /// and nothing on this Mac can count them.
     private var headerMeta: String? {
-        if case .asleep = model.status, let seen = model.lastSeen,
-           now.timeIntervalSince(seen) > Self.staleAfter {
-            return "seen \(Self.brief(since: seen, now: now))"
-        }
-        guard model.pending.isEmpty, let last = model.lastPublish else { return nil }
-        return Self.brief(since: last.date, now: now)
+        guard case .asleep = model.status, let seen = model.lastSeen,
+              now.timeIntervalSince(seen) > Self.staleAfter else { return nil }
+        return "seen \(Self.brief(since: seen, now: now))"
     }
 
     /// A pen unseen for longer than this is worth mentioning. Shorter than this is an ordinary day.
@@ -133,10 +134,13 @@ struct StatusPanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
-            Button(model.isPublishing ? "Syncing" : "Sync now", action: model.publishNow)
-                .buttonStyle(InkButtonStyle(filled: true))
+            // Quiet on purpose. Syncing happens on its own once you stop writing; this is only
+            // here for the moment you are closing the lid and do not want to wait out the
+            // countdown. A filled primary button would imply the app needs you, and it does not.
+            Button(model.isPublishing ? "Syncing…" : "Sync now", action: model.publishNow)
+                .buttonStyle(QuietButtonStyle())
                 .disabled(model.isPublishing)
-                .padding(.top, 2)
+                .padding(.top, 3)
         }
     }
 
@@ -301,7 +305,7 @@ private struct RecentRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 7) {
-                PaperMark(shape: book.shape)
+                PaperMark(shape: book.shape, binding: book.binding)
                 Text(book.title)
                     .font(.system(size: 11.5))
                     .lineLimit(1)
@@ -374,14 +378,15 @@ private struct WidthMark: View {
 
     var body: some View {
         Button(action: choose) {
-            Capsule().fill(Color.primary.opacity(selected ? 0.85 : 0.45))
+            Capsule().fill(Color.primary.opacity(selected ? 0.9 : 0.3))
                 .frame(height: thickness)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, (20 - thickness) / 2)
+                // Selection is a soft ground behind the line, not a border around it: at one point
+                // thick, an outline is the only thing you can see and the weight itself vanishes.
                 .background(RoundedRectangle(cornerRadius: 5)
-                    .stroke(selected ? Color.primary : Color.clear, lineWidth: 1))
-                .background(RoundedRectangle(cornerRadius: 5)
-                    .fill(hovering && !selected ? Color.primary.opacity(0.06) : Color.clear))
+                    .fill(selected ? Color.primary.opacity(0.12)
+                          : hovering ? Color.primary.opacity(0.05) : Color.clear))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -404,24 +409,45 @@ private extension Color {
     }
 }
 
-/// The paper itself, in its real proportions. Nothing invented: the size is already in the book
-/// record, so a wide pad and a tall notebook are told apart without anyone choosing a colour.
+/// The paper itself, in its real proportions — and drawn as the object it is. A pad is a loose
+/// sheet; a bound notebook gets the elastic band across it, which is how you tell the two apart on
+/// a desk without reading anything.
+///
+/// Nothing here is invented: the proportions come from the recorded paper size and the band from
+/// the recorded binding.
 private struct PaperMark: View {
     let shape: KnownBooks.Shape
+    let binding: KnownBooks.Binding
 
     private var size: CGSize {
         switch shape {
-        case .wide: return CGSize(width: 11, height: 8)
-        case .page: return CGSize(width: 8, height: 10.5)
-        case .pocket: return CGSize(width: 6.5, height: 10.5)
+        case .wide: return CGSize(width: 12, height: 8.5)
+        case .page: return CGSize(width: 8.5, height: 11)
+        case .pocket: return CGSize(width: 7.5, height: 11)
         }
     }
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 1.5)
-            .stroke(Color.secondary.opacity(0.55), lineWidth: 1)
-            .frame(width: size.width, height: size.height)
-            .frame(width: 12, height: 12)
+        Canvas { context, canvas in
+            let origin = CGPoint(x: (canvas.width - size.width) / 2,
+                                 y: (canvas.height - size.height) / 2)
+            let body = CGRect(origin: origin, size: size)
+            let ink = Color.secondary.opacity(0.65)
+
+            context.stroke(Path(roundedRect: body, cornerRadius: 1.5),
+                           with: .color(ink), lineWidth: 1)
+
+            if binding == .bound {
+                // The elastic, closer to the spine side than the middle, running off both edges
+                // exactly as it does on the real thing.
+                let x = body.minX + size.width * 0.72
+                var band = Path()
+                band.move(to: CGPoint(x: x, y: body.minY - 1))
+                band.addLine(to: CGPoint(x: x, y: body.maxY + 1))
+                context.stroke(band, with: .color(ink), lineWidth: 1)
+            }
+        }
+        .frame(width: 14, height: 13)
     }
 }
 
@@ -456,6 +482,22 @@ private struct InkButtonStyle: ButtonStyle {
                 .stroke(filled ? Color.clear : Color.primary.opacity(0.15)))
             .foregroundStyle(filled ? (isEnabled ? Color.white : Color.secondary) : Color.primary)
             .opacity(configuration.isPressed ? 0.75 : 1)
+            .contentShape(Rectangle())
+    }
+}
+
+/// A button for something the app will do anyway. It reads as available rather than as required.
+private struct QuietButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .foregroundStyle(isEnabled ? Color.secondary : Color.secondary.opacity(0.5))
+            .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
+            .opacity(configuration.isPressed ? 0.6 : 1)
             .contentShape(Rectangle())
     }
 }

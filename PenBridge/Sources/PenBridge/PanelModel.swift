@@ -109,6 +109,9 @@ final class PanelModel: ObservableObject {
         let page: PageID
         let pageLabel: String
         let shape: KnownBooks.Shape
+        /// Loose sheets or a bound notebook — the two look different on the desk, so they look
+        /// different here.
+        let binding: KnownBooks.Binding
     }
 
     struct Battery: Equatable {
@@ -247,7 +250,8 @@ final class PanelModel: ObservableObject {
                               title: label.title,
                               page: entry.page,
                               pageLabel: label.detail ?? "",
-                              shape: books.record(for: entry.page)?.shape ?? .page)
+                              shape: books.record(for: entry.page)?.shape ?? .page,
+                              binding: books.record(for: entry.page)?.binding ?? .pad)
         }
         recent = Array(recent.prefix(4))
     }
@@ -391,10 +395,10 @@ final class PanelModel: ObservableObject {
         recent = [
             RecentBook(id: "b1", title: "LAMY digital paper",
                        page: PageID(section: 3, owner: 1012, book: 3017, page: 6),
-                       pageLabel: "page 6", shape: .pocket),
+                       pageLabel: "page 6", shape: .pocket, binding: .bound),
             RecentBook(id: "b2", title: "Ncode A4 pad",
                        page: PageID(section: 3, owner: 27, book: 450, page: 3),
-                       pageLabel: "page 3", shape: .page),
+                       pageLabel: "page 3", shape: .page, binding: .pad),
         ]
 
         switch scenario {

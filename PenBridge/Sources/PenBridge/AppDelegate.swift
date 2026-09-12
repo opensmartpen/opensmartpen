@@ -242,9 +242,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             viewer.attach(modeLog: coordinator.modeLog)
             viewerWindow = ViewerWindowController(viewer: viewer)
         }
-        if let page { viewer.show(page: page) } else { viewer.goLive() }
+        if let page { viewer.show(page: page) } else { viewer.goLatest() }
         NSApp.activate(ignoringOtherApps: true)
         viewerWindow?.showWindow(nil)
+        viewerWindow?.retitle()
         viewerWindow?.window?.makeKeyAndOrderFront(nil)
     }
 

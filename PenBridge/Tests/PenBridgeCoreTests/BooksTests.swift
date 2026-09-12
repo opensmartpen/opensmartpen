@@ -15,7 +15,7 @@ final class BooksTests: XCTestCase {
         try FileManager.default.createDirectory(at: repo.appendingPathComponent("books"),
                                                 withIntermediateDirectories: true)
         try write("a4-pad", #"{"id":"s3/o27/b450","title":"Ncode A4 pad","width_mm":210.0,"first_page":1}"#)
-        try write("lamy", #"{"id":"s3/o1012/b3017","title":"LAMY digital paper","first_page":1}"#)
+        try write("lamy", #"{"id":"s3/o1012/b3017","title":"LAMY notebook","first_page":1}"#)
     }
 
     override func tearDownWithError() throws {
@@ -29,7 +29,7 @@ final class BooksTests: XCTestCase {
     func testPagesAreLabelledFromTheRepoRecord() {
         let books = BookRegistry(repo: repo)
         XCTAssertEqual(books.label(for: padPage), PageLabel(title: "Ncode A4 pad", detail: "page 3"))
-        XCTAssertEqual(books.label(for: lamyPage).oneLine, "LAMY digital paper · page 15")
+        XCTAssertEqual(books.label(for: lamyPage).oneLine, "LAMY notebook · page 15")
     }
 
     func testFirstPageShiftsNcodeOntoThePrintedNumber() throws {
@@ -55,9 +55,9 @@ final class BooksTests: XCTestCase {
         let books = BookRegistry(repo: repo)
         let lamy = PageID(section: 3, owner: 1012, book: 3017, page: 4)
         let record = try XCTUnwrap(books.ensureRecord(for: lamy))
-        XCTAssertEqual(record.title, "LAMY digital paper")
+        XCTAssertEqual(record.title, "LAMY notebook")
         XCTAssertEqual(record.widthMM, 145, "a product we know on sight needs no measuring")
-        XCTAssertEqual(books.label(for: lamy), PageLabel(title: "LAMY digital paper", detail: "page 4"))
+        XCTAssertEqual(books.label(for: lamy), PageLabel(title: "LAMY notebook", detail: "page 4"))
     }
 
     func testAnUnrecognisedBookIsNamedAfterItsPaperNotItsCode() throws {

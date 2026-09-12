@@ -66,9 +66,6 @@ enum StatusIcon {
             ferrule.move(to: p(9.6, 3.2))
             ferrule.line(to: p(12.8, 6.4))
 
-            // A tinted icon is not a template, so it has to pick its own foreground. labelColor
-            // resolves against the menubar's appearance at draw time, and the icon is rebuilt on
-            // every state change, so it follows a light/dark switch within a tick.
             NSColor.labelColor.setStroke()
             for path in [body, ferrule] {
                 path.lineWidth = 1.35 * scale
@@ -79,23 +76,24 @@ enum StatusIcon {
 
             // The drop sits in the corner the pencil leaves empty, inside the same square: beside
             // it the mark would be wider than every other menubar item and shift when it appeared.
+            //
+            // Waiting pages draw it in the pencil's own ink rather than in violet. The menubar is
+            // tinted by whatever wallpaper is behind it, so no single hue stays legible there —
+            // violet on a pink desktop is nearly invisible. As a template the whole mark is
+            // recoloured by AppKit to contrast with whatever it is sitting on, every time. The
+            // signal is that a drop is there at all, which survives any background; violet still
+            // does its job in the panel, where we own the surface it sits on.
             if drop || tint != nil {
-                (tint ?? accent).setFill()
-                let r: CGFloat = 2.1 * scale
+                (tint ?? .black).setFill()
+                let r: CGFloat = 2.3 * scale
                 let c = p(3, 3)
                 NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)).fill()
             }
             return true
         }
-        // Only a plain pencil can be a template. Anything carrying colour has to say what colour.
-        image.isTemplate = !drop && tint == nil
+        // A red battery is a colour we mean; everything else is a template so the menubar can
+        // decide what contrasts with it.
+        image.isTemplate = tint == nil
         return image
-    }
-
-    /// Violet ink: work in flight, and only that.
-    private static let accent = NSColor(name: nil) {
-        $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.655, green: 0.592, blue: 0.941, alpha: 1)
-            : NSColor(srgbRed: 0.357, green: 0.247, blue: 0.769, alpha: 1)
     }
 }

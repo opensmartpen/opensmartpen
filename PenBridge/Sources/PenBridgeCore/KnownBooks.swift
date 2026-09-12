@@ -21,10 +21,10 @@ public enum KnownBooks {
     /// Keyed by `PageID.bookKey`, `s{section}/o{owner}/b{book}`.
     public static let products: [String: Product] = [
         "s3/o27/b450": Product(
-            title: "Ncode A4 pad", binding: .pad, widthMM: 210, heightMM: 297, firstPage: 1,
+            title: "A4 pad", binding: .pad, widthMM: 210, heightMM: 297, firstPage: 1,
             note: "NeoLAB Ncode A4 bundle (NC-P0081E)"),
         "s3/o1012/b3017": Product(
-            title: "LAMY digital paper", binding: .bound, widthMM: 145, heightMM: 210, firstPage: 1,
+            title: "LAMY notebook", binding: .bound, widthMM: 145, heightMM: 210, firstPage: 1,
             note: "NeoLAB LAMY digital paper, 192 pages, dot ruled (145 x 210 mm)"),
     ]
 
