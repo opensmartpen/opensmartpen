@@ -16,14 +16,40 @@ final class PinnedPanelController: NSWindowController, NSWindowDelegate {
         self.model = model
         host = NSHostingController(rootView: StatusPanel(model: model, now: now))
 
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "PenBridge"
-        window.contentViewController = host
+        // No titlebar. A close button, a minimise button and a zoom button on a fixed-size panel
+        // are three controls that either do nothing or duplicate the pin in its corner — and a
+        // pinned panel should be the same object you were just looking at, not a window version
+        // of it.
+        let window = PinnedWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Drag it by anywhere, since there is no bar to drag it by.
         window.isMovableByWindowBackground = true
+
+        let blur = NSVisualEffectView()
+        blur.material = .menu
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = 10
+        blur.layer?.cornerCurve = .continuous
+        blur.layer?.masksToBounds = true
+
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        blur.addSubview(host.view)
+        NSLayoutConstraint.activate([
+            host.view.topAnchor.constraint(equalTo: blur.topAnchor),
+            host.view.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
+            host.view.bottomAnchor.constraint(equalTo: blur.bottomAnchor),
+        ])
+        window.contentView = blur
+
         super.init(window: window)
         window.delegate = self
         fit()
@@ -51,7 +77,7 @@ final class PinnedPanelController: NSWindowController, NSWindowDelegate {
         host.view.layoutSubtreeIfNeeded()
         let size = host.view.fittingSize
         guard size.width > 0, size.height > 0, let window else { return }
-        guard window.contentLayoutRect.size != size else { return }
+        guard window.frame.size != size else { return }
         let top = window.frame.maxY
         window.setContentSize(size)
         window.setFrameTopLeftPoint(NSPoint(x: window.frame.minX, y: top))
@@ -60,4 +86,10 @@ final class PinnedPanelController: NSWindowController, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         onClose?()
     }
+}
+
+/// A borderless window still has to be able to take a click and a keystroke.
+private final class PinnedWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
