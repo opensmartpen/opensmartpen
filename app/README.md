@@ -30,33 +30,75 @@ Requires Xcode 15+ (Swift 5.9) on macOS 13+. Depends on NeoLAB's `NISDK3` (GPL-3
 ```sh
 cd app
 swift test                         # core logic, no hardware needed
-scripts/make-app.sh                # dist/BrainioPen.app, ad-hoc signed
-open dist/BrainioPen.app
+scripts/make-app.sh                # dist/"Brainio Pen.app", ad-hoc signed
 scripts/install-launchagent.sh     # start at login, restart on exit, logs in ~/Library/Logs/BrainioPen
 ```
 
+Run the installer from a terminal and stay with it: it opens the app once from the Finder so macOS
+raises the Bluetooth prompt, waits for you to allow it, and only then hands over to the LaunchAgent.
+That order is not cosmetic — see [Bluetooth permission](#bluetooth-permission).
+
 Running the bare binary with `swift run` also works for debugging (stderr log, AppleScript notifications), but Bluetooth permission is then attributed to the terminal and macOS notifications are unavailable. Set `BRAINIO_PEN_VERBOSE=1` for debug logging.
+
+### Bluetooth permission
+
+macOS offers the Bluetooth prompt **only to an app launched from the Finder**. One started by
+launchd is never asked: `CBCentralManager.authorization` stays `notDetermined`, and the app sits
+reporting that it is waiting — for a radio that is already switched on.
+
+Two consequences worth knowing before you go looking for a bug:
+
+- `open` on a bundle that is already running just activates the running copy. It starts no process
+  and raises no prompt, so the Finder launch has to come *before* the agent is bootstrapped. The
+  installer does it in that order.
+- The grant is keyed to the **code signature** as well as the bundle id, and an ad-hoc signature
+  changes with every build. So permission is lost on a rename *and* on a plain rebuild, and
+  `install-launchagent.sh` asks for it again each time. A Developer ID would fix this; ad-hoc
+  signing is the price of not having one.
+
+`PenSession.bluetoothProblem()` reads the authorization state and says which of the two faults it
+is, in the log and in a notification — "Bluetooth is off" and "we were never given permission" need
+opposite fixes, and the menubar can only show the first.
 
 ## Moving from PenBridge
 
-The app was called PenBridge until 2026-09-12. `scripts/install-launchagent.sh` retires the old
-`com.apoco.penbridge` agent and deletes `~/Applications/PenBridge.app` before installing this one,
-so the two never run at once — two agents would both own the pen and both commit to the notes repo.
-
-The config directory moved from `~/.config/penbridge/` to `~/.config/brainio-pen/`. On first launch
-the old one is **copied** across, so the paired pen, the PIN and the battery history survive; the
-old directory is left alone, which means an install still on the old name keeps working. Because
-`repoPath` is carried over with everything else, notes stay wherever they already are —
-`~/BrainioPen/notes` is only the default for a fresh install. Move them yourself if you want the
-name to match, and set `repoPath` to the new path:
+The app was called PenBridge until 2026-09-12. One script does the whole switch, and shows what it
+would do before it does anything:
 
 ```sh
-mv ~/PenBridge ~/BrainioPen
+scripts/migrate-from-penbridge.sh            # dry run
+scripts/migrate-from-penbridge.sh --apply
 ```
 
+It stops `com.apoco.penbridge` before moving anything — it writes to both the config directory and
+the notes repo, and would otherwise be moved out from under itself — then moves
+`~/.config/penbridge/` → `~/.config/brainio-pen/`, `~/PenBridge/notes` → `~/BrainioPen/notes` (with
+`repoPath` following it), and the logs, before building and installing the new agent. Every step
+checks whether it has already happened, so running it twice is safe, and it refuses to merge two
+note histories if both paths exist.
+
+`install-launchagent.sh` retires the old agent and deletes `~/Applications/PenBridge.app` on its
+own too, so the two never run at once — two agents would both own the pen and both commit to the
+notes repo.
+
+Without the script, the app still looks after itself: on first launch it **copies** a
+`~/.config/penbridge/` directory across, whole, so the paired pen, the PIN and the battery history
+survive. The old directory is left alone, so an install still on the old name keeps working, and
+`repoPath` comes across with everything else — `~/BrainioPen/notes` is only the default for a fresh
+install, never something imposed on notes that already exist.
+
 The bundle id changed from `com.apoco.penbridge` to `com.brainio.pen`. macOS ties Bluetooth and
-notification permission to the bundle id, so both are asked for once more on first launch; until
-Bluetooth is granted the pen will not connect. Saved window positions reset for the same reason.
+notification permission to the bundle id, so both are asked for once more; until Bluetooth is
+granted the pen will not connect. Saved window positions reset for the same reason. The installer
+walks you through the grant — see [Bluetooth permission](#bluetooth-permission) for why the order
+matters.
+
+One order to avoid: launching the new app *before* moving the old config across. That writes a
+fresh defaults-only `config.json`, and the pen then looks unpaired even though its details are
+still sitting in `~/.config/penbridge/`. Adoption fills in whatever is missing rather than
+refusing, so a bare directory is fine, but an existing `config.json` is never overwritten — it
+might be one you meant. The app warns on every launch when it finds itself running on pure
+defaults with a PenBridge-era config still on disk, and says how to fix it.
 
 ## Working on the design
 
@@ -75,6 +117,18 @@ window without the rebuild loop.
 
 The states come from `PanelModel.Scenario` rather than from hardware, because a failing push, a
 memory drain and a first run each take deliberate setup to see even once.
+
+### The app icon
+
+`scripts/make-icon.swift` draws `Resources/AppIcon.icns`. It is the menubar pencil: the same path
+on the same 16-unit grid as `StatusIcon.pencil`, kept as code rather than as a checked-in image so
+the two cannot drift apart unnoticed — redraw the pencil and this is the one file to match. Each
+size is redrawn rather than downsampled, because a 1.35-unit outline resampled to 16 px turns to
+mush.
+
+It shows the resting pencil, with no ink drop and no colour: the drop means pages are waiting to
+sync, and an icon has no business claiming a state it cannot know. `make-app.sh` generates the
+`.icns` if it is missing, and it is not committed — derived, like everything else here.
 
 ## Pens and notebooks
 

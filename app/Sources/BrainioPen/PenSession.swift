@@ -116,7 +116,18 @@ final class PenSession: NSObject {
         guard pen == nil, connecting == nil else { return }
         guard PenFinder.shared.bluetoothOn else {
             if state != .bluetoothOff {
-                Log.warn("bluetooth is off or Brainio Pen is not allowed to use it (System Settings → Privacy & Security → Bluetooth); waiting")
+                let problem = Self.bluetoothProblem()
+                Log.warn(problem)
+                // The panel and the tooltip can only say "Bluetooth off", which is a lie when the
+                // radio is on and the real fault is permission we were never given — and it is a
+                // lie that costs an afternoon, because switching Bluetooth off and on again will
+                // never fix it. A missing grant also never repairs itself, so it is exactly the
+                // kind of thing this app is supposed to speak up about. Deduped by the notifier.
+                if CBCentralManager.authorization != .allowedAlways {
+                    notifier.post(Notice(key: "bluetooth-permission",
+                                         title: "Brainio Pen cannot use Bluetooth",
+                                         body: problem))
+                }
             }
             state = .bluetoothOff
             return
@@ -126,6 +137,30 @@ final class PenSession: NSObject {
             scanning = true
             PenFinder.shared.scan(0)
             Log.debug("scanning for pens")
+        }
+    }
+
+    /// Why there is no Bluetooth, in words that say what to do about it.
+    ///
+    /// The SDK reports one flag for two unrelated situations, and they need opposite fixes: a radio
+    /// that is switched off, and permission this app was never given. Guessing wrong costs an hour
+    /// of staring at a radio that is already on, because the app just says it is "waiting".
+    ///
+    /// The grant is tied to the code signature as well as the bundle identifier, and an ad-hoc
+    /// signature changes with every build, so it is lost on a rename *and* on a plain rebuild.
+    static func bluetoothProblem() -> String {
+        switch CBCentralManager.authorization {
+        case .notDetermined:
+            return "Bluetooth permission has not been asked for yet. macOS only prompts an app "
+                 + "launched from the Finder, so open Brainio Pen.app once by hand; the LaunchAgent "
+                 + "inherits the grant afterwards."
+        case .restricted, .denied:
+            return "Brainio Pen is not allowed to use Bluetooth. Allow it in System Settings → "
+                 + "Privacy & Security → Bluetooth, then restart it."
+        case .allowedAlways:
+            return "Bluetooth is switched off; waiting for it."
+        @unknown default:
+            return "Bluetooth is unavailable for an unknown reason; waiting."
         }
     }
 

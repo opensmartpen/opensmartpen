@@ -110,6 +110,46 @@ final class StoreAndTrackerTests: XCTestCase {
                       "the old directory is copied, not emptied, so an install still on the old name keeps working")
     }
 
+    /// A build that ran once before the migration leaves the new directory behind with nothing in
+    /// it. Adoption has to fill that in, or upgrading in that order silently costs the paired pen.
+    func testLegacyConfigIsAdoptedIntoAnExistingEmptyDirectory() throws {
+        let old = root.appendingPathComponent("penbridge")
+        let new = root.appendingPathComponent("brainio-pen")
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        // The directory is already there — what a pre-migration launch leaves behind.
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+        var saved = Config()
+        saved.penMac = "9c7bd24833d9"
+        try saved.save(to: old.appendingPathComponent("config.json"))
+        try Data("{}".utf8).write(to: old.appendingPathComponent("pen-state.json"))
+
+        XCTAssertTrue(Config.adoptLegacyDirectory(at: new.appendingPathComponent("config.json"),
+                                                  legacy: old.appendingPathComponent("config.json")))
+        XCTAssertEqual(try Config.loadOrCreate(at: new.appendingPathComponent("config.json")), saved)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: new.appendingPathComponent("pen-state.json").path))
+    }
+
+    /// Anything already written under the new name is newer than what is being adopted, so it is
+    /// kept and only the missing files are filled in.
+    func testAdoptionDoesNotOverwriteFilesAlreadyUnderTheNewName() throws {
+        let old = root.appendingPathComponent("penbridge")
+        let new = root.appendingPathComponent("brainio-pen")
+        try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        var legacy = Config()
+        legacy.quietMinutes = 99
+        try legacy.save(to: old.appendingPathComponent("config.json"))
+        try Data("{\"old\":1}".utf8).write(to: old.appendingPathComponent("pen-state.json"))
+        try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
+        try Data("{\"mine\":1}".utf8).write(to: new.appendingPathComponent("pen-state.json"))
+
+        XCTAssertTrue(Config.adoptLegacyDirectory(at: new.appendingPathComponent("config.json"),
+                                                  legacy: old.appendingPathComponent("config.json")))
+        XCTAssertEqual(try Config.loadOrCreate(at: new.appendingPathComponent("config.json")).quietMinutes, 99,
+                       "config.json was missing, so it is adopted")
+        let kept = try String(contentsOf: new.appendingPathComponent("pen-state.json"), encoding: .utf8)
+        XCTAssertEqual(kept, "{\"mine\":1}", "pen-state.json was already there and is left alone")
+    }
+
     func testLegacyConfigIsNotAdoptedOverAnExistingOne() throws {
         let old = root.appendingPathComponent("penbridge")
         let new = root.appendingPathComponent("brainio-pen")

@@ -18,11 +18,14 @@ if [ "${1:-}" = "--apply" ]; then APPLY=1; fi
 LEGACY_LABEL="com.apoco.penbridge"
 LEGACY_PLIST="$HOME/Library/LaunchAgents/$LEGACY_LABEL.plist"
 LEGACY_APP="$HOME/Applications/PenBridge.app"
-LEGACY_CONFIG="$HOME/.config/penbridge"
+# Config.configBase honours XDG_CONFIG_HOME, so this has to as well — otherwise the config is
+# moved somewhere the app never looks and it quietly starts again from defaults.
+CONFIG_BASE="${XDG_CONFIG_HOME:-$HOME/.config}"
+LEGACY_CONFIG="$CONFIG_BASE/penbridge"
 LEGACY_LOGS="$HOME/Library/Logs/PenBridge"
 LEGACY_NOTES="$HOME/PenBridge/notes"
 
-CONFIG="$HOME/.config/brainio-pen"
+CONFIG="$CONFIG_BASE/brainio-pen"
 LOGS="$HOME/Library/Logs/BrainioPen"
 NOTES="$HOME/BrainioPen/notes"
 
@@ -54,12 +57,18 @@ echo
 echo "Config"
 if [ ! -d "$LEGACY_CONFIG" ]; then
   echo "  nothing at $LEGACY_CONFIG"
-elif [ -d "$CONFIG" ]; then
-  echo "  $CONFIG already exists — leaving both alone."
-  echo "  Once you are happy, delete the old one:  rm -rf $LEGACY_CONFIG"
+elif [ -f "$CONFIG/config.json" ]; then
+  echo "  $CONFIG/config.json already exists — leaving both alone."
+  echo "  CHECK IT: if it is only defaults, the paired pen is still in the older file and the"
+  echo "  app will start unpaired. Compare the two, then delete whichever you do not want:"
+  echo "      diff $LEGACY_CONFIG/config.json $CONFIG/config.json"
 else
-  say "move $LEGACY_CONFIG → $CONFIG"
-  run mv "$LEGACY_CONFIG" "$CONFIG"
+  say "move the contents of $LEGACY_CONFIG into $CONFIG"
+  run mkdir -p "$CONFIG"
+  # Contents, not the directory: a launch that happened before this script leaves an empty
+  # directory behind, and moving onto it would fail.
+  run /bin/sh -c 'cd "$1" && for f in * .[!.]*; do [ -e "$f" ] || continue; mv "$f" "$2/"; done' _ "$LEGACY_CONFIG" "$CONFIG"
+  run rmdir "$LEGACY_CONFIG" 2>/dev/null || true
 fi
 
 # ── 3. notes repo ────────────────────────────────────────────────────────────────────────────
@@ -114,7 +123,7 @@ fi
 # ── 5. build and install ─────────────────────────────────────────────────────────────────────
 echo
 echo "Install"
-say "build and install BrainioPen.app, and start com.brainio.pen"
+say "build and install \"Brainio Pen.app\", and start com.brainio.pen"
 if [ "$APPLY" = 1 ]; then
   scripts/make-app.sh
   scripts/install-launchagent.sh

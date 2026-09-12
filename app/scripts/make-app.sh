@@ -6,7 +6,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 OUT="${1:-dist}"
-APP="$OUT/BrainioPen.app"
+APP="$OUT/Brainio Pen.app"
 BUNDLE_ID="com.brainio.pen"
 VERSION="$(grep -o 'static let version = "[^"]*"' Sources/BrainioPen/AppDelegate.swift | cut -d'"' -f2)"
 
@@ -17,6 +17,11 @@ BIN=".build/release/brainio-pen"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/brainio-pen"
+# The icon is the menubar pencil; scripts/make-icon.swift draws it from the same path. Redrawn
+# every build, not cached: the whole point of generating it is that it cannot fall behind the
+# pencil it is copied from, and a stale .icns on disk would do exactly that.
+swift scripts/make-icon.swift >/dev/null
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -25,6 +30,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleExecutable</key><string>brainio-pen</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Brainio Pen</string>
@@ -43,7 +49,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature so TCC (Bluetooth, notifications) remembers the grant across rebuilds.
+# Ad-hoc signature: enough to make the bundle launchable, and nothing more. It does NOT preserve
+# TCC grants across rebuilds — the signature changes with the binary, so Bluetooth and
+# notification permission have to be granted again after every build. See README, "Moving from
+# PenBridge".
 codesign --force --sign - --identifier "$BUNDLE_ID" "$APP" >/dev/null
 echo "built $APP (v$VERSION)"
 echo "run:   open $APP"

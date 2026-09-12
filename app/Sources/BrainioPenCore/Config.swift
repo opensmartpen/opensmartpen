@@ -79,20 +79,30 @@ public struct Config: Codable, Equatable {
 
     /// Adopt a PenBridge-era config directory, so the rename does not cost the paired pen.
     ///
-    /// The whole directory is taken, not just `config.json`: `pen-state.json` sits beside it and a
-    /// half-migrated directory would forget which pen was flat. It is *copied* rather than moved —
-    /// an install that is still running on the old name keeps working, and nothing is destroyed by
-    /// a first launch. Does nothing once the new directory exists, so it runs at most once.
+    /// Everything beside `config.json` comes too — `pen-state.json` lives here, and a half-migrated
+    /// directory would forget which pen was flat. It is *copied* rather than moved: an install
+    /// still running on the old name keeps working, and nothing is destroyed by a first launch.
+    ///
+    /// The test is whether `config.json` is there, not whether the directory is. A build that ran
+    /// once before the migration leaves the directory behind holding nothing but defaults, and
+    /// refusing on that would drop the paired pen at exactly the moment someone upgrades. So files
+    /// are copied one by one into whatever is already there, and anything already present wins —
+    /// it was written under the new name, which makes it newer than what we are adopting.
     @discardableResult
     static func adoptLegacyDirectory(at url: URL = defaultLocation,
                                      legacy: URL = legacyLocation) -> Bool {
         let fm = FileManager.default
         let new = url.deletingLastPathComponent()
         let old = legacy.deletingLastPathComponent()
-        guard !fm.fileExists(atPath: new.path),
+        guard !fm.fileExists(atPath: url.path),
               fm.fileExists(atPath: legacy.path) else { return false }
         do {
-            try fm.copyItem(at: old, to: new)
+            try fm.createDirectory(at: new, withIntermediateDirectories: true)
+            for name in try fm.contentsOfDirectory(atPath: old.path) {
+                let target = new.appendingPathComponent(name)
+                guard !fm.fileExists(atPath: target.path) else { continue }
+                try fm.copyItem(at: old.appendingPathComponent(name), to: target)
+            }
             Log.info("adopted config from \(old.path) — the app was called PenBridge there")
             return true
         } catch {
@@ -106,11 +116,25 @@ public struct Config: Codable, Equatable {
         let fm = FileManager.default
         // Only the real location adopts. A caller pointing somewhere else — a test, a second
         // profile — must not be handed the config of whatever lives in the home directory.
-        if url == defaultLocation, !fm.fileExists(atPath: url.path) { adoptLegacyDirectory(at: url) }
+        let real = url == defaultLocation
+        if real, !fm.fileExists(atPath: url.path) { adoptLegacyDirectory(at: url) }
         if fm.fileExists(atPath: url.path) {
             let data = try Data(contentsOf: url)
             let decoder = JSONDecoder()
-            return try decoder.decode(Config.self, from: data)
+            let config = try decoder.decode(Config.self, from: data)
+            // A config that is still every default, with a PenBridge-era one sitting next to it,
+            // means adoption was skipped — the file was created by a launch that happened before
+            // the old directory could be taken over. Nothing is lost yet, but the pen looks
+            // unpaired and the fix is not guessable, so say it every launch until it is dealt with.
+            if real, config == Config(), fm.fileExists(atPath: legacyLocation.path) {
+                Log.warn("""
+                    \(url.path) holds nothing but defaults while \(legacyLocation.path) still \
+                    exists. The paired pen is in the older file and was not adopted. Move it \
+                    across with: rm \(url.path) && mv \(legacyLocation.deletingLastPathComponent().path)/* \
+                    \(url.deletingLastPathComponent().path)/
+                    """)
+            }
+            return config
         }
         let config = Config()
         try config.save(to: url)
