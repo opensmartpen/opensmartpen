@@ -281,10 +281,6 @@ final class Viewer: ObservableObject {
         clampPan()
     }
 
-    func panBy(_ delta: CGSize) {
-        setPan(CGSize(width: pan.width + delta.width, height: pan.height + delta.height))
-    }
-
     /// The paper cannot be dragged away from the window: you may move it by as much as it
     /// overflows and no further, which is nothing at all when the whole page is already showing.
     private func clampPan() {
@@ -464,6 +460,8 @@ struct ViewerView: View {
     /// Where the paper was when this drag started. A drag reports how far it has come, not where
     /// it is, so the pan it produces has to be added to something.
     @State private var panBase: CGSize?
+    @State private var hovering = false
+    @State private var gripping = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -507,10 +505,24 @@ struct ViewerView: View {
             // Dragging only means something once there is more paper than window. Below that the
             // sheets keep their own gestures, so a double-click still lands on the sheet.
             .gesture(drag, including: viewer.canZoomOut ? .all : .subviews)
+            // An open hand while there is paper to push. It is the only thing on screen that
+            // says the page can be dragged, and nothing else is going to say it.
+            .onHover { grip(on: $0 && viewer.canZoomOut) }
+            .onChange(of: viewer.canZoomOut) { grip(on: $0 && hovering) }
+            .onDisappear { grip(on: false) }
             .onAppear { viewer.setViewport(geo.size) }
             .onChange(of: geo.size) { viewer.setViewport($0) }
             .onChange(of: viewer.layout) { _ in viewer.setViewport(geo.size) }
         }
+    }
+
+    /// Push and pop exactly once each. An unbalanced push leaves the hand on screen over every
+    /// other window until something else happens to set a cursor.
+    private func grip(on: Bool) {
+        if on != hovering { hovering = on }
+        guard on != gripping else { return }
+        gripping = on
+        if on { NSCursor.openHand.push() } else { NSCursor.pop() }
     }
 
     private var drag: some Gesture {
@@ -754,8 +766,10 @@ final class ViewerWindowController: NSWindowController {
 
     deinit { if let wheel { NSEvent.removeMonitor(wheel) } }
 
-    /// Pinch zooms. The wheel pans, and zooms while command or option is held — the same pair of
-    /// habits every other document window on the Mac has.
+    /// Scroll zooms, pinch zooms, and the paper moves by dragging it. Two gestures, no modifier
+    /// key, nothing that needs a keyboard — this is a window for looking at a page, not a
+    /// document you scroll through, and a page you are zoomed into is a thing you push around
+    /// with your hand.
     private func gesture(_ event: NSEvent) -> Bool {
         guard let window, let anchor = anchor(of: event, in: window) else { return false }
         switch event.type {
@@ -765,16 +779,12 @@ final class ViewerWindowController: NSWindowController {
         case .scrollWheel:
             // A trackpad reports points and a mouse wheel reports lines, and one line is not one
             // point: taken raw, the same gesture moves a hundred times less on a mouse.
-            let step: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 16
-            let dx = event.scrollingDeltaX * step, dy = event.scrollingDeltaY * step
-            if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) {
-                // Exponential, so a given roll of the wheel is the same proportion of a change
-                // whether you are at 100% or at 600%.
-                viewer.zoomBy(exp(Double(dy) * 0.01), about: anchor)
-                return true
-            }
-            guard viewer.canZoomOut else { return false }
-            viewer.panBy(CGSize(width: dx, height: dy))
+            let step: Double = event.hasPreciseScrollingDeltas ? 1 : 16
+            let dy = Double(event.scrollingDeltaY) * step
+            guard dy != 0 else { return false }
+            // Exponential, so a given roll of the wheel is the same proportion of a change
+            // whether you are at 100% or at 600%.
+            viewer.zoomBy(exp(dy * 0.01), about: anchor)
             return true
         default:
             return false
