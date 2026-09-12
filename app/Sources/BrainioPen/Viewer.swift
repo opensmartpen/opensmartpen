@@ -536,7 +536,14 @@ struct ViewerView: View {
             .onEnded { _ in panBase = nil }
     }
 
+    /// Every glyph in the bar, at the size of the text beside it. Left at the default they come
+    /// out at 13 against 11pt labels, which is a different weight and a different optical centre
+    /// — and a row of things that each centre themselves slightly differently reads as crooked.
+    private static let glyph = Font.system(size: 11)
+
     private var bar: some View {
+        // One height for the row, so each control centres inside the same box rather than each
+        // inside its own.
         HStack(spacing: 10) {
             Text(viewer.title)
                 .font(.system(size: 11.5, weight: .medium))
@@ -544,7 +551,7 @@ struct ViewerView: View {
 
             Spacer(minLength: 8)
 
-            Button { viewer.step(-1) } label: { Image(systemName: "chevron.left") }
+            Button { viewer.step(-1) } label: { Image(systemName: "chevron.left").font(Self.glyph) }
                 .buttonStyle(.borderless)
                 .disabled(!viewer.canStep.back)
 
@@ -563,7 +570,7 @@ struct ViewerView: View {
                 }
             }
 
-            Button { viewer.step(1) } label: { Image(systemName: "chevron.right") }
+            Button { viewer.step(1) } label: { Image(systemName: "chevron.right").font(Self.glyph) }
                 .buttonStyle(.borderless)
                 .disabled(!viewer.canStep.forward)
 
@@ -584,7 +591,7 @@ struct ViewerView: View {
             // The way back out, as a glyph rather than as the number doing double duty. Disabled
             // rather than hidden at fit, so it keeps its place in the row.
             Button(action: viewer.zoomToFit) {
-                Image(systemName: "arrow.counterclockwise")
+                Image(systemName: "arrow.counterclockwise").font(Self.glyph)
             }
             .buttonStyle(.borderless)
             .disabled(!viewer.canZoomOut)
@@ -598,6 +605,7 @@ struct ViewerView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
+            .controlSize(.small)
             .help("How the pages are arranged (1–4)")
 
             // One click back to whatever the pen touched last — the page you almost always want.
@@ -611,6 +619,7 @@ struct ViewerView: View {
             .buttonStyle(.borderless)
             .help("The last page written, in any notebook (H)")
         }
+        .frame(height: 22)
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(.regularMaterial)
