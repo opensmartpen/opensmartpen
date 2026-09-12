@@ -47,27 +47,29 @@ enum StatusIcon {
     /// because AppKit draws upward and the drawing was authored downward.
     private static func pencil(drop: Bool, tint: NSColor?) -> NSImage {
         let side: CGFloat = 17
-        let dropSize: CGFloat = 4.5
-        let gap: CGFloat = 2
-        let width = side + (drop ? gap + dropSize : 0)
 
-        let image = NSImage(size: NSSize(width: width, height: side), flipped: false) { _ in
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
             let scale = side / 16
             func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: x * scale, y: (16 - y) * scale) }
 
+            // Exactly the path in the design, on its own 16-unit grid, with y flipped because
+            // AppKit draws upward and the drawing was authored downward.
             let body = NSBezierPath()
-            body.move(to: p(10.6, 2.4))
-            body.line(to: p(3.4, 9.6))
-            body.line(to: p(2.5, 13.5))
-            body.line(to: p(6.4, 12.6))
-            body.line(to: p(13.6, 5.4))
+            body.move(to: p(11.2, 1.6))
+            body.line(to: p(14.4, 4.8))
+            body.line(to: p(5.6, 13.6))
+            body.line(to: p(1.9, 14.5))
+            body.line(to: p(2.8, 10.8))
             body.close()
 
             let ferrule = NSBezierPath()
-            ferrule.move(to: p(9.2, 3.8))
-            ferrule.line(to: p(12.2, 6.8))
+            ferrule.move(to: p(9.6, 3.2))
+            ferrule.line(to: p(12.8, 6.4))
 
-            (tint ?? .black).setStroke()
+            // A tinted icon is not a template, so it has to pick its own foreground. labelColor
+            // resolves against the menubar's appearance at draw time, and the icon is rebuilt on
+            // every state change, so it follows a light/dark switch within a tick.
+            NSColor.labelColor.setStroke()
             for path in [body, ferrule] {
                 path.lineWidth = 1.35 * scale
                 path.lineCapStyle = .round
@@ -75,14 +77,25 @@ enum StatusIcon {
                 path.stroke()
             }
 
-            if drop {
-                (tint ?? .black).setFill()
-                NSBezierPath(ovalIn: NSRect(x: width - dropSize, y: (side - dropSize) / 2,
-                                            width: dropSize, height: dropSize)).fill()
+            // The drop sits in the corner the pencil leaves empty, inside the same square: beside
+            // it the mark would be wider than every other menubar item and shift when it appeared.
+            if drop || tint != nil {
+                (tint ?? accent).setFill()
+                let r: CGFloat = 2.1 * scale
+                let c = p(3, 3)
+                NSBezierPath(ovalIn: NSRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)).fill()
             }
             return true
         }
-        image.isTemplate = tint == nil
+        // Only a plain pencil can be a template. Anything carrying colour has to say what colour.
+        image.isTemplate = !drop && tint == nil
         return image
+    }
+
+    /// Violet ink: work in flight, and only that.
+    private static let accent = NSColor(name: nil) {
+        $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.655, green: 0.592, blue: 0.941, alpha: 1)
+            : NSColor(srgbRed: 0.357, green: 0.247, blue: 0.769, alpha: 1)
     }
 }
