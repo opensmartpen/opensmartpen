@@ -307,9 +307,12 @@ private struct RecentRow: View {
                     .font(.system(size: 11.5))
                     .lineLimit(1)
                 Spacer(minLength: 6)
-                Text(book.pageLabel)
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.tertiary)
+                // Which page it will open at is the viewer's business — it always opens at the
+                // last one you wrote, so the number was telling you something you were about to
+                // be shown anyway. What is worth a mark is which notebook you are actually in.
+                Circle()
+                    .fill(book.latest ? Ink.accent : Color.clear)
+                    .frame(width: 5, height: 5)
             }
             .padding(.horizontal, 5)
             .padding(.vertical, 3.5)

@@ -111,7 +111,9 @@ final class PanelModel: ObservableObject {
         let title: String
         /// Where it will open: the most recently written page in it.
         let page: PageID
-        let pageLabel: String
+        /// The most recently written of all the notebooks. Marked, because "the one you are in"
+        /// is what you are looking for when you open the panel.
+        var latest: Bool = false
         let shape: KnownBooks.Shape
         /// Loose sheets or a bound notebook — the two look different on the desk, so they look
         /// different here.
@@ -264,11 +266,11 @@ final class PanelModel: ObservableObject {
             return RecentBook(id: entry.page.bookKey,
                               title: label.title,
                               page: entry.page,
-                              pageLabel: label.detail ?? "",
                               shape: books.record(for: entry.page)?.shape ?? .page,
                               binding: books.record(for: entry.page)?.binding ?? .pad)
         }
         recent = Array(recent.prefix(4))
+        if !recent.isEmpty { recent[0].latest = true }
     }
 
     /// Set by the app delegate, which owns the window.
@@ -411,10 +413,10 @@ final class PanelModel: ObservableObject {
         recent = [
             RecentBook(id: "b1", title: "LAMY digital paper",
                        page: PageID(section: 3, owner: 1012, book: 3017, page: 6),
-                       pageLabel: "page 6", shape: .pocket, binding: .bound),
+                       latest: true, shape: .pocket, binding: .bound),
             RecentBook(id: "b2", title: "Ncode A4 pad",
                        page: PageID(section: 3, owner: 27, book: 450, page: 3),
-                       pageLabel: "page 3", shape: .page, binding: .pad),
+                       shape: .page, binding: .pad),
         ]
 
         switch scenario {
