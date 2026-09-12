@@ -72,6 +72,10 @@ public final class ModeLog {
     /// Fired after a change is recorded, with the state that is now in force. The pen's LED
     /// follows this: it cannot be told the ink colour, but it can acknowledge the choice.
     public var onChange: ((InkColor, LineWidth) -> Void)?
+    /// Which inks mean anything. Set from palette.json; a tap on any other swatch is stored in raw
+    /// as evidence and changes nothing, because an ink with no colour behind it would render as a
+    /// silent black.
+    public var offered: Set<InkColor> = Set(InkColor.allCases)
 
     public init(root: URL) {
         url = root.appendingPathComponent(Self.relativePath)
@@ -104,11 +108,11 @@ public final class ModeLog {
         let event: ModeEvent
         switch button {
         case let .ink(c):
-            // White is deliberately inert: Matous has not decided whether that swatch means white
-            // ink, an eraser, or nothing, so tapping it changes nothing. The tap is still stored in
-            // raw and logged. A dead button is easier to explain than a live one that silently
-            // renders a page in an ink we never measured.
-            guard c != .white else { return false }
+            // The strip has ten buttons and the repo uses five. A tap on one of the other five is
+            // still stored in raw — the pen saw it, and raw says what the pen saw — but it selects
+            // nothing. A dead button is easier to explain than a live one that silently renders a
+            // page in an ink nobody assigned a colour to.
+            guard offered.contains(c) else { return false }
             guard c != now.ink else { return false }
             event = ModeEvent(at: ms, ink: c, source: source, tap: tap)
         case let .width(w):

@@ -43,11 +43,10 @@ struct StatusPanel: View {
     // MARK: header — state, freshness and battery on one line
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             Circle()
                 .fill(dotColour)
                 .frame(width: 7, height: 7)
-                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
             Text(headline)
                 .font(.system(size: 13, weight: .semibold))
                 .lineLimit(1)
@@ -80,7 +79,7 @@ struct StatusPanel: View {
 
     private var headline: String {
         switch model.status {
-        case .asleep: return "Asleep"
+        case .asleep: return "Pen off"
         case .bluetoothOff: return "Bluetooth off"
         case .connecting: return "Connecting"
         // One word for the whole journey. Pen-to-Mac and Mac-to-git are different legs of it, and
@@ -150,8 +149,8 @@ struct StatusPanel: View {
                 .tracking(0.7)
                 .foregroundStyle(.quaternary)
                 .padding(.bottom, 1)
-            ForEach(model.recent) { page in
-                RecentRow(page: page) { model.open(page) }
+            ForEach(model.recent) { book in
+                RecentRow(book: book) { model.open(book) }
             }
         }
     }
@@ -164,29 +163,20 @@ struct StatusPanel: View {
     /// until somebody opens a PNG days later.
     private var inkRow: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(InkColor.allCases, id: \.rawValue) { colour in
+            HStack(spacing: 8) {
+                ForEach(model.inks, id: \.rawValue) { colour in
                     Swatch(colour: colour,
                            hex: model.palette.hex(for: colour),
                            selected: colour == model.ink) { model.choose(ink: colour) }
-                    if colour != InkColor.allCases.last { Spacer(minLength: 0) }
                 }
-            }
-            HStack(spacing: 7) {
-                ForEach(LineWidth.allCases, id: \.rawValue) { weight in
+                Spacer(minLength: 10)
+                // The strip offers three weights. "Default" is not a button on it — it is the
+                // state before anything is tapped — so it is not one here either.
+                ForEach([LineWidth.thin, .medium, .thick], id: \.rawValue) { weight in
                     WidthMark(weight: weight, selected: weight == model.width) {
                         model.choose(width: weight)
                     }
                 }
-            }
-            .padding(.top, 10)
-
-            if model.isUnmeasured(model.ink) {
-                Text("\(model.ink.rawValue.capitalized) has no colour assigned. These pages render black.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 9)
             }
         }
     }
@@ -254,7 +244,7 @@ struct StatusPanel: View {
     private var footer: some View {
         HStack(spacing: 2) {
             FooterButton(title: model.isPinned ? "Unpin" : "Pin", action: model.togglePin)
-            FooterButton(title: "Live", action: model.showLive)
+            FooterButton(title: "Open", action: model.showLive)
             FooterButton(title: "Notes", action: model.openNotes)
             FooterButton(title: "Settings", action: model.openConfig)
             FooterButton(title: "Quit") { NSApp.terminate(nil) }
@@ -301,41 +291,33 @@ struct StatusPanel: View {
 
 // MARK: - pieces
 
+/// A notebook, not a page. What you reach for is the book; the viewer decides which page it falls
+/// open at, and it always falls open at the last one you wrote.
 private struct RecentRow: View {
-    let page: PanelModel.RecentPage
+    let book: PanelModel.RecentBook
     let open: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: open) {
-            HStack(spacing: 6) {
-                PaperMark(shape: page.shape)
-                Text(page.label.oneLine)
+            HStack(spacing: 7) {
+                PaperMark(shape: book.shape)
+                Text(book.title)
                     .font(.system(size: 11.5))
                     .lineLimit(1)
-                    .truncationMode(.head)
                 Spacer(minLength: 6)
-                if page.file == nil {
-                    // The processing side has not caught up with this page yet.
-                    Text("not rendered")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.quaternary)
-                } else if hovering {
-                    Image(systemName: "arrow.up.forward.app")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Ink.accent)
-                }
+                Text(book.pageLabel)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 5)
-            .padding(.vertical, 3)
+            .padding(.vertical, 3.5)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(page.file == nil)
-        .foregroundStyle(page.file == nil ? Color.secondary : Color.primary)
         .background(RoundedRectangle(cornerRadius: 5)
-            .fill(hovering && page.file != nil ? Color.primary.opacity(0.07) : Color.clear))
+            .fill(hovering ? Color.primary.opacity(0.07) : Color.clear))
         .onHover { hovering = $0 }
     }
 }

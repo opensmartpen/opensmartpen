@@ -11,6 +11,7 @@ import Foundation
 public enum KnownBooks {
     public struct Product {
         public let title: String
+        public let binding: Binding
         public let widthMM: Double
         public let heightMM: Double
         public let firstPage: Int
@@ -20,12 +21,22 @@ public enum KnownBooks {
     /// Keyed by `PageID.bookKey`, `s{section}/o{owner}/b{book}`.
     public static let products: [String: Product] = [
         "s3/o27/b450": Product(
-            title: "Ncode A4 pad", widthMM: 210, heightMM: 297, firstPage: 1,
+            title: "Ncode A4 pad", binding: .pad, widthMM: 210, heightMM: 297, firstPage: 1,
             note: "NeoLAB Ncode A4 bundle (NC-P0081E)"),
         "s3/o1012/b3017": Product(
-            title: "LAMY digital paper", widthMM: 145, heightMM: 210, firstPage: 1,
+            title: "LAMY digital paper", binding: .bound, widthMM: 145, heightMM: 210, firstPage: 1,
             note: "NeoLAB LAMY digital paper, 192 pages, dot ruled (145 x 210 mm)"),
     ]
+
+    /// How the paper is held together, which decides how it is read. A pad is loose sheets, seen
+    /// one at a time; a bound notebook falls open at two facing pages and reading one of them
+    /// alone is not how anybody uses it.
+    ///
+    /// Not derivable from the paper size — two notebooks of identical dimensions can be bound or
+    /// not — so it is recorded rather than guessed.
+    public enum Binding: String, Codable, CaseIterable {
+        case pad, bound
+    }
 
     public static func product(forBookKey key: String) -> Product? { products[key] }
 

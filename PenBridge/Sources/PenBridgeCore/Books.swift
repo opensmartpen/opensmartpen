@@ -17,10 +17,12 @@ public struct BookRecord: Equatable {
     /// Physical copies of this product, oldest first. Empty means one copy and no boundaries —
     /// which is every notebook until a second of the same model turns up.
     public var instances: [BookInstance] = []
+    /// Loose sheets or facing pages. Decides how the viewer shows it.
+    public var binding: KnownBooks.Binding = .pad
 
     public init(slug: String, id: String, title: String, firstPage: Int,
                 widthMM: Double? = nil, heightMM: Double? = nil,
-                instances: [BookInstance] = []) {
+                instances: [BookInstance] = [], binding: KnownBooks.Binding = .pad) {
         self.slug = slug
         self.id = id
         self.title = title
@@ -28,6 +30,18 @@ public struct BookRecord: Equatable {
         self.widthMM = widthMM
         self.heightMM = heightMM
         self.instances = instances
+        self.binding = binding
+    }
+
+    /// The pages that face each other when this notebook falls open at `page`.
+    ///
+    /// Page 1 is a right-hand page, as it is in every bound book: you open the cover and one sheet
+    /// faces you. So the spreads are (—,1), (2,3), (4,5), and a page's partner is the one that
+    /// shares its spread. A pad has no partner at all.
+    public func spread(containing humanPage: Int) -> (left: Int?, right: Int?) {
+        guard binding == .bound else { return (nil, humanPage) }
+        if humanPage <= 1 { return (nil, 1) }
+        return humanPage.isMultiple(of: 2) ? (humanPage, humanPage + 1) : (humanPage - 1, humanPage)
     }
 
     /// The directory a page written at this moment belongs in. With no instances recorded this is
@@ -60,12 +74,14 @@ public struct BookRecord: Equatable {
         let width_mm: Double?
         let height_mm: Double?
         var instances: [BookInstance]?
+        var binding: String?
     }
 
     public var json: Data {
         let payload = Payload(id: id, title: title, first_page: firstPage,
                               width_mm: widthMM, height_mm: heightMM,
-                              instances: instances.isEmpty ? nil : instances)
+                              instances: instances.isEmpty ? nil : instances,
+                              binding: binding.rawValue)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return (try? encoder.encode(payload)) ?? Data()
@@ -75,7 +91,8 @@ public struct BookRecord: Equatable {
     public init?(slug: String, json: Data) {
         guard let p = try? JSONDecoder().decode(Payload.self, from: json) else { return nil }
         self.init(slug: slug, id: p.id, title: p.title ?? slug, firstPage: p.first_page ?? 1,
-                  widthMM: p.width_mm, heightMM: p.height_mm, instances: p.instances ?? [])
+                  widthMM: p.width_mm, heightMM: p.height_mm, instances: p.instances ?? [],
+                  binding: p.binding.flatMap(KnownBooks.Binding.init(rawValue:)) ?? .pad)
     }
 }
 
@@ -128,7 +145,8 @@ public final class BookRegistry {
                                                              heightMM: known?.heightMM)
         let record = BookRecord(slug: uniqueSlug(from: title), id: page.bookKey, title: title,
                                 firstPage: known?.firstPage ?? 1,
-                                widthMM: known?.widthMM, heightMM: known?.heightMM)
+                                widthMM: known?.widthMM, heightMM: known?.heightMM,
+                                binding: known?.binding ?? .pad)
         return save(record) ? record : nil
     }
 

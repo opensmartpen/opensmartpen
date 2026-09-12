@@ -91,11 +91,18 @@ final class ControlSurfaceTests: XCTestCase {
         XCTAssertEqual(log.events.count, 1)
     }
 
-    /// White is undecided, so it is a dead button: logged as a tap, but it selects nothing.
-    func testWhiteSelectsNothing() {
+    /// The strip has ten buttons and the repo uses five. A tap on one of the others is a dead
+    /// button: stored in raw because the pen saw it, but it selects nothing — an ink with no
+    /// colour assigned would otherwise render as a silent black.
+    func testAnInkTheRepoDoesNotOfferSelectsNothing() {
         let log = ModeLog(root: root)
+        log.offered = [.black, .red, .blue, .green, .yellow]
         XCTAssertFalse(log.record(.ink(.white), at: 1_000, source: .paper))
+        XCTAssertFalse(log.record(.ink(.purple), at: 1_500, source: .paper))
         XCTAssertEqual(log.state(at: 2_000).ink, .black)
+
+        XCTAssertTrue(log.record(.ink(.yellow), at: 2_500, source: .paper))
+        XCTAssertEqual(log.state(at: 3_000).ink, .yellow)
     }
 
     func testStateSurvivesReopeningTheFile() {

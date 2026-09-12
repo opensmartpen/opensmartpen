@@ -3,12 +3,13 @@ import Foundation
 import PenBridgeCore
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     static let version = "0.2.0"
     static let sdkVersion = "NISDK3/1.1.5"
 
     private var statusItem: NSStatusItem!
-    private let popover = NSPopover()
+    private var panel: MenuBarPanel!
+    private var panelHost: NSHostingController<StatusPanel>!
     private var config = Config()
     private let configURL = Config.defaultLocation
     private var coordinator: SyncCoordinator!
@@ -22,8 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// every dot.
     private var lastSeenBook: String?
     private var lastSeenPage: String?
-    private var canvas: LiveCanvas!
-    private var liveWindow: LiveWindowController?
+    private var viewer: Viewer!
+    private var viewerWindow: ViewerWindowController?
     private var designWindow: DesignWindowController?
     private var pinnedPanel: PinnedPanelController?
     private var tickTimer: Timer?
@@ -83,7 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // in the notes repo, which the processing side also reads. One source, no drift.
         books = BookRegistry(repo: config.repoURL)
         pens = PenRegistry(repo: config.repoURL)
-        canvas = LiveCanvas(books: books)
+        // The palette decides which of the strip's ten buttons mean anything. Narrowing the set is
+        // an edit to one file in the repo, not a code change.
+        coordinator.modeLog?.offered = Set(Palette.load(root: config.repoURL).offered)
+        viewer = Viewer(books: books, repo: config.repoURL)
         session.onDot = { [weak self] page, dot, event in
             guard let self else { return }
             // A notebook PenBridge has never met gets a record the moment a page arrives from it,
@@ -97,13 +101,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 lastSeenPage = page.description
                 noteForNewNotebook(page)
             }
-            canvas.receive(page: page, dot: dot, event: event)
+            viewer.receive(page: page, dot: dot, event: event)
         }
         model = PanelModel(session: session, coordinator: coordinator, config: config,
                            books: books, pens: pens)
-        model.onShowLive = { [weak self] in self?.showLiveWindow() }
+        model.onShowLive = { [weak self] in self?.showViewer(nil) }
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
+        model.onOpenPage = { [weak self] page in self?.showViewer(page) }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         session.onChange = { [weak self] in self?.stateChanged() }
 
@@ -129,11 +134,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePanel)
 
-        popover.behavior = .transient
-        popover.animates = false
-        popover.delegate = self
-        popover.contentViewController = NSHostingController(
-            rootView: StatusPanel(model: model, now: panelNow))
+        panelHost = NSHostingController(rootView: StatusPanel(model: model, now: panelNow))
+        panel = MenuBarPanel(content: panelHost)
     }
 
     /// Any change from the pen or the publisher lands here: recompute the panel's snapshot, then
@@ -192,7 +194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     /// Everything with a name or a number in it. The panel carries almost no words, which only
     /// works because this exists.
     private func showSettings() {
-        popover.performClose(nil)
+        panel?.dismiss()
         if settingsWindow == nil {
             let store = SettingsStore(pens: pens, books: books, config: config, configURL: configURL)
             store.onConfigChange = { [weak self] updated in
@@ -208,14 +210,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         settingsWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
-    /// The panel in its own window. The popover closes on any click outside it, which makes it no
-    /// use for watching the panel while you write or while the app is rebuilt.
+    /// The panel in its own window. The menubar panel closes on any click outside it, which makes
+    /// it no use for watching the panel while you write or while the app is rebuilt.
     private func togglePinned() {
         if let pinnedPanel {
             pinnedPanel.close()          // windowWillClose does the rest
             return
         }
-        popover.performClose(nil)
+        panel?.dismiss()
         let controller = PinnedPanelController(model: model, now: panelNow)
         controller.onClose = { [weak self] in
             self?.pinnedPanel = nil
@@ -231,50 +233,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         syncPanelTimer()
     }
 
-    /// The live page window. Opens on whichever page the pen is on, or the last one written.
-    private func showLiveWindow() {
-        popover.performClose(nil)
-        if liveWindow == nil { liveWindow = LiveWindowController(canvas: canvas) }
-        if canvas.page == nil, let recent = books.recentPages(limit: 1).first {
-            canvas.show(recent.page)
+    /// One window for reading, whether the ink arrived a second ago or last month. Pages are
+    /// drawn from raw strokes rather than opened as a PNG, so there is a single view experience
+    /// and a page is readable before the pipeline has ever touched it.
+    private func showViewer(_ page: PageID?) {
+        panel?.dismiss()
+        if viewerWindow == nil {
+            viewer.attach(modeLog: coordinator.modeLog)
+            viewerWindow = ViewerWindowController(viewer: viewer)
         }
+        if let page { viewer.show(page: page) } else { viewer.goLive() }
         NSApp.activate(ignoringOtherApps: true)
-        liveWindow?.showWindow(nil)
-        liveWindow?.window?.makeKeyAndOrderFront(nil)
+        viewerWindow?.showWindow(nil)
+        viewerWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
     // MARK: panel
 
     @objc private func togglePanel() {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            guard let button = statusItem.button else { return }
-            session.requestSettingRefresh()
-            model.refreshRecent()
-            tickPanel()
-            // The popover positions itself from its content size. An NSHostingController that has
-            // never been in a window has not measured its SwiftUI view yet, so without this the
-            // popover is placed for a size it does not have and lands away from the menubar.
-            sizePanelToContent()
-            // .minY is the bottom edge in AppKit's unflipped coordinates.
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            // The popover is not key by default, so hover and buttons would not respond.
-            popover.contentViewController?.view.window?.makeKey()
-            if Log.verbose, let window = popover.contentViewController?.view.window {
-                Log.debug("panel: button \(button.bounds) in \(button.window?.frame ?? .zero); " +
-                          "content \(popover.contentSize); window \(window.frame)")
-            }
+        if panel.isVisible {
+            panel.dismiss()
+            return
         }
+        guard let button = statusItem.button else { return }
+        session.requestSettingRefresh()
+        model.refreshRecent()
+        tickPanel()
+        panel.show(under: button) { [weak self] in self?.syncPanelTimer() }
+        syncPanelTimer()
     }
-
-    func popoverDidShow(_ notification: Notification) { syncPanelTimer() }
-
-    func popoverDidClose(_ notification: Notification) { syncPanelTimer() }
 
     /// One second is only worth spending while something is on screen to see it.
     private func syncPanelTimer() {
-        let wanted = popover.isShown || pinnedPanel != nil
+        let wanted = (panel?.isVisible ?? false) || pinnedPanel != nil
         if wanted, panelTimer == nil {
             panelTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
                 self?.tickPanel()
@@ -285,24 +276,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    /// Measure the SwiftUI content and hand the size to the popover, which is what it positions
-    /// itself from. The panel's width is fixed at 320; only the height varies with state.
-    private func sizePanelToContent() {
-        guard let view = popover.contentViewController?.view else { return }
-        view.layoutSubtreeIfNeeded()
-        let fitting = view.fittingSize
-        guard fitting.width > 0, fitting.height > 0 else { return }
-        popover.contentSize = fitting
-    }
-
     /// Re-renders with a fresh `now`, which is what moves the countdowns.
     private func tickPanel() {
         panelNow = Date()
         model.refresh(now: panelNow)
         refreshStatusButton()
-        (popover.contentViewController as? NSHostingController<StatusPanel>)?
-            .rootView = StatusPanel(model: model, now: panelNow)
-        if popover.isShown { sizePanelToContent() }
+        panelHost?.rootView = StatusPanel(model: model, now: panelNow)
+        panel?.resizeToContent()
         pinnedPanel?.render(now: panelNow)
     }
 }

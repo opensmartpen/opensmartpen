@@ -44,7 +44,7 @@ final class PanelModel: ObservableObject {
     @Published private(set) var pagesOnPen: Int?
     @Published private(set) var lastPublish: Publish?
     @Published private(set) var isPublishing = false
-    @Published private(set) var recent: [RecentPage] = []
+    @Published private(set) var recent: [RecentBook] = []
     /// When the pen was last connected. The only honest thing the panel can say about writing it
     /// cannot see: an absent pen may hold pages, and nothing on this Mac can count them.
     @Published private(set) var lastSeen: Date?
@@ -100,14 +100,15 @@ final class PanelModel: ObservableObject {
         instanceQuestion = nil
     }
 
-    struct RecentPage: Identifiable, Equatable {
+    /// A notebook, not a page. What you reach for is the book; which page it falls open at is the
+    /// viewer's job, and it always falls open at the last one you wrote.
+    struct RecentBook: Identifiable, Equatable {
         let id: String
-        let label: PageLabel
-        /// The rendered page, when the processing side has made one. Nil means nothing to open yet.
-        let file: URL?
-        /// The paper's proportions, so a wide pad and a tall notebook are told apart at a glance
-        /// without anyone having to pick a colour for either.
-        var shape: KnownBooks.Shape = .page
+        let title: String
+        /// Where it will open: the most recently written page in it.
+        let page: PageID
+        let pageLabel: String
+        let shape: KnownBooks.Shape
     }
 
     struct Battery: Equatable {
@@ -236,17 +237,26 @@ final class PanelModel: ObservableObject {
     /// when the panel is opened.
     func refreshRecent() {
         guard let books = live?.books else { return }
-        recent = books.recentPages(limit: 4).map {
-            RecentPage(id: $0.page.description, label: books.label(for: $0.page),
-                       file: books.derivedFile(for: $0.page),
-                       shape: books.record(for: $0.page)?.shape ?? .page)
+        // Newest first, one row per notebook: the same book appearing four times because you wrote
+        // four pages in it says nothing you did not already know.
+        var seen = Set<String>()
+        recent = books.recentPages(limit: 60).compactMap { entry in
+            guard seen.insert(entry.page.bookKey).inserted else { return nil }
+            let label = books.label(for: entry.page)
+            return RecentBook(id: entry.page.bookKey,
+                              title: label.title,
+                              page: entry.page,
+                              pageLabel: label.detail ?? "",
+                              shape: books.record(for: entry.page)?.shape ?? .page)
         }
+        recent = Array(recent.prefix(4))
     }
 
-    func open(_ page: RecentPage) {
-        guard let file = page.file else { return }
-        NSWorkspace.shared.open(file)
-    }
+    /// Set by the app delegate, which owns the window.
+    var onOpenPage: ((PageID) -> Void)?
+
+    /// Never a PNG in Preview: one viewer, whether the ink arrived a second ago or last month.
+    func open(_ book: RecentBook) { onOpenPage?(book.page) }
 
     /// Set by the app delegate, which owns the window.
     var onShowLive: (() -> Void)?
@@ -307,7 +317,9 @@ final class PanelModel: ObservableObject {
 
     /// True when the swatch has no measured colour behind it. The panel draws a hole; nothing
     /// substitutes black here, because a hole is honest and a wrong colour is not.
-    func isUnmeasured(_ ink: InkColor) -> Bool { palette.hex(for: ink) == nil }
+    /// The inks with a colour behind them, in the strip's own order. The paper has ten buttons;
+    /// which of them mean anything is decided by palette.json, not here.
+    var inks: [InkColor] { palette.offered }
 
     func pairDifferentPen() {
         live?.session.forgetPen()
@@ -368,8 +380,7 @@ final class PanelModel: ObservableObject {
         penDisplayName = "Everyday"
         instanceQuestion = nil
         palette = Palette(ink: ["black": "#000000", "red": "#ff0200", "blue": "#00abeb",
-                                "green": "#3cdd00", "grey": "#9e9e9e", "yellow": "#ffd400",
-                                "orange": "#ff7a00", "purple": "#a21fd0", "navy": "#0033a0"])
+                                "green": "#3cdd00", "yellow": "#ffd400"])
         ink = .red
         width = .medium
         battery = Battery(percent: 16, charging: false, low: true)
@@ -378,10 +389,12 @@ final class PanelModel: ObservableObject {
         isPublishing = false
         lastPublish = Publish(date: now.addingTimeInterval(-260), commit: "4e35b96", pages: 2)
         recent = [
-            RecentPage(id: "r1", label: Self.label("LAMY digital paper", 6), file: URL(fileURLWithPath: "/x"), shape: .pocket),
-            RecentPage(id: "r2", label: Self.label("LAMY digital paper", 5), file: URL(fileURLWithPath: "/x"), shape: .pocket),
-            RecentPage(id: "r3", label: Self.label("Ncode A4 pad", 3), file: nil, shape: .page),
-            RecentPage(id: "r4", label: Self.label("Ncode A4 pad", 2), file: URL(fileURLWithPath: "/x"), shape: .page),
+            RecentBook(id: "b1", title: "LAMY digital paper",
+                       page: PageID(section: 3, owner: 1012, book: 3017, page: 6),
+                       pageLabel: "page 6", shape: .pocket),
+            RecentBook(id: "b2", title: "Ncode A4 pad",
+                       page: PageID(section: 3, owner: 27, book: 450, page: 3),
+                       pageLabel: "page 3", shape: .page),
         ]
 
         switch scenario {
@@ -419,7 +432,7 @@ final class PanelModel: ObservableObject {
                                                 at: 0, reason: .sequenceRestart)
         case .unmeasuredInk:
             status = .connected
-            ink = .white
+            ink = .yellow
         }
     }
 }

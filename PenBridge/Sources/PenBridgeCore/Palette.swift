@@ -36,6 +36,15 @@ public struct Palette: Equatable {
     }
 
     public func hex(for ink: InkColor) -> String? { self.ink[ink.rawValue] }
+
+    /// The inks this repo actually uses, in the strip's own order. A colour with no hex is not
+    /// offered anywhere: the paper has ten buttons, and which of them mean anything is decided
+    /// here rather than in code, so narrowing the set is an edit to one file.
+    public var offered: [InkColor] {
+        InkColor.allCases.filter { self.ink[$0.rawValue] != nil }
+    }
+
+    public func isOffered(_ colour: InkColor) -> Bool { self.ink[colour.rawValue] != nil }
     public func width(for width: LineWidth) -> Double? { widthMM[width.rawValue] }
 
     /// Red, green and blue 0...1, for a caller that has to compare colours rather than draw them.
