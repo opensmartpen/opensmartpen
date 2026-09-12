@@ -41,11 +41,43 @@ final class BooksTests: XCTestCase {
         XCTAssertEqual(books.record(for: page)?.pageStem(4), "page-01")
     }
 
-    func testUnknownBookFallsBackToItsProductNumber() {
-        // Meaningless, but never misleading — unlike the raw Ncode page index.
+    func testUnknownBookIsNeverNamedAfterItsProductCode() {
+        // The book number is a product code. A person does not know what 777 means and should
+        // not have to, so it never reaches the interface.
         let books = BookRegistry(repo: repo)
         let stranger = PageID(section: 3, owner: 1, book: 777, page: 9)
-        XCTAssertEqual(books.label(for: stranger), PageLabel(title: "Notebook 777", detail: nil))
+        XCTAssertEqual(books.label(for: stranger), PageLabel(title: "New notebook", detail: nil))
+    }
+
+    func testARecognisedProductNamesAndMeasuresItself() throws {
+        // Nothing in books/ for it yet — this is a notebook meeting PenBridge for the first time.
+        try FileManager.default.removeItem(at: repo.appendingPathComponent("books/lamy.json"))
+        let books = BookRegistry(repo: repo)
+        let lamy = PageID(section: 3, owner: 1012, book: 3017, page: 4)
+        let record = try XCTUnwrap(books.ensureRecord(for: lamy))
+        XCTAssertEqual(record.title, "LAMY digital paper")
+        XCTAssertEqual(record.widthMM, 145, "a product we know on sight needs no measuring")
+        XCTAssertEqual(books.label(for: lamy), PageLabel(title: "LAMY digital paper", detail: "page 4"))
+    }
+
+    func testAnUnrecognisedBookIsNamedAfterItsPaperNotItsCode() throws {
+        let books = BookRegistry(repo: repo)
+        let stranger = PageID(section: 3, owner: 1, book: 777, page: 9)
+        let record = try XCTUnwrap(books.ensureRecord(for: stranger))
+        XCTAssertEqual(record.title, "Notebook")
+        XCTAssertFalse(record.slug.contains("777"))
+        // Provisional, but real: the page stops being anonymous immediately.
+        XCTAssertEqual(books.label(for: stranger).title, "Notebook")
+    }
+
+    func testTwoUnknownNotebooksDoNotShareADirectory() throws {
+        let books = BookRegistry(repo: repo)
+        // Both fall back to the same name, and the slug is also the directory every rendered page
+        // lands in — so the second one has to give way or it would overwrite the first.
+        let first = try XCTUnwrap(books.ensureRecord(for: PageID(section: 3, owner: 1, book: 777, page: 1)))
+        let second = try XCTUnwrap(books.ensureRecord(for: PageID(section: 3, owner: 1, book: 778, page: 1)))
+        XCTAssertEqual(first.title, second.title)
+        XCTAssertNotEqual(first.slug, second.slug)
     }
 
     func testRenamingANotebookIsPickedUpWithoutRestarting() throws {

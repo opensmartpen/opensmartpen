@@ -31,7 +31,9 @@ struct StatusPanel: View {
             if !model.pending.isEmpty { section { pending } }
             if case let .failing(_, _, error) = model.status { section { failure(error) } }
             if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
+            if let question = model.instanceQuestion { section { newNotebook(question) } }
             if model.showsWakeHint { section { wakeHint } }
+            section { inkRow }
             if !model.recent.isEmpty { section { recent } }
             footer
         }
@@ -154,6 +156,41 @@ struct StatusPanel: View {
         }
     }
 
+    // MARK: ink — two rows of glyphs, and one sentence only when it is needed
+
+    /// What the next stroke will be drawn as. No labels: a swatch says "red" better than the word
+    /// does, and the panel cannot afford the line. The one exception is an ink with no measured
+    /// colour behind it, where the consequence — the page renders black — is otherwise invisible
+    /// until somebody opens a PNG days later.
+    private var inkRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 0) {
+                ForEach(InkColor.allCases, id: \.rawValue) { colour in
+                    Swatch(colour: colour,
+                           hex: model.palette.hex(for: colour),
+                           selected: colour == model.ink) { model.choose(ink: colour) }
+                    if colour != InkColor.allCases.last { Spacer(minLength: 0) }
+                }
+            }
+            HStack(spacing: 7) {
+                ForEach(LineWidth.allCases, id: \.rawValue) { weight in
+                    WidthMark(weight: weight, selected: weight == model.width) {
+                        model.choose(width: weight)
+                    }
+                }
+            }
+            .padding(.top, 10)
+
+            if model.isUnmeasured(model.ink) {
+                Text("\(model.ink.rawValue.capitalized) has no colour assigned. These pages render black.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 9)
+            }
+        }
+    }
+
     // MARK: the two states that still need words
 
     private func failure(_ error: String) -> some View {
@@ -170,6 +207,25 @@ struct StatusPanel: View {
                 Button("Retry", action: model.publishNow)
                     .buttonStyle(InkButtonStyle(filled: true))
                 Button("Log", action: model.openLog)
+                    .buttonStyle(InkButtonStyle(filled: false))
+            }
+        }
+    }
+
+    /// The one question the panel ever asks. It has to be asked, because two notebooks of the same
+    /// model are indistinguishable to the pen and guessing wrong merges them silently.
+    private func newNotebook(_ question: PanelModel.InstanceQuestion) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Is this a new \(question.title)?")
+                .font(.system(size: 12, weight: .medium))
+                .fixedSize(horizontal: false, vertical: true)
+            Text(question.why)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 7) {
+                Button("Yes, it's new", action: model.confirmNewNotebook)
+                    .buttonStyle(InkButtonStyle(filled: true))
+                Button("Same one", action: model.dismissNewNotebook)
                     .buttonStyle(InkButtonStyle(filled: false))
             }
         }
@@ -253,6 +309,7 @@ private struct RecentRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 6) {
+                PaperMark(shape: page.shape)
                 Text(page.label.oneLine)
                     .font(.system(size: 11.5))
                     .lineLimit(1)
@@ -280,6 +337,109 @@ private struct RecentRow: View {
         .background(RoundedRectangle(cornerRadius: 5)
             .fill(hovering && page.file != nil ? Color.primary.opacity(0.07) : Color.clear))
         .onHover { hovering = $0 }
+    }
+}
+
+/// One ink. A colour we have measured is a filled circle; one we have not is a hole with a dashed
+/// edge — plainly empty, and in particular never mistaken for the white swatch beside it.
+private struct Swatch: View {
+    let colour: InkColor
+    let hex: String?
+    let selected: Bool
+    let choose: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: choose) {
+            Group {
+                if let fill = Color(hex: hex) {
+                    Circle().fill(fill)
+                        .overlay(Circle().stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
+                } else {
+                    Circle().strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [2.5, 2]))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .frame(width: 19, height: 19)
+            .overlay(Circle().stroke(Color.primary, lineWidth: selected ? 1.5 : 0)
+                .padding(-3))
+            .padding(2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(hex == nil ? "\(colour.rawValue) — no colour assigned" : colour.rawValue)
+        .opacity(hovering && !selected ? 0.7 : 1)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// One line weight, drawn in relation to the others. Never a millimetre: the renderer widens a
+/// line by pressure, so an absolute claim at this size would be a lie with a number on it.
+private struct WidthMark: View {
+    let weight: LineWidth
+    let selected: Bool
+    let choose: () -> Void
+    @State private var hovering = false
+
+    private var thickness: CGFloat {
+        switch weight {
+        case .thin: return 1
+        case .default: return 2
+        case .medium: return 4
+        case .thick: return 7
+        }
+    }
+
+    var body: some View {
+        Button(action: choose) {
+            Capsule().fill(Color.primary.opacity(selected ? 0.85 : 0.45))
+                .frame(height: thickness)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, (20 - thickness) / 2)
+                .background(RoundedRectangle(cornerRadius: 5)
+                    .stroke(selected ? Color.primary : Color.clear, lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 5)
+                    .fill(hovering && !selected ? Color.primary.opacity(0.06) : Color.clear))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(weight.rawValue)
+        .onHover { hovering = $0 }
+    }
+}
+
+private extension Color {
+    /// Nil for an unmeasured ink, so the caller decides what absence means rather than being
+    /// handed a silent black.
+    init?(hex: String?) {
+        guard var h = hex else { return nil }
+        if h.hasPrefix("#") { h.removeFirst() }
+        guard h.count == 6, let v = Int(h, radix: 16) else { return nil }
+        self.init(.sRGB,
+                  red: Double((v >> 16) & 0xff) / 255,
+                  green: Double((v >> 8) & 0xff) / 255,
+                  blue: Double(v & 0xff) / 255)
+    }
+}
+
+/// The paper itself, in its real proportions. Nothing invented: the size is already in the book
+/// record, so a wide pad and a tall notebook are told apart without anyone choosing a colour.
+private struct PaperMark: View {
+    let shape: KnownBooks.Shape
+
+    private var size: CGSize {
+        switch shape {
+        case .wide: return CGSize(width: 11, height: 8)
+        case .page: return CGSize(width: 8, height: 10.5)
+        case .pocket: return CGSize(width: 6.5, height: 10.5)
+        }
+    }
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1.5)
+            .stroke(Color.secondary.opacity(0.55), lineWidth: 1)
+            .frame(width: size.width, height: size.height)
+            .frame(width: 12, height: 12)
     }
 }
 

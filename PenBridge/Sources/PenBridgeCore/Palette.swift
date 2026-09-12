@@ -16,6 +16,14 @@ public struct Palette: Equatable {
 
     public init() {}
 
+    /// For a caller that has a palette in hand rather than a repo to read — the design window,
+    /// and tests.
+    public init(ink: [String: String], widthMM: [String: Double] = [:], resetAfterHours: Double = 24) {
+        self.ink = ink
+        self.widthMM = widthMM
+        self.resetAfterHours = resetAfterHours
+    }
+
     public static func load(root: URL) -> Palette {
         var p = Palette()
         guard let data = try? Data(contentsOf: root.appendingPathComponent(relativePath)),

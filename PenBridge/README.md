@@ -55,6 +55,25 @@ without the rebuild loop.
 The states come from `PanelModel.Scenario` rather than from hardware, because a failing push, a
 memory drain and a first run each take deliberate setup to see even once.
 
+## Pens and notebooks
+
+Both are named in the repo, not in the app, because the renderer needs them too.
+
+- `pens/<slug>.json` — name, mode (writing / accent / highlight), default ink and width. A pen is
+  adopted the first time it connects, so it has a name from the start rather than a MAC address.
+- `books/<slug>.json` — title, paper size, first page, and instances. A notebook gets a record the
+  moment a page arrives from it. Recognised products name themselves; anything else is named after
+  its paper.
+
+In both, the slug is the filename and is fixed when the record is created. The title and the name
+are free to change at any time. That split is deliberate: a slug also names the directory every
+rendered page lives in, so a rename that followed the display name would move data.
+
+Two notebooks of the same model report the same Ncode id, so a second copy is detected — writing
+that starts again at the front, or a long silence followed by a distant page — and PenBridge asks.
+It never decides: a wrong silent guess merges two notebooks into one set of files and goes
+unnoticed. Confirming records a boundary date, and the derived layer routes pages by it.
+
 ## Configuration
 
 `~/.config/penbridge/config.json`, created with defaults on first launch. Missing keys keep their defaults.

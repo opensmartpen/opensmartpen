@@ -49,11 +49,65 @@ final class PanelModel: ObservableObject {
     /// cannot see: an absent pen may hold pages, and nothing on this Mac can count them.
     @Published private(set) var lastSeen: Date?
 
+    /// What the next stroke will be drawn as. The pen cannot be told a colour, so this is our
+    /// state: chosen by tapping the paper controller or by clicking a swatch here, and read back
+    /// out of the same append-only log that the renderer joins against.
+    @Published private(set) var ink: InkColor = .black
+    @Published private(set) var width: LineWidth = .default
+    /// Hex values for the swatches, from the repo. A name with no hex is unmeasured, and the
+    /// panel draws a hole rather than guessing at a colour.
+    @Published private(set) var palette = Palette()
+    /// The pen's own name, and the notebook records, so the panel can say what things are called.
+    @Published private(set) var penDisplayName = "Pen"
+
+    /// A notebook we think might be a fresh physical copy. Two pads of the same model report the
+    /// same Ncode id, so this cannot be decided silently — a wrong guess merges two notebooks into
+    /// one set of files and nobody notices.
+    @Published private(set) var instanceQuestion: InstanceQuestion?
+
+    struct InstanceQuestion: Equatable {
+        let bookKey: String
+        let title: String
+        let at: Int
+        let reason: InstanceSuspicion.Reason
+
+        var why: String {
+            switch reason {
+            case .sequenceRestart: return "Writing started again at the front."
+            case .longGap: return "Nothing written in it for a month."
+            }
+        }
+    }
+
+    func ask(_ suspicion: InstanceSuspicion, title: String) {
+        instanceQuestion = InstanceQuestion(bookKey: suspicion.book, title: title,
+                                            at: suspicion.at, reason: suspicion.reason)
+    }
+
+    /// Yes, this is a new copy. Everything written from this moment goes to a fresh directory and
+    /// everything before it stays exactly where it is.
+    func confirmNewNotebook() {
+        guard let q = instanceQuestion, let live,
+              let book = live.books.books.first(where: { $0.id == q.bookKey }) else { return }
+        live.books.startInstance(of: book, at: q.at)
+        instanceQuestion = nil
+        refreshRecent()
+    }
+
+    func dismissNewNotebook() {
+        guard let q = instanceQuestion else { return }
+        live?.books.resolveInstanceQuestion(q.bookKey)
+        instanceQuestion = nil
+    }
+
     struct RecentPage: Identifiable, Equatable {
         let id: String
         let label: PageLabel
         /// The rendered page, when the processing side has made one. Nil means nothing to open yet.
         let file: URL?
+        /// The paper's proportions, so a wide pad and a tall notebook are told apart at a glance
+        /// without anyone having to pick a colour for either.
+        var shape: KnownBooks.Shape = .page
     }
 
     struct Battery: Equatable {
@@ -72,12 +126,16 @@ final class PanelModel: ObservableObject {
         let coordinator: SyncCoordinator
         let config: Config
         let books: BookRegistry
+        let pens: PenRegistry
     }
 
     private let live: Live?
+    private var lastPaletteLoad = Date.distantPast
 
-    init(session: PenSession, coordinator: SyncCoordinator, config: Config, books: BookRegistry) {
-        live = Live(session: session, coordinator: coordinator, config: config, books: books)
+    init(session: PenSession, coordinator: SyncCoordinator, config: Config,
+         books: BookRegistry, pens: PenRegistry) {
+        live = Live(session: session, coordinator: coordinator, config: config,
+                    books: books, pens: pens)
     }
 
     /// A model with no pen and no repo behind it, for the design window.
@@ -94,6 +152,18 @@ final class PanelModel: ObservableObject {
         let config = live.config, books = live.books
         penName = session.penName.isEmpty ? "Pen" : session.penName
         if session.isConnected { lastSeen = now }
+        penDisplayName = live.pens.name(mac: config.penMac ?? "")
+
+        // The palette is a file in the repo that a person edits by hand; re-reading it once a
+        // second would be wasteful and once a launch would make an edit invisible.
+        if now.timeIntervalSince(lastPaletteLoad) > 20 {
+            lastPaletteLoad = now
+            palette = Palette.load(root: config.repoURL)
+        }
+        if let mode = coordinator.modeLog?.current {
+            ink = mode.ink
+            width = mode.width
+        }
         isPublishing = coordinator.isPublishing
 
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
@@ -168,7 +238,8 @@ final class PanelModel: ObservableObject {
         guard let books = live?.books else { return }
         recent = books.recentPages(limit: 4).map {
             RecentPage(id: $0.page.description, label: books.label(for: $0.page),
-                       file: books.derivedFile(for: $0.page))
+                       file: books.derivedFile(for: $0.page),
+                       shape: books.record(for: $0.page)?.shape ?? .page)
         }
     }
 
@@ -203,9 +274,10 @@ final class PanelModel: ObservableObject {
         NSWorkspace.shared.open(repo)
     }
 
-    func openConfig() {
-        NSWorkspace.shared.open(Config.defaultLocation)
-    }
+    /// Set by the app delegate, which owns the window.
+    var onOpenSettings: (() -> Void)?
+
+    func openConfig() { onOpenSettings?() }
 
     /// Where the LaunchAgent sends stderr. Falls back to revealing the notes folder when the app
     /// was started by hand and the log is only on the terminal.
@@ -219,6 +291,24 @@ final class PanelModel: ObservableObject {
         }
     }
 
+    /// Choose an ink or a width from the panel. Written to the same log a paper tap writes to —
+    /// one file, one writer, and the renderer cannot tell which of the two a change came from.
+    func choose(ink: InkColor) {
+        guard let log = live?.coordinator.modeLog else { return }
+        log.record(.ink(ink), at: Int(Date().timeIntervalSince1970 * 1000), source: .panel)
+        refresh()
+    }
+
+    func choose(width: LineWidth) {
+        guard let log = live?.coordinator.modeLog else { return }
+        log.record(.width(width), at: Int(Date().timeIntervalSince1970 * 1000), source: .panel)
+        refresh()
+    }
+
+    /// True when the swatch has no measured colour behind it. The panel draws a hole; nothing
+    /// substitutes black here, because a hole is honest and a wrong colour is not.
+    func isUnmeasured(_ ink: InkColor) -> Bool { palette.hex(for: ink) == nil }
+
     func pairDifferentPen() {
         live?.session.forgetPen()
     }
@@ -231,6 +321,7 @@ final class PanelModel: ObservableObject {
     /// pen memory drain and a first run each take deliberate setup to see even once.
     enum Scenario: String, CaseIterable {
         case synced, writing, waiting, copying, failing, asleep, bluetoothOff, firstRun
+        case newNotebook, unmeasuredInk
 
         var title: String {
             switch self {
@@ -242,6 +333,8 @@ final class PanelModel: ObservableObject {
             case .asleep: return "No pen"
             case .bluetoothOff: return "Bluetooth off"
             case .firstRun: return "First run"
+            case .newNotebook: return "New notebook?"
+            case .unmeasuredInk: return "Unmeasured ink"
             }
         }
 
@@ -255,6 +348,8 @@ final class PanelModel: ObservableObject {
             case .asleep: return "the usual state"
             case .bluetoothOff: return "the one real blocker"
             case .firstRun: return "never paired"
+            case .newNotebook: return "the one question we ask"
+            case .unmeasuredInk: return "a colour with no hex"
             }
         }
     }
@@ -270,16 +365,23 @@ final class PanelModel: ObservableObject {
         let pad = Self.label("Ncode A4 pad", 3)
 
         penName = "Pen"
+        penDisplayName = "Everyday"
+        instanceQuestion = nil
+        palette = Palette(ink: ["black": "#000000", "red": "#ff0200", "blue": "#00abeb",
+                                "green": "#3cdd00", "grey": "#9e9e9e", "yellow": "#ffd400",
+                                "orange": "#ff7a00", "purple": "#a21fd0", "navy": "#0033a0"])
+        ink = .red
+        width = .medium
         battery = Battery(percent: 16, charging: false, low: true)
         pagesOnPen = nil
         pending = []
         isPublishing = false
         lastPublish = Publish(date: now.addingTimeInterval(-260), commit: "4e35b96", pages: 2)
         recent = [
-            RecentPage(id: "r1", label: Self.label("LAMY digital paper", 6), file: URL(fileURLWithPath: "/x")),
-            RecentPage(id: "r2", label: Self.label("LAMY digital paper", 5), file: URL(fileURLWithPath: "/x")),
-            RecentPage(id: "r3", label: Self.label("Ncode A4 pad", 3), file: nil),
-            RecentPage(id: "r4", label: Self.label("Ncode A4 pad", 2), file: URL(fileURLWithPath: "/x")),
+            RecentPage(id: "r1", label: Self.label("LAMY digital paper", 6), file: URL(fileURLWithPath: "/x"), shape: .pocket),
+            RecentPage(id: "r2", label: Self.label("LAMY digital paper", 5), file: URL(fileURLWithPath: "/x"), shape: .pocket),
+            RecentPage(id: "r3", label: Self.label("Ncode A4 pad", 3), file: nil, shape: .page),
+            RecentPage(id: "r4", label: Self.label("Ncode A4 pad", 2), file: URL(fileURLWithPath: "/x"), shape: .page),
         ]
 
         switch scenario {
@@ -311,6 +413,13 @@ final class PanelModel: ObservableObject {
             lastPublish = nil
             recent = []
             status = .asleep
+        case .newNotebook:
+            status = .connected
+            instanceQuestion = InstanceQuestion(bookKey: "s3/o27/b450", title: "Ncode A4 pad",
+                                                at: 0, reason: .sequenceRestart)
+        case .unmeasuredInk:
+            status = .connected
+            ink = .white
         }
     }
 }

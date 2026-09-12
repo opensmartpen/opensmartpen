@@ -8,21 +8,32 @@ public struct BookRecord: Equatable {
     public let slug: String
     /// Ncode identity, `s{section}/o{owner}/b{book}` — matches `PageID.bookKey`.
     public let id: String
-    public let title: String
+    public var title: String
     /// Ncode page number of the notebook's first sheet. Ncode does not start at one.
     public let firstPage: Int
     /// Paper size in millimetres, when the repo recorded it.
     public let widthMM: Double?
     public let heightMM: Double?
+    /// Physical copies of this product, oldest first. Empty means one copy and no boundaries —
+    /// which is every notebook until a second of the same model turns up.
+    public var instances: [BookInstance] = []
 
     public init(slug: String, id: String, title: String, firstPage: Int,
-                widthMM: Double? = nil, heightMM: Double? = nil) {
+                widthMM: Double? = nil, heightMM: Double? = nil,
+                instances: [BookInstance] = []) {
         self.slug = slug
         self.id = id
         self.title = title
         self.firstPage = firstPage
         self.widthMM = widthMM
         self.heightMM = heightMM
+        self.instances = instances
+    }
+
+    /// The directory a page written at this moment belongs in. With no instances recorded this is
+    /// simply the slug, so nothing changes for a notebook there is only one of.
+    public func directory(at ms: Int) -> String {
+        instances.last(where: { $0.startedAt <= ms })?.slug ?? slug
     }
 
     /// The sheet to draw on. Falls back to A4 so a notebook with no recorded size still renders.
@@ -30,6 +41,9 @@ public struct BookRecord: Equatable {
         guard let widthMM, let heightMM else { return .a4 }
         return PageGeometry(widthMM: widthMM, heightMM: heightMM)
     }
+
+    /// The paper's proportions, for the small mark beside a page in the panel.
+    public var shape: KnownBooks.Shape { KnownBooks.Shape(widthMM: widthMM, heightMM: heightMM) }
 
     /// The number a person would count to, 1 for the first sheet.
     public func humanPage(_ ncodePage: Int) -> Int { ncodePage - firstPage + 1 }
@@ -39,19 +53,29 @@ public struct BookRecord: Equatable {
         String(format: "page-%02d", humanPage(ncodePage))
     }
 
-    private struct Payload: Decodable {
+    private struct Payload: Codable {
         let id: String
         let title: String?
         let first_page: Int?
         let width_mm: Double?
         let height_mm: Double?
+        var instances: [BookInstance]?
+    }
+
+    public var json: Data {
+        let payload = Payload(id: id, title: title, first_page: firstPage,
+                              width_mm: widthMM, height_mm: heightMM,
+                              instances: instances.isEmpty ? nil : instances)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return (try? encoder.encode(payload)) ?? Data()
     }
 
     /// Nil for a file that is not a book record, so a stray JSON file cannot break the panel.
     public init?(slug: String, json: Data) {
         guard let p = try? JSONDecoder().decode(Payload.self, from: json) else { return nil }
         self.init(slug: slug, id: p.id, title: p.title ?? slug, firstPage: p.first_page ?? 1,
-                  widthMM: p.width_mm, heightMM: p.height_mm)
+                  widthMM: p.width_mm, heightMM: p.height_mm, instances: p.instances ?? [])
     }
 }
 
@@ -61,6 +85,9 @@ public final class BookRegistry {
     private let repo: URL
     private var byBookKey: [String: BookRecord] = [:]
     private var loadedStamp: Stamp?
+    /// Watches for a second physical copy of a notebook. Lives here because this is what knows
+    /// what a book is.
+    public let instanceWatcher = InstanceWatcher()
 
     public init(repo: URL) {
         self.repo = repo
@@ -79,9 +106,59 @@ public final class BookRegistry {
     /// number printed on the sheet.
     public func label(for page: PageID) -> PageLabel {
         guard let book = record(for: page) else {
-            return PageLabel(title: "Notebook \(page.book)", detail: nil)
+            // Never the raw book number: that is a product code, and a person neither knows nor
+            // should have to know what 3017 means.
+            let title = KnownBooks.product(forBookKey: page.bookKey)?.title ?? "New notebook"
+            return PageLabel(title: title, detail: nil)
         }
         return PageLabel(title: book.title, detail: "page \(book.humanPage(page.page))")
+    }
+
+    /// Make a record for a book we have not seen before, so its pages stop being anonymous and
+    /// start being rendered. Recognised products name and measure themselves; anything else gets
+    /// a name from its paper size, which is something a person can see.
+    ///
+    /// Deliberately silent: writing is never interrupted to ask a question. The provisional record
+    /// appears in the panel, where it can be renamed at leisure.
+    @discardableResult
+    public func ensureRecord(for page: PageID) -> BookRecord? {
+        if let existing = record(for: page) { return existing }
+        let known = KnownBooks.product(forBookKey: page.bookKey)
+        let title = known?.title ?? KnownBooks.fallbackTitle(widthMM: known?.widthMM,
+                                                             heightMM: known?.heightMM)
+        let record = BookRecord(slug: uniqueSlug(from: title), id: page.bookKey, title: title,
+                                firstPage: known?.firstPage ?? 1,
+                                widthMM: known?.widthMM, heightMM: known?.heightMM)
+        return save(record) ? record : nil
+    }
+
+    /// Write a record back. The title is free to change; the slug is not, because it is also the
+    /// name of the directory every rendered page lives in.
+    @discardableResult
+    public func save(_ record: BookRecord) -> Bool {
+        let dir = repo.appendingPathComponent("books")
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try record.json.write(to: dir.appendingPathComponent("\(record.slug).json"), options: .atomic)
+            loadedStamp = nil
+            reloadIfNeeded()
+            return true
+        } catch {
+            Log.error("writing books/\(record.slug).json failed: \(error)")
+            return false
+        }
+    }
+
+    /// A free filename. Two pads of the same model are a real case, so a suffix is expected here
+    /// rather than exceptional.
+    private func uniqueSlug(from title: String) -> String {
+        let base = PenRecord.slug(from: title, mac: "book")
+        let taken = Set(((try? FileManager.default.contentsOfDirectory(
+            atPath: repo.appendingPathComponent("books").path)) ?? [])
+            .map { ($0 as NSString).deletingPathExtension })
+        if !taken.contains(base) { return base }
+        for n in 2...99 where !taken.contains("\(base)-\(n)") { return "\(base)-\(n)" }
+        return "\(base)-\(Int(Date().timeIntervalSince1970))"
     }
 
     /// The rendered page, if the processing side has produced one yet. Prefers the PNG, which is
@@ -89,7 +166,10 @@ public final class BookRegistry {
     /// there is always something to show.
     public func derivedFile(for page: PageID) -> URL? {
         guard let book = record(for: page) else { return nil }
-        let dir = repo.appendingPathComponent("pages/\(book.slug)")
+        let written = (try? rawFile(for: page).resourceValues(forKeys: [.contentModificationDateKey]))?
+            .contentModificationDate ?? Date()
+        let dir = repo.appendingPathComponent(
+            "pages/\(book.directory(at: Int(written.timeIntervalSince1970 * 1000)))")
         for ext in ["png", "svg", "md"] {
             let url = dir.appendingPathComponent("\(book.pageStem(page.page)).\(ext)")
             if FileManager.default.fileExists(atPath: url.path) { return url }
@@ -100,6 +180,27 @@ public final class BookRegistry {
     /// Where a page's raw strokes live.
     public func rawFile(for page: PageID) -> URL {
         repo.appendingPathComponent(page.rawRelativePath)
+    }
+
+    /// The question was answered, either way.
+    public func resolveInstanceQuestion(_ bookKey: String) {
+        instanceWatcher.resolve(book: bookKey)
+    }
+
+    /// Record that a fresh physical copy of this notebook was opened at this moment. The boundary
+    /// is a date, and every stroke carries one, so this can be applied long after the fact and
+    /// everything downstream re-derives.
+    @discardableResult
+    public func startInstance(of book: BookRecord, at ms: Int) -> BookRecord? {
+        var updated = book
+        // The first copy is implicit until there is a second: recording only the new boundary
+        // would leave every earlier page with nowhere to go.
+        if updated.instances.isEmpty {
+            updated.instances = [BookInstance(slug: book.slug, startedAt: 0)]
+        }
+        let next = updated.instances.count + 1
+        updated.instances.append(BookInstance(slug: "\(book.slug)-\(next)", startedAt: ms))
+        return save(updated) ? updated : nil
     }
 
     /// Pages most recently written to, newest first, by raw file modification time.
