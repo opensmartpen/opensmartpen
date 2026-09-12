@@ -92,7 +92,10 @@ public struct BookRecord: Equatable {
         guard let p = try? JSONDecoder().decode(Payload.self, from: json) else { return nil }
         self.init(slug: slug, id: p.id, title: p.title ?? slug, firstPage: p.first_page ?? 1,
                   widthMM: p.width_mm, heightMM: p.height_mm, instances: p.instances ?? [],
-                  binding: p.binding.flatMap(KnownBooks.Binding.init(rawValue:)) ?? .pad)
+                  // A record written before binding existed does not say. Recognised products
+                  // know their own answer, so an old file gets it right without being edited.
+                  binding: p.binding.flatMap(KnownBooks.Binding.init(rawValue:))
+                      ?? KnownBooks.product(forBookKey: p.id)?.binding ?? .pad)
     }
 }
 

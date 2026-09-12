@@ -70,6 +70,30 @@ final class BooksTests: XCTestCase {
         XCTAssertEqual(books.label(for: stranger).title, "Notebook")
     }
 
+    func testAKnownProductKnowsHowItIsBoundEvenInAnOldRecord() {
+        // books/lamy.json was written before binding existed and says nothing about it. The LAMY
+        // is a bound notebook, so it must still open as a spread rather than as loose sheets.
+        let books = BookRegistry(repo: repo)
+        XCTAssertEqual(books.record(for: lamyPage)?.binding, .bound)
+        XCTAssertEqual(books.record(for: padPage)?.binding, .pad)
+    }
+
+    func testABoundNotebookFallsOpenAtFacingPages() {
+        let lamy = BookRecord(slug: "lamy", id: "s3/o1012/b3017", title: "LAMY", firstPage: 1,
+                              binding: .bound)
+        // Page 1 is a right-hand page, as it is in every bound book: you open the cover and one
+        // sheet faces you.
+        XCTAssertEqual(lamy.spread(containing: 1).left, nil)
+        XCTAssertEqual(lamy.spread(containing: 1).right, 1)
+        XCTAssertEqual(lamy.spread(containing: 4).left, 4)
+        XCTAssertEqual(lamy.spread(containing: 4).right, 5)
+        XCTAssertEqual(lamy.spread(containing: 5).left, 4)
+        XCTAssertEqual(lamy.spread(containing: 5).right, 5)
+
+        let pad = BookRecord(slug: "pad", id: "s3/o27/b450", title: "Pad", firstPage: 1)
+        XCTAssertEqual(pad.spread(containing: 4).left, nil, "a pad is loose sheets")
+    }
+
     func testTwoUnknownNotebooksDoNotShareADirectory() throws {
         let books = BookRegistry(repo: repo)
         // Both fall back to the same name, and the slug is also the directory every rendered page
