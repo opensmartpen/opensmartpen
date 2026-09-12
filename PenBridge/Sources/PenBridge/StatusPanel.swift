@@ -26,81 +26,42 @@ struct StatusPanel: View {
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            if !model.pending.isEmpty { section { pending } }
-            if case let .failing(_, _, error) = model.status { section { failure(error) } }
-            if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
-            if let question = model.instanceQuestion { section { newNotebook(question) } }
-            if model.showsWakeHint { section { wakeHint } }
-            if !model.pens.isEmpty { section { penRow } }
-            if !model.recent.isEmpty { section { recent } }
-            footer
+        ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 0) {
+                // The pens come first and carry no rule above them: there is nothing above them
+                // to be separated from. A headline used to sit here — a dot and a word for the
+                // whole app — and it was saying a third time what the pen's own line and the
+                // page countdowns already say, in a larger type size than either.
+                top
+                if !model.pending.isEmpty { section { pending } }
+                if case let .failing(_, _, error) = model.status { section { failure(error) } }
+                if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
+                if let question = model.instanceQuestion { section { newNotebook(question) } }
+                if !model.recent.isEmpty { section { recent } }
+                footer
+            }
+            // Over the panel rather than in a row of its own. It acts on the window, not on
+            // anything the panel is showing, and a row for one 16-point glyph is a row wasted.
+            PinButton(pinned: model.isPinned, action: model.togglePin)
+                .padding(.top, 9)
+                .padding(.trailing, 9)
         }
         .frame(width: 300)
     }
 
-    // MARK: header — state, freshness and battery on one line
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Circle()
-                .fill(dotColour)
-                .frame(width: 7, height: 7)
-            Text(headline)
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-            Spacer(minLength: 6)
-            if let meta = headerMeta {
-                Text(meta)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-            }
-            PinButton(pinned: model.isPinned, action: model.togglePin)
-        }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 11)
-    }
-
-    private var dotColour: Color {
-        switch model.status {
-        case .failing: return Ink.critical
-        case .copying, .writing: return Ink.accent
-        case .asleep, .bluetoothOff, .connecting: return Color.secondary.opacity(0.45)
-        case .connected: return Color.primary
+    /// Whatever goes at the very top: the pens, or — before any pen has ever connected — the one
+    /// sentence that gets you a pen.
+    @ViewBuilder private var top: some View {
+        if !model.pens.isEmpty {
+            penRow
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+        } else {
+            wakeHint
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
         }
     }
-
-    private var headline: String {
-        switch model.status {
-        case .asleep: return "Pen off"
-        case .bluetoothOff: return "Bluetooth off"
-        case .connecting: return "Connecting"
-        // One word for the whole journey. Pen-to-Mac and Mac-to-git are different legs of it, and
-        // nobody watching a panel cares which leg — only whether the writing arrived.
-        case let .copying(book, count, _): return count > 1 ? "Syncing \(book) of \(count)" : "Syncing"
-        case .failing: return "Can't sync"
-        case .writing: return "Writing"
-        case .connected: return model.pending.isEmpty ? "All synced" : "Waiting to sync"
-        }
-    }
-
-    /// How long the pen has been away, and only that.
-    ///
-    /// Time since the last sync used to live here too, and it earned nothing: when the headline
-    /// already says "All synced", the age of that sync answers a question nobody asked — and if it
-    /// is old with nothing pending, that only means you have not written, which the recent list
-    /// says better. A pen that has not been seen for days is different: it may be holding pages,
-    /// and nothing on this Mac can count them.
-    private var headerMeta: String? {
-        guard case .asleep = model.status, let seen = model.lastSeen,
-              now.timeIntervalSince(seen) > Self.staleAfter else { return nil }
-        return "seen \(Self.brief(since: seen, now: now))"
-    }
-
-    /// A pen unseen for longer than this is worth mentioning. Shorter than this is an ordinary day.
-    private static let staleAfter: TimeInterval = 36 * 3600
 
     // MARK: pending — one row per page, the countdown doing all the talking
 
@@ -126,15 +87,6 @@ struct StatusPanel: View {
             }
             if model.pending.count > 5 {
                 Text("+\(model.pending.count - 5)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-            }
-            // No button. Each row already carries its own countdown, so the panel has already
-            // answered the only question a button could — when does this go out — and a control
-            // that merely shortens a wait the app will finish by itself is furniture. ⌘S still
-            // does it for the moment you are closing the lid.
-            if model.isPublishing {
-                Text("Syncing…")
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
@@ -215,23 +167,20 @@ struct StatusPanel: View {
 
             Spacer(minLength: 0)
 
-            // Width stays a segmented control: three shapes you compare against each other, which
-            // is exactly what a segmented control is for and what a pop-up would hide.
-            Picker("", selection: Binding(
-                get: { width },
-                set: { model.choose(width: $0, for: pen) })) {
-                    // "Default" is not a button on the strip — it is the state before anything is
-                    // tapped — so it is not one here either.
-                    ForEach([LineWidth.thin, .medium, .thick], id: \.rawValue) { weight in
-                        Image(nsImage: Swatches.bar(weight)).tag(weight)
+            // Three marks, each drawn at the weight it sets. Not a segmented control: that draws
+            // dividers between the three and a system-accent fill behind the chosen one, which
+            // in a panel with almost no colour is the loudest thing on screen — and the marks
+            // are already different enough from each other to compare at a glance.
+            //
+            // "Default" is not one of them. It is the state before anything has been tapped, not
+            // a fourth weight you can ask for.
+            HStack(spacing: 4) {
+                ForEach([LineWidth.thin, .medium, .thick], id: \.rawValue) { weight in
+                    WidthMark(weight: weight, selected: weight == width) {
+                        model.choose(width: weight, for: pen)
                     }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                // The system accent on the selected segment is the loudest thing in a panel that
-                // otherwise has almost no colour in it.
-                .tint(Color.primary.opacity(0.22))
+            }
         }
     }
 
@@ -299,32 +248,66 @@ struct StatusPanel: View {
     /// the same kind; these are two places to go and two things to do, and macOS already has a
     /// shape for that.
     private var footer: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             hairline
             VStack(spacing: 1) {
                 // Nothing here for opening a notebook: clicking one in the list above already
                 // does that, and "Reveal notes" is a folder you rarely want and can reach from
                 // Settings. What is left is what a menubar app's menu is actually for.
                 MenuItem(title: "Settings…", shortcut: "⌘,", action: model.openConfig)
-                MenuItem(title: "Quit PenBridge", shortcut: "⌘Q") { NSApp.terminate(nil) }
+                MenuItem(title: "Quit", shortcut: "⌘Q") { NSApp.terminate(nil) }
             }
             .padding(.vertical, 4)
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 5)
+            if let sync = syncLine {
+                // The last word in the panel, and the quietest. It replaces a button: the app
+                // does this by itself, so all that is left to say is when it last happened.
+                Text(sync)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 7)
+            }
         }
     }
+
+    private var syncLine: String? {
+        if model.isPublishing { return "Syncing…" }
+        guard let last = model.lastPublish else { return nil }
+        // A clock time only answers the question while it is still the same day. "8:07" a week
+        // later reads as this morning, which is the one thing it must not do.
+        let formatter = Calendar.current.isDateInToday(last.date) ? Self.time : Self.day
+        return "Synced \(formatter.string(from: last.date))"
+    }
+
+    private static let time: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("j:mm")
+        return f
+    }()
+
+    private static let day: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("EEE d MMM")
+        return f
+    }()
 
     /// Every section is a hairline plus the same padding, so the layout does not repeat either.
     private func section<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             hairline
             content()
-                .padding(.horizontal, 13)
+                .padding(.horizontal, 14)
                 .padding(.vertical, 11)
         }
     }
 
+    /// Inset to the same margin as everything else, so it reads as a rule between two blocks of
+    /// one column rather than as the edge of a box.
     private var hairline: some View {
-        Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
+        Rectangle().fill(Color.primary.opacity(0.08))
+            .frame(height: 1)
+            .padding(.horizontal, 14)
     }
 
     // MARK: formatting
@@ -373,7 +356,7 @@ private struct RecentRow: View {
                             .offset(x: 3, y: -2)
                     }
                 Text(book.title)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 13))
                     .lineLimit(1)
                 Spacer(minLength: 6)
             }
@@ -465,6 +448,40 @@ private struct InkDot: View {
     }
 }
 
+/// One line weight, drawn as the line it makes. The chosen one sits on a faint chip — the same
+/// grey the panel uses everywhere else, so the selection is legible without being coloured.
+private struct WidthMark: View {
+    let weight: LineWidth
+    let selected: Bool
+    let choose: () -> Void
+    @State private var hovering = false
+
+    private var thickness: CGFloat {
+        switch weight {
+        case .thin: return 1.5
+        case .medium: return 3
+        case .thick: return 5.5
+        default: return 3
+        }
+    }
+
+    var body: some View {
+        Button(action: choose) {
+            RoundedRectangle(cornerRadius: thickness / 2, style: .continuous)
+                .fill(Color.primary.opacity(selected ? 0.9 : hovering ? 0.65 : 0.4))
+                .frame(width: 15, height: thickness)
+                .frame(width: 26, height: 20)
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(selected ? Color.primary.opacity(0.09)
+                          : hovering ? Color.primary.opacity(0.05) : Color.clear))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(weight.rawValue.capitalized)
+    }
+}
+
 private struct BatteryBar: View {
     let percent: Int
     let low: Bool
@@ -550,43 +567,6 @@ private struct PenTile: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(pen.percent.map { "\(pen.name) · \($0)%" } ?? pen.name)
-    }
-}
-
-/// Images for the segmented controls.
-///
-/// An ink is a real colour and must not be tinted by the system, so it is a plain image. A line
-/// weight is not a colour — it is a shape — so it is a template and macOS colours it to match the
-/// selection, which is exactly the behaviour in a native picker.
-enum Swatches {
-    static func dot(_ hex: String?) -> NSImage {
-        let side: CGFloat = 15
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
-            let colour = NSColor(hex: hex) ?? .labelColor
-            colour.setFill()
-            NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: side - 2, height: side - 2)).fill()
-            return true
-        }
-        image.isTemplate = false
-        return image
-    }
-
-    static func bar(_ weight: LineWidth) -> NSImage {
-        let height: CGFloat
-        switch weight {
-        case .thin: height = 1
-        case .default, .medium: height = 3
-        case .thick: height = 6
-        }
-        let size = NSSize(width: 17, height: 8)
-        let image = NSImage(size: size, flipped: false) { _ in
-            NSColor.black.setFill()
-            NSBezierPath(rect: NSRect(x: 0, y: (size.height - height) / 2,
-                                      width: size.width, height: height)).fill()
-            return true
-        }
-        image.isTemplate = true
-        return image
     }
 }
 
@@ -723,7 +703,7 @@ private struct MenuItem: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Text(title).font(.system(size: 12))
+                Text(title).font(.system(size: 13))
                 Spacer(minLength: 8)
                 if let shortcut {
                     Text(shortcut)

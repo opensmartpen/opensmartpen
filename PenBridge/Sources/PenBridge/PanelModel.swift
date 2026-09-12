@@ -301,7 +301,14 @@ final class PanelModel: ObservableObject {
             let here = session.isConnected && pen.mac == connected
             let state: String
             if !here {
-                state = "Pen off"
+                // The header used to carry this, above everything, in bold. It belongs to the
+                // pen: the reason you cannot see your writing is a fact about this pen, and
+                // Bluetooth being off is a different reason from the pen being asleep.
+                switch session.state {
+                case .bluetoothOff: state = "Bluetooth off"
+                case .connecting, .authorizing: state = "Connecting"
+                default: state = "Pen off"
+                }
             } else if reading?.charging == true {
                 state = "Charging"
             } else if writingNow {
@@ -357,12 +364,6 @@ final class PanelModel: ObservableObject {
             }
             return .connected
         }
-    }
-
-    /// Only worth telling someone to wake the pen when there is nothing else on screen to do.
-    var showsWakeHint: Bool {
-        if case .asleep = status { return pending.isEmpty && recent.isEmpty }
-        return false
     }
 
     /// Scanning the repo is too much for the one-second tick, so the recent list is rebuilt only
