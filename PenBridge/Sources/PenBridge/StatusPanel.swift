@@ -432,18 +432,37 @@ private struct InkDot: View {
 
     var body: some View {
         Button(action: choose) {
-            Circle()
-                .fill(colour)
-                .frame(width: 12, height: 12)
-                .opacity(selected ? 1 : hovering ? 0.75 : 0.4)
-                .overlay(Circle()
-                    .stroke(Color.primary.opacity(selected ? 0.45 : 0), lineWidth: 1)
-                    .padding(-2.5))
-                .padding(3)
-                .contentShape(Rectangle())
+            ZStack {
+                // The unchosen inks are held well back and drawn small. They are a menu you are
+                // not using: enough colour to know which is which, not enough to compete with the
+                // one ink that is actually loaded.
+                Circle()
+                    .fill(colour)
+                    .opacity(selected ? 1 : hovering ? 0.6 : 0.3)
+                    .frame(width: selected ? 14 : 11, height: selected ? 14 : 11)
+                // Chosen is a hole punched through the middle, the way a radio button is a dot
+                // inside a ring — and unlike a ring drawn around the outside, it costs no space,
+                // so nothing moves when the choice changes.
+                if selected {
+                    Circle()
+                        .fill(punch)
+                        .frame(width: 5, height: 5)
+                }
+            }
+            .frame(width: 14, height: 14)
+            .padding(3)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+
+    /// What shows through the middle. Yellow needs a dark mark; everything else takes a light one.
+    private var punch: Color {
+        let srgb = NSColor(colour).usingColorSpace(.sRGB)
+        let luminance = srgb.map { 0.299 * $0.redComponent + 0.587 * $0.greenComponent
+                                   + 0.114 * $0.blueComponent } ?? 0
+        return luminance > 0.6 ? .black : .white
     }
 }
 
