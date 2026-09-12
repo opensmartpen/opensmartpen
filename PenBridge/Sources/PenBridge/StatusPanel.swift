@@ -157,7 +157,7 @@ struct StatusPanel: View {
             // One click, and no furniture. Unchosen inks drop back; the chosen one is full
             // strength with a thin ring around it — the least that can be drawn and still be
             // unambiguous, and the fewest clicks to change what you are writing with.
-            HStack(spacing: 9) {
+            HStack(spacing: 4) {
                 ForEach(model.inks, id: \.rawValue) { colour in
                     InkDot(colour: Color(inkHex: model.palette.hex(for: colour)) ?? .primary,
                            selected: colour == ink) { model.choose(ink: colour, for: pen) }
@@ -259,38 +259,11 @@ struct StatusPanel: View {
             }
             .padding(.vertical, 4)
             .padding(.horizontal, 5)
-            if let sync = syncLine {
-                // The last word in the panel, and the quietest. It replaces a button: the app
-                // does this by itself, so all that is left to say is when it last happened.
-                Text(sync)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 7)
-            }
+            // Nothing about the last sync. It is a timestamp for something that already worked,
+            // which is the definition of a line nobody reads — and when it has not worked, the
+            // failure block says so in words, above, where it cannot be missed.
         }
     }
-
-    private var syncLine: String? {
-        if model.isPublishing { return "Syncing…" }
-        guard let last = model.lastPublish else { return nil }
-        // A clock time only answers the question while it is still the same day. "8:07" a week
-        // later reads as this morning, which is the one thing it must not do.
-        let formatter = Calendar.current.isDateInToday(last.date) ? Self.time : Self.day
-        return "Synced \(formatter.string(from: last.date))"
-    }
-
-    private static let time: DateFormatter = {
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("j:mm")
-        return f
-    }()
-
-    private static let day: DateFormatter = {
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("EEE d MMM")
-        return f
-    }()
 
     /// Every section is a hairline plus the same padding, so the layout does not repeat either.
     /// `inset` is the block's own left margin. A list of rows takes the smaller one and makes it
@@ -436,7 +409,9 @@ private struct InkDot: View {
                     .fill(punch)
                     .frame(width: 6, height: 6)
                     .opacity(selected ? 1 : 0))
-                .padding(3)
+                // 2 each side plus the row's 4 makes 8 between swatches. The click target is
+                // still bigger than the swatch, which is the only reason the padding is here.
+                .padding(2)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -519,13 +494,13 @@ private struct PenTile: View {
     let tap: () -> Void
     @State private var hovering = false
 
-    /// Inked only when the pen is connected. The fill means "you are writing with this", and a
-    /// pen that went to sleep twenty minutes ago is not something you are doing — showing it
-    /// inked makes a sleeping pen look like the live one.
-    private var filled: Bool { pen.awake }
-    /// Opened, but the pen is off. A plain chip, the same grey the rest of the panel selects
-    /// with, so it reads as "this is the one showing" rather than "this is the one writing".
-    private var chipped: Bool { open && !filled }
+    /// Inked only when the tile is open and the pen is connected. Both halves matter: the fill is
+    /// the selection, so a closed tile carries none of it; and the colour is what you are writing
+    /// with right now, so a pen that went to sleep twenty minutes ago does not get it either.
+    private var filled: Bool { open && pen.awake }
+    /// Open, but the pen is off. A plain chip, the same grey the rest of the panel selects with,
+    /// so it reads as "this is the one showing" rather than "this is the one writing".
+    private var chipped: Bool { open && !pen.awake }
 
     private var inkColour: Color {
         Color(inkHex: Palette.hexForPreview(pen.ink)) ?? .primary
