@@ -499,7 +499,7 @@ final class PanelModel: ObservableObject {
     /// pen memory drain and a first run each take deliberate setup to see even once.
     enum Scenario: String, CaseIterable {
         case synced, writing, waiting, copying, failing, asleep, bluetoothOff, firstRun
-        case newNotebook
+        case newNotebook, threePens
 
         var title: String {
             switch self {
@@ -512,6 +512,7 @@ final class PanelModel: ObservableObject {
             case .bluetoothOff: return "Bluetooth off"
             case .firstRun: return "First run"
             case .newNotebook: return "New notebook?"
+            case .threePens: return "Three pens"
             }
         }
 
@@ -526,6 +527,7 @@ final class PanelModel: ObservableObject {
             case .bluetoothOff: return "the one real blocker"
             case .firstRun: return "never paired"
             case .newNotebook: return "the one question we ask"
+            case .threePens: return "what the width is cut for"
             }
         }
     }
@@ -601,6 +603,13 @@ final class PanelModel: ObservableObject {
             status = .connected
             instanceQuestion = InstanceQuestion(bookKey: "s3/o27/b450", title: "Ncode A4 pad",
                                                 at: 0, reason: .sequenceRestart)
+        case .threePens:
+            // The width the panel is cut to. Three tiles and the pin are what decides it, so the
+            // case has to be visible — a measurement nobody can look at goes wrong unnoticed.
+            pens.append(PenRow(id: "c", name: "Highlighter", ink: .yellow, width: .thick,
+                               mode: .highlight, percent: 48, low: false, active: false,
+                               state: "Pen off", awake: false))
+            status = .connected
         }
     }
 }

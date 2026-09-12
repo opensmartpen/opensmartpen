@@ -15,7 +15,9 @@ macOS menubar app that keeps a Neo smartpen's strokes flowing into a git reposit
 
 The menubar item is a pencil, in every state — an icon that turns into a battery symbol when the battery is low disappears exactly when you go looking for it. A drop of ink beside the pencil means pages are written but not yet committed; the pencil goes red with a percentage below `lowBatteryPercent`, and dims when no pen is connected.
 
-Clicking it opens a SwiftUI panel (`NSPopover`, 320 pt) that answers one question: is my writing safe?
+Clicking it opens a SwiftUI panel (`NSPopover`, 252 pt) that answers one question: is my writing safe?
+The width is cut to three pen tiles and the pin and no more — three is as many pens as are plausibly
+in use at once, and a panel sized for a fourth is too wide every day for a case that never arrives.
 
 - **Every waiting page, counted down.** Each pending page is listed with the time left in its quiet window, so the ten-minute wait is visible instead of invisible. The page being written right now has no countdown — its timer restarts on every stroke — and carries a live dot instead.
 - **Pages are named, not numbered in Ncode.** `notebooks` in the config maps a book to a name the person uses. Ncode page numbers are not the printed ones (the LAMY pad's first written sheet reported as page 4), so a page number is shown only for a notebook whose `firstPage` has been calibrated; otherwise just the name.
@@ -120,15 +122,16 @@ memory drain and a first run each take deliberate setup to see even once.
 
 ### The app icon
 
-`scripts/make-icon.swift` draws `Resources/AppIcon.icns`. It is the menubar pencil: the same path
-on the same 16-unit grid as `StatusIcon.pencil`, kept as code rather than as a checked-in image so
-the two cannot drift apart unnoticed — redraw the pencil and this is the one file to match. Each
-size is redrawn rather than downsampled, because a 1.35-unit outline resampled to 16 px turns to
-mush.
+`scripts/make-icon.swift` draws `Resources/AppIcon.icns`. It is the notebook from the panel's book
+rows — `PaperMark`, bound, with the ink dot on its corner — kept as code rather than as a
+checked-in image so the two cannot drift apart unnoticed. A notebook rather than a pencil because a
+pencil is what every note app puts on its icon and says nothing about this one; the elastic band is
+what still reads as *this* notebook at 16 px.
 
-It shows the resting pencil, with no ink drop and no colour: the drop means pages are waiting to
-sync, and an icon has no business claiming a state it cannot know. `make-app.sh` generates the
-`.icns` if it is missing, and it is not committed — derived, like everything else here.
+`PaperMark`'s proportions are copied exactly and its stroke weight is not: a 1-in-11 line is right
+at 13 pt and reads as a fat letter at 1024, so the glyph is drawn larger and lighter. Each size is
+redrawn rather than downsampled, for the same reason. `make-app.sh` regenerates the `.icns` on
+every build and it is not committed — derived, like everything else here.
 
 ## Pens and notebooks
 

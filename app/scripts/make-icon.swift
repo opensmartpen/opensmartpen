@@ -3,13 +3,13 @@
 //
 //   scripts/make-icon.swift
 //
-// The glyph is the menubar pencil: the same path, on the same 16-unit grid, copied from
-// StatusIcon.pencil. Keeping it here as code rather than as a checked-in image means the two
-// cannot drift apart silently — if the pencil is redrawn, this is one file to match.
+// The glyph is the notebook from the panel's own book rows — `PaperMark`, bound, with the ink dot
+// on its corner. Kept here as code rather than as a checked-in image so the two cannot drift apart
+// silently: redraw the mark and this is the one file to match.
 //
-// The resting pencil, with no ink drop: the drop means pages are waiting to sync, which is a state
-// an app icon has no business claiming. Same reason the icon carries no colour — in this app
-// colour only appears when it means something.
+// A notebook rather than a pencil, because a pencil is what every note app puts on its icon and
+// says nothing about this one. The elastic band is the part that reads as *this* notebook even at
+// 16 px, and the dot is the single point of colour the panel allows itself.
 import AppKit
 
 let side: CGFloat = 1024
@@ -19,6 +19,8 @@ let plate = NSRect(x: 100, y: 100, width: 824, height: 824)
 let cornerRadius: CGFloat = 185
 
 let ink = NSColor(calibratedWhite: 0.13, alpha: 1)
+// Ink.accent, light appearance, from StatusPanel.
+let accent = NSColor(srgbRed: 0.357, green: 0.247, blue: 0.769, alpha: 1)
 let plateTop = NSColor(calibratedRed: 0.98, green: 0.976, blue: 0.969, alpha: 1)
 let plateBottom = NSColor(calibratedRed: 0.902, green: 0.890, blue: 0.875, alpha: 1)
 
@@ -36,35 +38,36 @@ func drawIcon(into size: CGFloat) -> NSBitmapImageRep {
                              xRadius: cornerRadius * k, yRadius: cornerRadius * k)
     NSGradient(starting: plateTop, ending: plateBottom)?.draw(in: shape, angle: -90)
 
-    // The 16-unit grid the menubar pencil is drawn on, centred and scaled to fill the plate.
-    let grid: CGFloat = 16
-    let glyph = plate.width * 0.60 * k
-    let scale = glyph / grid
-    let ox = plateRect.midX - glyph / 2
-    let oy = plateRect.midY - glyph / 2
-    func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
-        NSPoint(x: ox + x * scale, y: oy + (grid - y) * scale)
-    }
-
-    let body = NSBezierPath()
-    body.move(to: p(11.2, 1.6))
-    body.line(to: p(14.4, 4.8))
-    body.line(to: p(5.6, 13.6))
-    body.line(to: p(1.9, 14.5))
-    body.line(to: p(2.8, 10.8))
-    body.close()
-
-    let ferrule = NSBezierPath()
-    ferrule.move(to: p(9.6, 3.2))
-    ferrule.line(to: p(12.8, 6.4))
-
+    // PaperMark's shape, not its stroke weight. Its 1-in-11 line is right at 13 px and turns
+    // clumsy blown up to 1024, where the same ratio reads as a fat letter rather than a notebook,
+    // so the glyph is drawn larger and lighter while the proportions it is recognised by — the
+    // page ratio, the elastic at 0.72 of the width — are kept exactly.
+    let h = plate.height * 0.56 * k
+    let w = h * (8.5 / 11.0)
+    let book = NSRect(x: plateRect.midX - w / 2, y: plateRect.midY - h / 2, width: w, height: h)
+    let stroke = h / 17
     ink.setStroke()
-    for path in [body, ferrule] {
-        path.lineWidth = 1.35 * scale
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        path.stroke()
-    }
+    let outline = NSBezierPath(roundedRect: book, xRadius: h * 0.085, yRadius: h * 0.085)
+    outline.lineWidth = stroke
+    outline.stroke()
+
+    // The elastic, nearer the spine than the middle, running just off both edges as it does on the
+    // real thing — the one detail that still says "notebook" at 16 px.
+    let bandX = book.minX + w * 0.72
+    let band = NSBezierPath()
+    band.move(to: NSPoint(x: bandX, y: book.minY - stroke * 1.1))
+    band.line(to: NSPoint(x: bandX, y: book.maxY + stroke * 1.1))
+    band.lineWidth = stroke
+    band.lineCapStyle = .round
+    band.stroke()
+
+    // The ink dot on the top corner, as in the panel, where it marks the book being written in.
+    // Here it is simply the one thing carrying colour — and at 16 px it is the only thing that
+    // still does, which is why it is worth keeping.
+    let d = w * 0.30
+    let dot = NSRect(x: book.maxX - d * 0.5, y: book.maxY - d * 0.5, width: d, height: d)
+    accent.setFill()
+    NSBezierPath(ovalIn: dot).fill()
 
     NSGraphicsContext.restoreGraphicsState()
     return rep

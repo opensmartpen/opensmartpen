@@ -72,7 +72,13 @@ struct StatusPanel: View {
                 .padding(.top, 9)
                 .padding(.trailing, 9)
         }
-        .frame(width: 300)
+        // Wide enough for three pens and the pin, and no wider. The arithmetic, left to right:
+        // 14 inset + three 64-point tiles + two 6-point gaps + 9 clear of the pin + the pin's own
+        // 16 + its 9 from the edge. Three is the number to build for — it is as many pens as are
+        // plausibly in use at once, and a panel sized for a hypothetical fourth is a panel that is
+        // too wide every day for a case that never arrives. A fourth tile still fits the row; it
+        // simply pushes under the pin, which is the right way round for something that rare.
+        .frame(width: 252)
     }
 
     /// Whatever goes at the very top: the pens, or — before any pen has ever connected — the one
