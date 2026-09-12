@@ -45,13 +45,42 @@ final class PanelModel: ObservableObject {
     /// needs charging is rarely the pen you are holding.
     @Published private(set) var lowPen: (name: String, percent: Int)?
 
-    /// The pens this Mac knows, newest reading first. One fills a row; more become tiles.
+    /// The pens this Mac knows, newest reading first.
     @Published private(set) var pens: [PenRow] = []
+    /// The pen whose ink and width are showing. Nothing is open until you open it — the controls
+    /// are for the moment you want them, not a permanent fixture.
+    @Published private(set) var expandedPen: String?
+
+    func toggleExpanded(_ mac: String) {
+        expandedPen = expandedPen == mac ? nil : mac
+    }
+
+    /// The pen the open controls belong to.
+    var expanded: PenRow? { pens.first { $0.id == expandedPen } }
+
+    /// Changing ink for a pen that is not the one writing sets its default instead of the live
+    /// selection — that pen is in a drawer, so there is no live anything to change.
+    func choose(ink: InkColor, for pen: PenRow) {
+        if pen.active { choose(ink: ink); return }
+        guard let registry = live?.pens, var record = registry.record(mac: pen.id) else { return }
+        record.ink = ink
+        registry.save(record)
+        refresh()
+    }
+
+    func choose(width: LineWidth, for pen: PenRow) {
+        if pen.active { choose(width: width); return }
+        guard let registry = live?.pens, var record = registry.record(mac: pen.id) else { return }
+        record.width = width
+        registry.save(record)
+        refresh()
+    }
 
     struct PenRow: Identifiable, Equatable {
         let id: String          // MAC
         let name: String
         let ink: InkColor
+        let width: LineWidth
         let mode: PenMode
         let percent: Int?
         let low: Bool
@@ -227,7 +256,7 @@ final class PanelModel: ObservableObject {
         let readings = live.penState.all
         pens = live.pens.pens.map { pen in
             let reading = readings[pen.mac]
-            return PenRow(id: pen.mac, name: pen.name, ink: pen.ink, mode: pen.mode,
+            return PenRow(id: pen.mac, name: pen.name, ink: pen.ink, width: pen.width, mode: pen.mode,
                           percent: reading?.battery,
                           low: (reading.map { !$0.charging && $0.battery <= config.lowBatteryPercent }) ?? false,
                           active: pen.mac == connected)
@@ -383,7 +412,7 @@ final class PanelModel: ObservableObject {
     /// pen memory drain and a first run each take deliberate setup to see even once.
     enum Scenario: String, CaseIterable {
         case synced, writing, waiting, copying, failing, asleep, bluetoothOff, firstRun
-        case newNotebook, unmeasuredInk
+        case newNotebook
 
         var title: String {
             switch self {
@@ -396,7 +425,6 @@ final class PanelModel: ObservableObject {
             case .bluetoothOff: return "Bluetooth off"
             case .firstRun: return "First run"
             case .newNotebook: return "New notebook?"
-            case .unmeasuredInk: return "Unmeasured ink"
             }
         }
 
@@ -411,7 +439,6 @@ final class PanelModel: ObservableObject {
             case .bluetoothOff: return "the one real blocker"
             case .firstRun: return "never paired"
             case .newNotebook: return "the one question we ask"
-            case .unmeasuredInk: return "a colour with no hex"
             }
         }
     }
@@ -430,9 +457,9 @@ final class PanelModel: ObservableObject {
         penDisplayName = "Everyday"
         lowPen = ("Red one", 14)
         pens = [
-            PenRow(id: "a", name: "Everyday", ink: .black, mode: .writing,
+            PenRow(id: "a", name: "Everyday", ink: .black, width: .medium, mode: .writing,
                    percent: 72, low: false, active: true),
-            PenRow(id: "b", name: "Red one", ink: .red, mode: .accent,
+            PenRow(id: "b", name: "Red one", ink: .red, width: .thin, mode: .accent,
                    percent: 14, low: true, active: false),
         ]
         instanceQuestion = nil
@@ -487,9 +514,6 @@ final class PanelModel: ObservableObject {
             status = .connected
             instanceQuestion = InstanceQuestion(bookKey: "s3/o27/b450", title: "Ncode A4 pad",
                                                 at: 0, reason: .sequenceRestart)
-        case .unmeasuredInk:
-            status = .connected
-            ink = .yellow
         }
     }
 }

@@ -34,7 +34,6 @@ struct StatusPanel: View {
             if let question = model.instanceQuestion { section { newNotebook(question) } }
             if model.showsWakeHint { section { wakeHint } }
             if !model.pens.isEmpty { section { penRow } }
-            section { inkRow }
             if !model.recent.isEmpty { section { recent } }
             footer
         }
@@ -157,11 +156,18 @@ struct StatusPanel: View {
     /// Always tiles, whether there is one pen or three. A tile keeps its own width rather than
     /// stretching, so a single pen is a single tile at the left rather than a box across the panel.
     private var penRow: some View {
-        HStack(spacing: 6) {
-            ForEach(model.pens) { pen in
-                PenTile(pen: pen) { if !pen.active { model.openConfig() } }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                ForEach(model.pens) { pen in
+                    PenTile(pen: pen, open: model.expandedPen == pen.id) {
+                        model.toggleExpanded(pen.id)
+                    }
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            if let pen = model.expanded {
+                inkRow(for: pen).padding(.top, 11)
+            }
         }
     }
 
@@ -171,47 +177,37 @@ struct StatusPanel: View {
     /// does, and the panel cannot afford the line. The one exception is an ink with no measured
     /// colour behind it, where the consequence — the page renders black — is otherwise invisible
     /// until somebody opens a PNG days later.
-    private var inkRow: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Track {
+    private func inkRow(for pen: PanelModel.PenRow) -> some View {
+        HStack(spacing: 10) {
+            // The real segmented control, not a lookalike. It brings the system's own selected
+            // appearance, its metrics, its dark mode and its keyboard handling — all things a
+            // hand-drawn track has to imitate and will drift from.
+            Picker("", selection: Binding(
+                get: { pen.active ? model.ink : pen.ink },
+                set: { model.choose(ink: $0, for: pen) })) {
                     ForEach(model.inks, id: \.rawValue) { colour in
-                        Segment(selected: colour == model.ink, width: 22) {
-                            Circle()
-                                .fill(Color(inkHex: model.palette.hex(for: colour)) ?? .clear)
-                                .frame(width: 13, height: 13)
-                                // Unchosen inks drop back so only the one in use carries weight.
-                                .opacity(colour == model.ink ? 1 : 0.34)
-                        } choose: { model.choose(ink: colour) }
-                        .help(colour.rawValue)
+                        Image(nsImage: Swatches.dot(model.palette.hex(for: colour)))
+                            .tag(colour)
                     }
                 }
-                Spacer(minLength: 0)
-                // The strip offers three weights. "Default" is not a button on it — it is the
-                // state before anything is tapped — so it is not one here either.
-                Track {
-                    ForEach([LineWidth.thin, .medium, .thick], id: \.rawValue) { weight in
-                        Segment(selected: weight == model.width, width: 25) {
-                            // Rectangular, not a capsule: a line of ink has ends, and at three
-                            // points tall a rounded cap is most of what you can see.
-                            Rectangle()
-                                .fill(Color.primary)
-                                .frame(width: 15, height: thickness(weight))
-                                .cornerRadius(0.5)
-                                .opacity(weight == model.width ? 0.95 : 0.4)
-                        } choose: { model.choose(width: weight) }
-                        .help(weight.rawValue)
-                    }
-                }
-            }
-        }
-    }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
 
-    private func thickness(_ weight: LineWidth) -> CGFloat {
-        switch weight {
-        case .thin: return 1
-        case .default, .medium: return 3
-        case .thick: return 6
+            Spacer(minLength: 0)
+
+            Picker("", selection: Binding(
+                get: { pen.active ? model.width : pen.width },
+                set: { model.choose(width: $0, for: pen) })) {
+                    // The strip offers three weights. "Default" is not a button on it — it is the
+                    // state before anything is tapped — so it is not one here either.
+                    ForEach([LineWidth.thin, .medium, .thick], id: \.rawValue) { weight in
+                        Image(nsImage: Swatches.bar(weight)).tag(weight)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
         }
     }
 
@@ -366,28 +362,44 @@ private struct RecentRow: View {
 
 /// The pen, drawn in its own ink. A highlighter is a band rather than a nib, because that is what
 /// it makes.
+/// The pen, drawn in its own ink — the same outline pencil the menubar uses, on the 16-unit grid
+/// it was authored on. One mark for the app means one mark, not a family resemblance.
 private struct Nib: View {
     let ink: InkColor
-    let mode: PenMode
     let size: CGFloat
 
     var body: some View {
-        RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-            .fill(Color(inkHex: Palette.hexForPreview(ink)) ?? Color.primary)
+        let fill = Color(inkHex: Palette.hexForPreview(ink)) ?? Color.primary
+        RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+            .fill(fill)
             .frame(width: size, height: size)
             .overlay(
-                Image(systemName: glyph)
-                    .font(.system(size: size * 0.48, weight: .medium))
-                    .foregroundStyle(ink == .yellow || ink == .white ? Color.black : Color.white)
-            )
-    }
+                Canvas { context, canvas in
+                    let scale = canvas.width / 16
+                    func p(_ x: Double, _ y: Double) -> CGPoint {
+                        CGPoint(x: x * scale, y: y * scale)
+                    }
+                    var body = Path()
+                    body.move(to: p(11.2, 1.6))
+                    body.addLine(to: p(14.4, 4.8))
+                    body.addLine(to: p(5.6, 13.6))
+                    body.addLine(to: p(1.9, 14.5))
+                    body.addLine(to: p(2.8, 10.8))
+                    body.closeSubpath()
+                    var ferrule = Path()
+                    ferrule.move(to: p(9.6, 3.2))
+                    ferrule.addLine(to: p(12.8, 6.4))
 
-    private var glyph: String {
-        switch mode {
-        case .writing: return "pencil"
-        case .accent: return "pencil.tip"
-        case .highlight: return "highlighter"
-        }
+                    // Yellow ink needs dark strokes on it; everything else takes white.
+                    let stroke: Color = ink == .yellow || ink == .white ? .black : .white
+                    for path in [body, ferrule] {
+                        context.stroke(path, with: .color(stroke),
+                                       style: StrokeStyle(lineWidth: 1.35 * scale,
+                                                          lineCap: .round, lineJoin: .round))
+                    }
+                }
+                .frame(width: size * 0.62, height: size * 0.62)
+            )
     }
 }
 
@@ -411,16 +423,22 @@ private struct BatteryBar: View {
 /// chosen: a click that "selected" a pen would be a second, disagreeing answer.
 private struct PenTile: View {
     let pen: PanelModel.PenRow
-    let open: () -> Void
+    let open: Bool
+    let tap: () -> Void
     @State private var hovering = false
 
     var body: some View {
-        Button(action: open) {
+        Button(action: tap) {
             VStack(spacing: 4) {
-                Nib(ink: pen.ink, mode: pen.mode, size: 22)
-                Text(pen.name)
-                    .font(.system(size: 10, weight: pen.active ? .semibold : .regular))
-                    .lineLimit(1)
+                Nib(ink: pen.ink, size: 24)
+                HStack(spacing: 3) {
+                    if pen.active {
+                        Circle().fill(Ink.accent).frame(width: 4, height: 4)
+                    }
+                    Text(pen.name)
+                        .font(.system(size: 10, weight: pen.active ? .semibold : .regular))
+                        .lineLimit(1)
+                }
                 if let percent = pen.percent {
                     BatteryBar(percent: percent, low: pen.low).frame(width: 26)
                 } else {
@@ -429,11 +447,13 @@ private struct PenTile: View {
             }
             .frame(width: 84)
             .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(pen.active ? Ink.accent.opacity(0.13)
+            // Glass, not paint: the open pen sits on the system's own selected fill, and
+            // everything else is the panel's material showing through.
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(open ? Color(nsColor: .selectedContentBackgroundColor).opacity(0.22)
                       : hovering ? Color.primary.opacity(0.06) : Color.clear))
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .stroke(pen.active ? Ink.accent.opacity(0.45) : Color.clear, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.primary.opacity(open ? 0.10 : 0), lineWidth: 0.5))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -441,46 +461,51 @@ private struct PenTile: View {
     }
 }
 
-/// The sunken track a row of choices sits in — macOS's own segmented control, which is exactly
-/// what this is: several options, one of them current. Using the same track for ink and for weight
-/// makes them read as one thing rather than two unrelated rows.
-private struct Track<Content: View>: View {
-    @ViewBuilder let content: Content
+/// Images for the segmented controls.
+///
+/// An ink is a real colour and must not be tinted by the system, so it is a plain image. A line
+/// weight is not a colour — it is a shape — so it is a template and macOS colours it to match the
+/// selection, which is exactly the behaviour in a native picker.
+enum Swatches {
+    static func dot(_ hex: String?) -> NSImage {
+        let side: CGFloat = 15
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { _ in
+            let colour = NSColor(hex: hex) ?? .labelColor
+            colour.setFill()
+            NSBezierPath(ovalIn: NSRect(x: 1, y: 1, width: side - 2, height: side - 2)).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
 
-    var body: some View {
-        HStack(spacing: 3) { content }
-            .padding(3)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(Color.primary.opacity(0.10)))
+    static func bar(_ weight: LineWidth) -> NSImage {
+        let height: CGFloat
+        switch weight {
+        case .thin: height = 1
+        case .default, .medium: height = 3
+        case .thick: height = 6
+        }
+        let size = NSSize(width: 17, height: 8)
+        let image = NSImage(size: size, flipped: false) { _ in
+            NSColor.black.setFill()
+            NSBezierPath(rect: NSRect(x: 0, y: (size.height - height) / 2,
+                                      width: size.width, height: height)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 }
 
-/// One option in the track. The chosen one is lifted out of it on a card rather than ringed: a
-/// ring drawn over a colour competes with the colour, and the whole point of the swatch is that
-/// you can see the ink.
-private struct Segment<Content: View>: View {
-    let selected: Bool
-    let width: CGFloat
-    @ViewBuilder let content: Content
-    let choose: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: choose) {
-            content
-                .frame(width: width, height: 21)
-                .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(selected ? Color(nsColor: .controlBackgroundColor)
-                              : hovering ? Color.primary.opacity(0.07) : Color.clear)
-                        .shadow(color: .black.opacity(selected ? 0.22 : 0), radius: 1.5, y: 0.5)
-                )
-                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .stroke(Color.black.opacity(selected ? 0.14 : 0), lineWidth: 0.5))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+private extension NSColor {
+    convenience init?(hex: String?) {
+        guard var h = hex else { return nil }
+        if h.hasPrefix("#") { h.removeFirst() }
+        guard h.count == 6, let v = Int(h, radix: 16) else { return nil }
+        self.init(srgbRed: CGFloat((v >> 16) & 0xff) / 255,
+                  green: CGFloat((v >> 8) & 0xff) / 255,
+                  blue: CGFloat(v & 0xff) / 255, alpha: 1)
     }
 }
 
