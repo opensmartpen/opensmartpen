@@ -44,6 +44,21 @@ final class PanelModel: ObservableObject {
     /// pen this is the same fact; with three it is the one that matters, because the pen that
     /// needs charging is rarely the pen you are holding.
     @Published private(set) var lowPen: (name: String, percent: Int)?
+
+    /// The pens this Mac knows, newest reading first. One fills a row; more become tiles.
+    @Published private(set) var pens: [PenRow] = []
+
+    struct PenRow: Identifiable, Equatable {
+        let id: String          // MAC
+        let name: String
+        let ink: InkColor
+        let mode: PenMode
+        let percent: Int?
+        let low: Bool
+        /// The pen you are writing with. Reported by the hardware, never chosen by a click —
+        /// you select a pen by picking it up.
+        let active: Bool
+    }
     @Published private(set) var pending: [PendingRow] = []
     @Published private(set) var pagesOnPen: Int?
     @Published private(set) var lastPublish: Publish?
@@ -206,6 +221,20 @@ final class PanelModel: ObservableObject {
 
         if let record = coordinator.lastPublish {
             lastPublish = Publish(date: record.date, commit: record.commit, pages: record.pages)
+        }
+
+        let connected = session.isConnected ? PenRecord.normalise(config.penMac ?? "") : nil
+        let readings = live.penState.all
+        pens = live.pens.pens.map { pen in
+            let reading = readings[pen.mac]
+            return PenRow(id: pen.mac, name: pen.name, ink: pen.ink, mode: pen.mode,
+                          percent: reading?.battery,
+                          low: (reading.map { !$0.charging && $0.battery <= config.lowBatteryPercent }) ?? false,
+                          active: pen.mac == connected)
+        }.sorted {
+            // The one in your hand first, then by how recently each was seen.
+            if $0.active != $1.active { return $0.active }
+            return (readings[$0.id]?.at ?? .distantPast) > (readings[$1.id]?.at ?? .distantPast)
         }
 
         // Any pen used in the last day, not just the connected one.
@@ -400,6 +429,12 @@ final class PanelModel: ObservableObject {
         penName = "Pen"
         penDisplayName = "Everyday"
         lowPen = ("Red one", 14)
+        pens = [
+            PenRow(id: "a", name: "Everyday", ink: .black, mode: .writing,
+                   percent: 72, low: false, active: true),
+            PenRow(id: "b", name: "Red one", ink: .red, mode: .accent,
+                   percent: 14, low: true, active: false),
+        ]
         instanceQuestion = nil
         palette = Palette(ink: ["black": "#000000", "red": "#ff0200", "blue": "#00abeb",
                                 "green": "#3cdd00", "yellow": "#ffd400"])

@@ -12,7 +12,7 @@ final class PinnedPanelController: NSWindowController, NSWindowDelegate {
     /// Told when the user closes the window, so the panel can show "Pin" again.
     var onClose: (() -> Void)?
 
-    init(model: PanelModel, now: Date) {
+    init(model: PanelModel, now: Date, from panelFrame: NSRect?) {
         self.model = model
         host = NSHostingController(rootView: StatusPanel(model: model, now: now))
 
@@ -24,11 +24,16 @@ final class PinnedPanelController: NSWindowController, NSWindowDelegate {
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.isMovableByWindowBackground = true
-        // AppKit puts the window back where you left it after a restart.
-        window.setFrameAutosaveName("penbridge-pinned")
         super.init(window: window)
         window.delegate = self
         fit()
+        // Open exactly where the panel was. Pinning is meant to feel like keeping the thing you
+        // are already looking at, not like opening a second one somewhere else.
+        if let panelFrame {
+            window.setFrameTopLeftPoint(NSPoint(x: panelFrame.minX, y: panelFrame.maxY))
+        } else {
+            window.center()
+        }
     }
 
     @available(*, unavailable)

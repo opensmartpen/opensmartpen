@@ -222,8 +222,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pinnedPanel.close()          // windowWillClose does the rest
             return
         }
+        let origin = panel.isVisible ? panel.frame : nil
         panel?.dismiss()
-        let controller = PinnedPanelController(model: model, now: panelNow)
+        let controller = PinnedPanelController(model: model, now: panelNow, from: origin)
         controller.onClose = { [weak self] in
             self?.pinnedPanel = nil
             self?.model.setPinned(false)

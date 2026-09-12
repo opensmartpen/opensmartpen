@@ -55,6 +55,19 @@ public struct Palette: Equatable {
     }
 
     public func isOffered(_ colour: InkColor) -> Bool { self.ink[colour.rawValue] != nil }
+
+    /// A colour for drawing a pen's nib when there is no palette to hand — the design window, and
+    /// the moment before the repo has been read. Never used for ink on a page.
+    public static func hexForPreview(_ colour: InkColor) -> String? {
+        switch colour {
+        case .black: return "#1a1a1a"
+        case .red: return "#ff0200"
+        case .blue: return "#00abeb"
+        case .green: return "#3cdd00"
+        case .yellow: return "#ffd400"
+        default: return nil
+        }
+    }
     public func width(for width: LineWidth) -> Double? { widthMM[width.rawValue] }
 
     /// The width to draw, in mm, for a line of this weight pressed this hard. Force is 0...1.

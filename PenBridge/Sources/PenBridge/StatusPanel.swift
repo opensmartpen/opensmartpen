@@ -33,6 +33,7 @@ struct StatusPanel: View {
             if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
             if let question = model.instanceQuestion { section { newNotebook(question) } }
             if model.showsWakeHint { section { wakeHint } }
+            if !model.pens.isEmpty { section { penRow } }
             section { inkRow }
             if !model.recent.isEmpty { section { recent } }
             footer
@@ -57,12 +58,7 @@ struct StatusPanel: View {
                     .foregroundStyle(.tertiary)
                     .monospacedDigit()
             }
-            if let battery = model.battery {
-                Text("\(battery.percent)%")
-                    .font(.system(size: 11, weight: battery.low ? .semibold : .regular))
-                    .foregroundStyle(battery.low ? Ink.critical : Color.secondary)
-                    .monospacedDigit()
-            }
+            PinButton(pinned: model.isPinned, action: model.togglePin)
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 11)
@@ -152,6 +148,36 @@ struct StatusPanel: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(model.recent) { book in
                 RecentRow(book: book) { model.open(book) }
+            }
+        }
+    }
+
+    // MARK: pens — who is writing, and how charged they are
+
+    /// One pen fills a row; two or more become tiles. The same component at two widths, so nothing
+    /// is thrown away when a second pen arrives.
+    @ViewBuilder private var penRow: some View {
+        if model.pens.count == 1, let pen = model.pens[0] as PanelModel.PenRow? {
+            HStack(spacing: 9) {
+                Nib(ink: pen.ink, mode: pen.mode, size: 26)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(pen.name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                    BatteryBar(percent: pen.percent, low: pen.low)
+                }
+                if let percent = pen.percent {
+                    Text("\(percent)%")
+                        .font(.system(size: 10.5, weight: pen.low ? .semibold : .regular))
+                        .foregroundStyle(pen.low ? Ink.critical : Color.secondary)
+                        .monospacedDigit()
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { model.openConfig() }
+        } else {
+            HStack(spacing: 6) {
+                ForEach(model.pens) { pen in
+                    PenTile(pen: pen) { if !pen.active { model.openConfig() } }
+                }
             }
         }
     }
@@ -268,7 +294,6 @@ struct StatusPanel: View {
 
     private var footer: some View {
         HStack(spacing: 2) {
-            FooterButton(title: model.isPinned ? "Unpin" : "Pin", action: model.togglePin)
             FooterButton(title: "Open", action: model.showLive)
             FooterButton(title: "Notes", action: model.openNotes)
             FooterButton(title: "Settings", action: model.openConfig)
@@ -346,6 +371,81 @@ private struct RecentRow: View {
         .buttonStyle(.plain)
         .background(RoundedRectangle(cornerRadius: 5)
             .fill(hovering ? Color.primary.opacity(0.07) : Color.clear))
+        .onHover { hovering = $0 }
+    }
+}
+
+/// The pen, drawn in its own ink. A highlighter is a band rather than a nib, because that is what
+/// it makes.
+private struct Nib: View {
+    let ink: InkColor
+    let mode: PenMode
+    let size: CGFloat
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
+            .fill(Color(inkHex: Palette.hexForPreview(ink)) ?? Color.primary)
+            .frame(width: size, height: size)
+            .overlay(
+                Image(systemName: glyph)
+                    .font(.system(size: size * 0.48, weight: .medium))
+                    .foregroundStyle(ink == .yellow || ink == .white ? Color.black : Color.white)
+            )
+    }
+
+    private var glyph: String {
+        switch mode {
+        case .writing: return "pencil"
+        case .accent: return "pencil.tip"
+        case .highlight: return "highlighter"
+        }
+    }
+}
+
+private struct BatteryBar: View {
+    let percent: Int?
+    let low: Bool
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.14))
+                Capsule().fill(low ? Ink.critical : Color.secondary)
+                    .frame(width: geo.size.width * CGFloat(percent ?? 0) / 100)
+            }
+        }
+        .frame(height: 3)
+        .opacity(percent == nil ? 0.35 : 1)
+    }
+}
+
+/// One pen among several. The violet ground says which one is in your hand — reported, never
+/// chosen: a click that "selected" a pen would be a second, disagreeing answer.
+private struct PenTile: View {
+    let pen: PanelModel.PenRow
+    let open: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: open) {
+            VStack(spacing: 4) {
+                Nib(ink: pen.ink, mode: pen.mode, size: 22)
+                Text(pen.name)
+                    .font(.system(size: 10, weight: pen.active ? .semibold : .regular))
+                    .lineLimit(1)
+                BatteryBar(percent: pen.percent, low: pen.low).frame(width: 26)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .padding(.horizontal, 4)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(pen.active ? Ink.accent.opacity(0.13)
+                      : hovering ? Color.primary.opacity(0.06) : Color.clear))
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(pen.active ? Ink.accent.opacity(0.45) : Color.clear, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         .onHover { hovering = $0 }
     }
 }
@@ -497,6 +597,28 @@ private struct QuietButtonStyle: ButtonStyle {
             .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
             .opacity(configuration.isPressed ? 0.6 : 1)
             .contentShape(Rectangle())
+    }
+}
+
+/// Keeping the panel on screen. In the corner rather than the footer: it acts on the window
+/// itself, and the footer is for places to go.
+private struct PinButton: View {
+    let pinned: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: pinned ? "pin.fill" : "pin")
+                .font(.system(size: 10.5))
+                .rotationEffect(.degrees(45))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(pinned ? Ink.accent : hovering ? Color.secondary : Color.secondary.opacity(0.45))
+        .onHover { hovering = $0 }
+        .help(pinned ? "Unpin" : "Keep this panel open")
     }
 }
 
