@@ -299,9 +299,9 @@ struct StatusPanel: View {
         VStack(spacing: 0) {
             hairline
             VStack(spacing: 1) {
-                MenuItem(title: "Open notebook", action: model.showLive)
-                MenuItem(title: "Reveal notes", action: model.openNotes)
-                Divider().padding(.vertical, 3).padding(.horizontal, 8)
+                // Nothing here for opening a notebook: clicking one in the list above already
+                // does that, and "Reveal notes" is a folder you rarely want and can reach from
+                // Settings. What is left is what a menubar app's menu is actually for.
                 MenuItem(title: "Settings…", shortcut: "⌘,", action: model.openConfig)
                 MenuItem(title: "Quit PenBridge", shortcut: "⌘Q") { NSApp.terminate(nil) }
             }
