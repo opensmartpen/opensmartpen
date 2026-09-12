@@ -55,6 +55,10 @@ final class PenSession: NSObject {
     private var passwordTried = false
 
     private var powerWriteAttempted = false
+    /// When Bluetooth was first seen unavailable, and whether we have said so. Together these keep
+    /// the startup flicker quiet and stop a persistent fault repeating on every scan tick.
+    private var bluetoothOffSince: Date?
+    private var reportedBluetoothProblem = false
     private var assembler = StrokeAssembler()
     private var penMac = ""
     private var firmware = ""
@@ -115,7 +119,15 @@ final class PenSession: NSObject {
     private func scanIfNeeded() {
         guard pen == nil, connecting == nil else { return }
         guard PenFinder.shared.bluetoothOn else {
-            if state != .bluetoothOff {
+            // CoreBluetooth reports `.unknown` for a moment after launch, before it settles on
+            // powered-on. Complaining on the first tick would therefore announce that the radio is
+            // switched off every single start, about a radio that is fine — which is the same kind
+            // of confident wrong answer this diagnosis exists to stop. Wait for it to persist past
+            // one scan tick; a real fault easily outlives that, a wakeup never does.
+            let since = bluetoothOffSince ?? Date()
+            bluetoothOffSince = since
+            if !reportedBluetoothProblem, Date().timeIntervalSince(since) >= 5 {
+                reportedBluetoothProblem = true
                 let problem = Self.bluetoothProblem()
                 Log.warn(problem)
                 // The panel and the tooltip can only say "Bluetooth off", which is a lie when the
@@ -132,6 +144,9 @@ final class PenSession: NSObject {
             state = .bluetoothOff
             return
         }
+        // Bluetooth is back, so a later outage is news again.
+        bluetoothOffSince = nil
+        reportedBluetoothProblem = false
         state = .scanning
         if !scanning {
             scanning = true
