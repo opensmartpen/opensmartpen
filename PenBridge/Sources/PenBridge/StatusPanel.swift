@@ -181,26 +181,16 @@ struct StatusPanel: View {
         let ink = pen.active ? model.ink : pen.ink
         let width = pen.active ? model.width : pen.width
         return HStack(spacing: 10) {
-            // A pop-up, not five buttons in a row. Five swatches meant five tap targets and five
-            // blocks of colour for a choice made once in a while, and macOS has one control for
-            // "pick one of a short list" — this one, which also has room to say the name.
-            Menu {
+            // One click, and no furniture. Unchosen inks drop back; the chosen one is full
+            // strength with a thin ring around it — the least that can be drawn and still be
+            // unambiguous, and the fewest clicks to change what you are writing with.
+            HStack(spacing: 7) {
                 ForEach(model.inks, id: \.rawValue) { colour in
-                    Button {
-                        model.choose(ink: colour, for: pen)
-                    } label: {
-                        Image(nsImage: Swatches.dot(model.palette.hex(for: colour)))
-                        Text(colour.rawValue.capitalized)
-                    }
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(nsImage: Swatches.dot(model.palette.hex(for: ink)))
-                    Text(ink.rawValue.capitalized).font(.system(size: 11))
+                    InkDot(colour: Color(inkHex: model.palette.hex(for: colour)) ?? .primary,
+                           selected: colour == ink) { model.choose(ink: colour, for: pen) }
+                        .help(colour.rawValue.capitalized)
                 }
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
 
             Spacer(minLength: 0)
 
@@ -403,15 +393,42 @@ private struct Pencil: View {
     }
 }
 
+/// One ink. A ring rather than a card or a well: it is the smallest mark that separates chosen
+/// from not, and it leaves the colour itself untouched.
+private struct InkDot: View {
+    let colour: Color
+    let selected: Bool
+    let choose: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: choose) {
+            Circle()
+                .fill(colour)
+                .frame(width: 12, height: 12)
+                .opacity(selected ? 1 : hovering ? 0.75 : 0.4)
+                .overlay(Circle()
+                    .stroke(Color.primary.opacity(selected ? 0.45 : 0), lineWidth: 1)
+                    .padding(-2.5))
+                .padding(3)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
 private struct BatteryBar: View {
     let percent: Int
     let low: Bool
+    /// Set when the bar sits on a tile filled with ink, where the usual greys disappear.
+    var onInk: Color?
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.primary.opacity(0.14))
-                Capsule().fill(low ? Ink.critical : Color.secondary)
+                Capsule().fill((onInk ?? Color.primary).opacity(onInk == nil ? 0.14 : 0.3))
+                Capsule().fill(low ? Ink.critical : (onInk ?? Color.secondary))
                     .frame(width: max(2, geo.size.width * CGFloat(percent) / 100))
             }
         }
@@ -431,6 +448,9 @@ private struct PenTile: View {
     let tap: () -> Void
     @State private var hovering = false
 
+    /// Filled when this is the pen you are using, or the one you have opened.
+    private var filled: Bool { pen.active || open }
+
     private var inkColour: Color {
         Color(inkHex: Palette.hexForPreview(pen.ink)) ?? .primary
     }
@@ -443,28 +463,31 @@ private struct PenTile: View {
     var body: some View {
         Button(action: tap) {
             VStack(spacing: 3) {
-                Pencil(colour: open ? onInk : inkColour, size: 16)
+                Pencil(colour: filled ? onInk : inkColour, size: 16)
                 HStack(spacing: 3) {
                     if pen.active {
-                        Circle().fill(open ? onInk : Ink.accent).frame(width: 4, height: 4)
+                        Circle().fill(filled ? onInk : Ink.accent).frame(width: 4, height: 4)
                     }
                     Text(pen.name)
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(open ? onInk : Color.primary)
+                        .foregroundStyle(filled ? onInk : Color.primary)
                         .lineLimit(1)
                 }
-                // The battery gives way to the ink when the tile is open: it is still charged, and
-                // the space is better spent on what you opened the tile for.
-                if open || pen.percent == nil {
+                if let percent = pen.percent {
+                    BatteryBar(percent: percent, low: pen.low, onInk: filled ? onInk : nil)
+                } else {
                     Color.clear.frame(height: 3)
-                } else if let percent = pen.percent {
-                    BatteryBar(percent: percent, low: pen.low).frame(width: 30)
                 }
             }
-            .frame(width: 72)
+            .padding(.horizontal, 9)
             .padding(.vertical, 6)
+            .frame(width: 78)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(open ? inkColour : hovering ? Color.primary.opacity(0.07) : Color.clear))
+                .fill(filled ? inkColour : hovering ? Color.primary.opacity(0.07) : Color.clear))
+            // A black pen filled with black ink would vanish into a dark panel, so a filled tile
+            // always carries a hairline.
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Color.primary.opacity(filled ? 0.16 : 0), lineWidth: 0.5))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

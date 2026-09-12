@@ -84,8 +84,9 @@ final class PanelModel: ObservableObject {
         let mode: PenMode
         let percent: Int?
         let low: Bool
-        /// The pen you are writing with. Reported by the hardware, never chosen by a click —
-        /// you select a pen by picking it up.
+        /// The pen you are using: the one connected, or failing that the one seen most recently.
+        /// Reported by the hardware, never chosen by a click — you select a pen by picking it up,
+        /// and a pen that is merely asleep is still the one you were last writing with.
         let active: Bool
     }
     @Published private(set) var pending: [PendingRow] = []
@@ -252,8 +253,12 @@ final class PanelModel: ObservableObject {
             lastPublish = Publish(date: record.date, commit: record.commit, pages: record.pages)
         }
 
-        let connected = session.isConnected ? PenRecord.normalise(config.penMac ?? "") : nil
         let readings = live.penState.all
+        // Connected wins; otherwise the most recent reading. A pen sleeps after five minutes, so
+        // insisting on a live connection would leave no pen marked for most of the day.
+        let connected = session.isConnected
+            ? PenRecord.normalise(config.penMac ?? "")
+            : readings.max(by: { $0.value.at < $1.value.at })?.key
         pens = live.pens.pens.map { pen in
             let reading = readings[pen.mac]
             return PenRow(id: pen.mac, name: pen.name, ink: pen.ink, width: pen.width, mode: pen.mode,
