@@ -331,7 +331,10 @@ struct ViewerView: View {
                 ForEach(viewer.window, id: \.self) { n in
                     PageChip(number: n,
                              current: viewer.isOnScreen(n),
-                             active: viewer.activeIsHere && viewer.activePage == n) {
+                             // Only worth marking when you are somewhere else: on the page you
+                             // are already looking at, the violet edge on the sheet says it.
+                             active: viewer.activeIsHere && viewer.activePage == n
+                                     && !viewer.isOnScreen(n)) {
                         viewer.go(to: n)
                     }
                 }
