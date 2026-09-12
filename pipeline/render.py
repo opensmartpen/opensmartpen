@@ -358,8 +358,12 @@ def render_file(raw: pathlib.Path, repo: pathlib.Path, books: Books, out: pathli
         print(note)
         for c in complaints:
             print(f"  {where}: {c}")
+        if out and len(groups) > 1:
+            others = ", ".join(sorted(set(groups) - {slug}))
+            print(f"  only this copy was rendered; -o names one file. Also in this page: {others}",
+                  file=sys.stderr)
         if out:
-            break  # an explicit output path names one file, so only the first instance can use it
+            break
 
 
 def main() -> None:

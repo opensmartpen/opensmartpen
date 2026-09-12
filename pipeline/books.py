@@ -126,15 +126,17 @@ class Pens:
     Writing that resumes after a long silence starts again at those defaults, so the renderer
     has to know them; without a record the fallbacks are black at the default width.
 
-    The MAC is matched loosely — case folded, separators removed — because a file written by
-    hand should not have to match the pen's own formatting exactly.
+    The MAC is matched case-folded with separators stripped, matching PenRecord.normalise on the
+    app side: the SDK reports a punctuated address and raw stores a bare one, and they have to
+    compare one way only. If the two normalisers ever disagree the miss is silent and looks like
+    black ink, which is exactly the failure this whole design avoids elsewhere.
     """
 
     def __init__(self, repo: pathlib.Path):
         self.by_mac: dict[str, dict] = {}
         for f in sorted((repo / "pens").glob("*.json")):
             data = json.loads(f.read_text())
-            mac = data.get("mac") or data.get("id") or data.get("penMac")
+            mac = data.get("mac")
             if mac:
                 self.by_mac[self.normalise(mac)] = data
 
