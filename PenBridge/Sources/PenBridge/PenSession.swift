@@ -16,10 +16,30 @@ final class PenSession: NSObject {
         case draining(remaining: Int)
     }
 
+    /// How far through pen memory we are, for the panel. The SDK reports a percentage per book,
+    /// so this is per-book progress plus which book we are on.
+    struct Drain: Equatable {
+        let index: Int
+        let count: Int
+        let percent: Int
+    }
+
     private(set) var state: State = .scanning { didSet { if state != oldValue { onChange?() } } }
+
+    /// The pen is here and talking. Readings taken from it are current only while this is true.
+    var isConnected: Bool {
+        switch state {
+        case .ready, .draining: return true
+        default: return false
+        }
+    }
+    private(set) var drain: Drain? { didSet { if drain != oldValue { onChange?() } } }
     private(set) var setting: PenSettingStruct?
     private(set) var penName = ""
     var onChange: (() -> Void)?
+    /// Every dot as it arrives, before assembly. The live view draws from this; the assembler
+    /// only emits a stroke on pen-up, which is a whole word too late to watch.
+    var onDot: ((PageID, DotSample, DotEvent) -> Void)?
 
     private var config: Config
     private let configURL: URL
@@ -44,6 +64,8 @@ final class PenSession: NSObject {
     private var draining: Note?
     private var drainedPages: Set<PageID> = []
     private var drainedStrokes = 0
+    /// Books in this drain, fixed when the list arrives so "2 of 3" does not renumber as it empties.
+    private var drainTotal = 0
 
     init(config: Config, configURL: URL, coordinator: SyncCoordinator, notifier: DedupingNotifier) {
         self.config = config
@@ -242,6 +264,8 @@ final class PenSession: NSObject {
         guard let pen else { return }
         guard let next = drainQueue.first else {
             draining = nil
+            drain = nil
+            drainTotal = 0
             state = .ready
             Log.info("offline memory drained")
             return
@@ -250,6 +274,8 @@ final class PenSession: NSObject {
         draining = next
         drainedPages = []
         drainedStrokes = 0
+        drainTotal = max(drainTotal, drainQueue.count + 1)
+        drain = Drain(index: drainTotal - drainQueue.count, count: drainTotal, percent: 0)
         state = .draining(remaining: drainQueue.count + 1)
         Log.info("draining book s\(next.section)/o\(next.owner)/b\(next.note)")
         pen.requestOfflineData(next.section, next.owner, next.note, false)
@@ -309,6 +335,8 @@ final class PenSession: NSObject {
         pen = nil
         connecting = nil
         draining = nil
+        drain = nil
+        drainTotal = 0
         drainQueue = []
         // `setting` is deliberately kept: a sleeping pen's last known battery is still the
         // best thing to show, and clearing it would hide a low-battery warning exactly when
@@ -375,8 +403,12 @@ extension PenSession: PenDelegate {
         DispatchQueue.main.async { [self] in
             let ctx = StrokeAssembler.Context(tip: SDKMapping.tip(dot.penTipType), color: SDKMapping.hex(dot.penTipColor),
                                               penMac: penMac, firmware: firmware)
-            if let stroke = assembler.feed(event: SDKMapping.event(dot.dotType), page: SDKMapping.page(dot.pageInfo),
-                                           sample: SDKMapping.sample(dot), timeMs: dot.time, context: ctx) {
+            let page = SDKMapping.page(dot.pageInfo)
+            let sample = SDKMapping.sample(dot)
+            let event = SDKMapping.event(dot.dotType)
+            onDot?(page, sample, event)
+            if let stroke = assembler.feed(event: event, page: page, sample: sample,
+                                           timeMs: dot.time, context: ctx) {
                 coordinator.ingestLive([stroke])
             }
         }
@@ -424,6 +456,7 @@ extension PenSession: PenDelegate {
             armProgress()
         case let .OFFLINE_DATA_SEND_STATUS(pct):
             armProgress()
+            if let d = drain { drain = Drain(index: d.index, count: d.count, percent: min(100, Int(pct))) }
             if pct >= 100 { noteDrained() }
         case let .OFFLINE_DATA_SEND_SUCCESS(data):
             let strokes = SDKMapping.strokes(from: data, penMac: penMac, firmware: firmware)

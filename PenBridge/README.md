@@ -11,7 +11,17 @@ macOS menubar app that keeps a Neo smartpen's strokes flowing into a git reposit
 - Offline strokes are published as soon as a notebook has been fully transferred. Only after the commit and push succeed is that notebook deleted from the pen.
 - Failures are retried with backoff and surfaced as macOS notifications after three attempts. Battery, memory, PIN, duplicate connection and stalled transfers also notify. Normal operation is silent.
 
-The menubar item shows connection state, battery and memory, pending pages and the last publish, and offers Publish now, Pair a different pen, Open notes folder, Open config file.
+## The menubar panel
+
+The menubar item is a pencil, in every state — an icon that turns into a battery symbol when the battery is low disappears exactly when you go looking for it. A drop of ink beside the pencil means pages are written but not yet committed; the pencil goes red with a percentage below `lowBatteryPercent`, and dims when no pen is connected.
+
+Clicking it opens a SwiftUI panel (`NSPopover`, 320 pt) that answers one question: is my writing safe?
+
+- **Every waiting page, counted down.** Each pending page is listed with the time left in its quiet window, so the ten-minute wait is visible instead of invisible. The page being written right now has no countdown — its timer restarts on every stroke — and carries a live dot instead.
+- **Pages are named, not numbered in Ncode.** `notebooks` in the config maps a book to a name the person uses. Ncode page numbers are not the printed ones (the LAMY pad's first written sheet reported as page 4), so a page number is shown only for a notebook whose `firstPage` has been calibrated; otherwise just the name.
+- **Battery is a gauge; pen memory is not.** Battery is a level — always relevant, fixed by charging. Pen memory is a backlog: normally zero, only filling when you write away from this Mac, and it empties itself on connect. It gets a line of prose under the battery when there is something to say, and a progress bar while a transfer is running.
+- **Failures lead with the reassurance.** When a push keeps failing the panel says how many pages are safe on disk before it says anything about git.
+- Colour only appears when it means something: violet for work in flight, amber for something to know, red for something to fix. The resting state has no colour at all.
 
 ## Build and run
 
@@ -27,6 +37,24 @@ scripts/install-launchagent.sh     # start at login, restart on exit, logs in ~/
 
 Running the bare binary with `swift run` also works for debugging (stderr log, AppleScript notifications), but Bluetooth permission is then attributed to the terminal and macOS notifications are unavailable. Set `PENBRIDGE_VERBOSE=1` for debug logging.
 
+## Working on the design
+
+```
+./dev-design.sh
+```
+
+Opens a detached, always-visible window showing the panel in both appearances at once, with a
+picker for every state it can be in, and rebuilds and reopens it whenever a source file changes.
+The window keeps its position and its selected state across a rebuild, so the loop reads as a
+reload.
+
+Design mode runs nothing else — no pen, no git, no menubar item — so it is safe to run while the
+installed LaunchAgent is running. `PENBRIDGE_DESIGN=1 .build/debug/penbridge` opens the same window
+without the rebuild loop.
+
+The states come from `PanelModel.Scenario` rather than from hardware, because a failing push, a
+memory drain and a first run each take deliberate setup to see even once.
+
 ## Configuration
 
 `~/.config/penbridge/config.json`, created with defaults on first launch. Missing keys keep their defaults.
@@ -41,12 +69,13 @@ Running the bare binary with `swift run` also works for debugging (stderr log, A
 | `gitPush` | `true` | Push after each commit. |
 | `lowBatteryPercent` | `20` | Notify at or below this level when not charging. |
 | `memoryWarnPercent` | `70` | Notify when pen memory usage reaches this level. |
+| `notebooks` | the two books we know | Names shown in the panel, keyed by `s{section}/o{owner}/b{book}`. Set a notebook's `firstPage` to the Ncode page number of the sheet you call page 1 and the panel starts showing page numbers that match the paper. |
 | `sdkDebugLog` | `false` | Print the SDK's protocol log. |
 
 ## Layout
 
-- `Sources/PenBridgeCore` — no SDK dependency, fully unit-tested: models and JSONL serialisation, `StrokeAssembler` (dots → strokes), `RawStore` (append-only files), `QuietTracker`, `GitPublisher`, `SyncCoordinator` (write, track, publish, back off, notify), `Config`, notifiers.
-- `Sources/PenBridge` — the app: `PenSession` (NISDK3 delegates, connection and drain state machine), `SDKMapping`, `AppDelegate` (menubar), `UserNotifier`.
+- `Sources/PenBridgeCore` — no SDK dependency, no AppKit, fully unit-tested: models and JSONL serialisation, `StrokeAssembler` (dots → strokes), `RawStore` (append-only files), `QuietTracker` (what is pending and when it publishes), `Notebook`/`PageNaming` (how a page is described to a person), `GitPublisher`, `SyncCoordinator` (write, track, publish, back off, notify), `Config`, notifiers.
+- `Sources/PenBridge` — the app: `PenSession` (NISDK3 delegates, connection and drain state machine), `SDKMapping`, `PanelModel` (one observable snapshot fed by the existing `onChange` closures), `StatusPanel` (SwiftUI), `StatusIcon` (the pencil and its states), `AppDelegate` (status item and popover), `UserNotifier`.
 - `Tests/PenBridgeCoreTests` — includes tests that drive real `git` in a temporary repository.
 
 ## Not yet verified against hardware

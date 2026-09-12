@@ -1,24 +1,43 @@
 import AppKit
 import Foundation
 import PenBridgeCore
+import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    static let version = "0.1.0"
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+    static let version = "0.2.0"
     static let sdkVersion = "NISDK3/1.1.5"
-    /// Offline pages the A1 holds when full, per NeoLAB's specification.
-    static let penPageCapacity = 160
 
     private var statusItem: NSStatusItem!
-    private var menu = NSMenu()
+    private let popover = NSPopover()
     private var config = Config()
     private let configURL = Config.defaultLocation
     private var coordinator: SyncCoordinator!
     private var session: PenSession!
     private var notifier: DedupingNotifier!
+    private var model: PanelModel!
+    private var books: BookRegistry!
+    private var canvas: LiveCanvas!
+    private var liveWindow: LiveWindowController?
+    private var designWindow: DesignWindowController?
+    private var pinnedPanel: PinnedPanelController?
     private var tickTimer: Timer?
+    /// Runs only while the panel is open; drives the per-page countdowns.
+    private var panelTimer: Timer?
+    private var panelNow = Date()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.verbose = ProcessInfo.processInfo.environment["PENBRIDGE_VERBOSE"] != nil
+
+        // Design mode is the whole app: no pen, no repo, no menubar item. That is what lets it run
+        // beside the installed LaunchAgent without two processes writing to the same notes repo.
+        if ProcessInfo.processInfo.environment["PENBRIDGE_DESIGN"] != nil {
+            designWindow = DesignWindowController()
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            designWindow?.showWindow(nil)
+            designWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
         let base: Notifier = UserNotifier.isAvailable ? UserNotifier() : OSAScriptNotifier()
         notifier = DedupingNotifier(base)
 
@@ -49,186 +68,171 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         coordinator = SyncCoordinator(store: store, tracker: QuietTracker(), publisher: publisher,
                                       notifier: notifier, quietWindow: config.quietMinutes * 60)
         coordinator.controlBooks = Set(config.controlBooks)
-        coordinator.onChange = { [weak self] in self?.refreshMenu() }
+        coordinator.modeLog = ModeLog(root: config.repoURL)
         coordinator.recoverPending()
 
         session = PenSession(config: config, configURL: configURL, coordinator: coordinator, notifier: notifier)
-        session.onChange = { [weak self] in self?.refreshMenu() }
+
+        // Notebook names, page numbering and the rendered-page paths all come from books/*.json
+        // in the notes repo, which the processing side also reads. One source, no drift.
+        books = BookRegistry(repo: config.repoURL)
+        canvas = LiveCanvas(books: books)
+        session.onDot = { [weak self] page, dot, event in self?.canvas.receive(page: page, dot: dot, event: event) }
+        model = PanelModel(session: session, coordinator: coordinator, config: config, books: books)
+        model.onShowLive = { [weak self] in self?.showLiveWindow() }
+        model.onTogglePin = { [weak self] in self?.togglePinned() }
+        coordinator.onChange = { [weak self] in self?.stateChanged() }
+        session.onChange = { [weak self] in self?.stateChanged() }
 
         buildStatusItem()
+        model.refresh()
+        refreshStatusButton()
+
         session.start()
-        tickTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.coordinator.tick() }
+        tickTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.coordinator.tick()
+            self?.stateChanged()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         Log.info("PenBridge stopping")
     }
 
-    // MARK: menu
+    // MARK: status item
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        menu.delegate = self
-        statusItem.menu = menu
-        refreshStatusButton()
-        refreshMenu()
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePanel)
+
+        popover.behavior = .transient
+        popover.animates = false
+        popover.delegate = self
+        popover.contentViewController = NSHostingController(
+            rootView: StatusPanel(model: model, now: panelNow))
     }
 
-    /// The menubar always shows the pen: it is what the app is, and a familiar shape is easier
-    /// to find than a changing one. Colour is reserved for a problem — a low battery turns the
-    /// pen red and adds the percentage. Everything else stays a template glyph, so it takes the
-    /// menubar's own ink colour in light and dark.
+    /// Any change from the pen or the publisher lands here: recompute the panel's snapshot, then
+    /// the menubar icon. Cheap enough to do on every stroke batch.
+    private func stateChanged() {
+        model.refresh(now: Date())
+        // The pinned window has no "opened" moment to rebuild the recent list on, and a state
+        // change is exactly when that list can have changed.
+        if pinnedPanel != nil { model.refreshRecent() }
+        refreshStatusButton()
+    }
+
     private func refreshStatusButton() {
         guard let button = statusItem.button else { return }
-        let battery = session.setting.map { (pct: Int($0.battLevel), charging: $0.charging == .On) }
-        let low = battery.map { $0.pct <= config.lowBatteryPercent && !$0.charging } ?? false
-        let image = NSImage(systemSymbolName: "pencil.and.scribble", accessibilityDescription: "PenBridge")
+        let battery = model.battery.map { (percent: $0.percent, low: $0.low) }
+        // A dimmed icon means PenBridge cannot work, not that the pen is asleep: the A1 powers
+        // itself off after five minutes, so a sleeping pen is the normal state and dimming for it
+        // would leave the menubar permanently faint.
+        let usable: Bool
+        if case .bluetoothOff = model.status { usable = false } else { usable = true }
+        let look = StatusIcon.make(pendingPages: model.pending.count, battery: battery, working: usable)
+        button.image = look.image
+        button.attributedTitle = look.title
+        button.appearsDisabled = look.dimmed
+        button.toolTip = look.tooltip
+    }
 
-        if low, let battery {
-            let red = image?.withSymbolConfiguration(.init(paletteColors: [.systemRed]))
-            red?.isTemplate = false
-            button.image = red
-            button.attributedTitle = NSAttributedString(
-                string: " \(battery.pct)%",
-                attributes: [.foregroundColor: NSColor.systemRed, .font: NSFont.menuBarFont(ofSize: 0)])
-            button.toolTip = "Pen battery \(battery.pct)% — charge it"
+    /// The panel in its own window. The popover closes on any click outside it, which makes it no
+    /// use for watching the panel while you write or while the app is rebuilt.
+    private func togglePinned() {
+        if let pinnedPanel {
+            pinnedPanel.close()          // windowWillClose does the rest
+            return
+        }
+        popover.performClose(nil)
+        let controller = PinnedPanelController(model: model, now: panelNow)
+        controller.onClose = { [weak self] in
+            self?.pinnedPanel = nil
+            self?.model.setPinned(false)
+            self?.syncPanelTimer()
+        }
+        pinnedPanel = controller
+        model.setPinned(true)
+        model.refreshRecent()
+        NSApp.activate(ignoringOtherApps: true)
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        syncPanelTimer()
+    }
+
+    /// The live page window. Opens on whichever page the pen is on, or the last one written.
+    private func showLiveWindow() {
+        popover.performClose(nil)
+        if liveWindow == nil { liveWindow = LiveWindowController(canvas: canvas) }
+        if canvas.page == nil, let recent = books.recentPages(limit: 1).first {
+            canvas.show(recent.page)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        liveWindow?.showWindow(nil)
+        liveWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    // MARK: panel
+
+    @objc private func togglePanel() {
+        if popover.isShown {
+            popover.performClose(nil)
         } else {
-            image?.isTemplate = true
-            button.image = image
-            button.attributedTitle = NSAttributedString(string: "")
-            button.toolTip = battery.map { "Pen battery \($0.pct)%\($0.charging ? ", charging" : "")" } ?? "PenBridge"
+            guard let button = statusItem.button else { return }
+            session.requestSettingRefresh()
+            model.refreshRecent()
+            tickPanel()
+            // The popover positions itself from its content size. An NSHostingController that has
+            // never been in a window has not measured its SwiftUI view yet, so without this the
+            // popover is placed for a size it does not have and lands away from the menubar.
+            sizePanelToContent()
+            // .minY is the bottom edge in AppKit's unflipped coordinates.
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            // The popover is not key by default, so hover and buttons would not respond.
+            popover.contentViewController?.view.window?.makeKey()
+            if Log.verbose, let window = popover.contentViewController?.view.window {
+                Log.debug("panel: button \(button.bounds) in \(button.window?.frame ?? .zero); " +
+                          "content \(popover.contentSize); window \(window.frame)")
+            }
         }
     }
 
-    func menuWillOpen(_ menu: NSMenu) {
-        refreshMenu()
+    func popoverDidShow(_ notification: Notification) { syncPanelTimer() }
+
+    func popoverDidClose(_ notification: Notification) { syncPanelTimer() }
+
+    /// One second is only worth spending while something is on screen to see it.
+    private func syncPanelTimer() {
+        let wanted = popover.isShown || pinnedPanel != nil
+        if wanted, panelTimer == nil {
+            panelTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                self?.tickPanel()
+            }
+        } else if !wanted {
+            panelTimer?.invalidate()
+            panelTimer = nil
+        }
     }
 
-    private func refreshMenu() {
+    /// Measure the SwiftUI content and hand the size to the popover, which is what it positions
+    /// itself from. The panel's width is fixed at 320; only the height varies with state.
+    private func sizePanelToContent() {
+        guard let view = popover.contentViewController?.view else { return }
+        view.layoutSubtreeIfNeeded()
+        let fitting = view.fittingSize
+        guard fitting.width > 0, fitting.height > 0 else { return }
+        popover.contentSize = fitting
+    }
+
+    /// Re-renders with a fresh `now`, which is what moves the countdowns.
+    private func tickPanel() {
+        panelNow = Date()
+        model.refresh(now: panelNow)
         refreshStatusButton()
-        menu.removeAllItems()
-        menu.addItem(disabled(stateLine()))
-        if let s = session.setting {
-            menu.addItem(batteryItem(percent: Int(s.battLevel), charging: s.charging == .On))
-            menu.addItem(memoryItem(percentUsed: Int(s.memoryUsed)))
-        }
-        let pending = coordinator.pendingPages.count
-        if pending > 0 {
-            menu.addItem(disabled("\(pending) page\(pending == 1 ? "" : "s") waiting to publish"))
-        }
-        if let last = coordinator.lastPublish {
-            let when = RelativeDateTimeFormatter().localizedString(for: last.date, relativeTo: Date())
-            menu.addItem(disabled("Last publish \(when)\(last.commit.map { " (\($0))" } ?? "")"))
-        }
-        if let err = coordinator.lastError {
-            menu.addItem(disabled("Publish failing: \(String(err.prefix(60)))"))
-        }
-        menu.addItem(.separator())
-        menu.addItem(action("Publish now", #selector(publishNow), enabled: pending > 0 && !coordinator.isPublishing))
-        menu.addItem(action(session.isPaired ? "Pair a different pen…" : "Pair pen…", #selector(pairPen)))
-        menu.addItem(action("Open notes folder", #selector(openNotes)))
-        menu.addItem(action("Open config file", #selector(openConfig)))
-        menu.addItem(.separator())
-        menu.addItem(action("Quit PenBridge", #selector(quit)))
-    }
-
-    private func stateLine() -> String {
-        switch session.state {
-        case .bluetoothOff: return "Bluetooth is off"
-        case .scanning: return session.isPaired ? "Looking for \(session.penName.isEmpty ? "pen" : session.penName)…" : "Looking for a pen to pair…"
-        case .connecting: return "Connecting to \(session.penName)…"
-        case .authorizing: return "Authorising \(session.penName)…"
-        case .ready: return "Connected to \(session.penName)"
-        case let .draining(remaining): return "Syncing pen memory (\(remaining) book\(remaining == 1 ? "" : "s") left)…"
-        }
-    }
-
-    /// A row carrying a symbol, a label and a ten-cell bar, so level is readable at a glance.
-    private func gaugeItem(symbol: String, label: String, fraction: Double, tint: NSColor?) -> NSMenuItem {
-        let filled = max(0, min(10, Int((fraction * 10).rounded())))
-        let bar = String(repeating: "▮", count: filled) + String(repeating: "▯", count: 10 - filled)
-        let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        let text = NSMutableAttributedString(
-            string: "\(label)  ",
-            attributes: [.font: NSFont.menuFont(ofSize: 0),
-                         .foregroundColor: tint ?? NSColor.labelColor])
-        text.append(NSAttributedString(
-            string: bar,
-            attributes: [.font: NSFont.monospacedSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular),
-                         .foregroundColor: tint ?? NSColor.secondaryLabelColor]))
-        item.attributedTitle = text
-        var image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-        if let tint {
-            image = image?.withSymbolConfiguration(.init(paletteColors: [tint]))
-            image?.isTemplate = false
-        } else {
-            image?.isTemplate = true
-        }
-        item.image = image
-        item.isEnabled = false
-        return item
-    }
-
-    private func batteryItem(percent: Int, charging: Bool) -> NSMenuItem {
-        let symbol: String
-        switch (charging, percent) {
-        case (true, _): symbol = "battery.100.bolt"
-        case (_, ..<13): symbol = "battery.0"
-        case (_, ..<38): symbol = "battery.25"
-        case (_, ..<63): symbol = "battery.50"
-        case (_, ..<88): symbol = "battery.75"
-        default: symbol = "battery.100"
-        }
-        // No colour for a healthy or charging battery: the bolt already says charging, and a
-        // menu where everything is coloured is a menu where nothing stands out.
-        let tint: NSColor? = charging ? nil
-            : percent <= config.lowBatteryPercent ? .systemRed
-            : percent <= config.lowBatteryPercent * 2 ? .systemOrange : nil
-        let label = "Battery \(percent)%\(charging ? " charging" : "")"
-        return gaugeItem(symbol: symbol, label: label, fraction: Double(percent) / 100, tint: tint)
-    }
-
-    private func memoryItem(percentUsed: Int) -> NSMenuItem {
-        // Shown as space *free*, not used, so both gauges read the same way: a full bar is
-        // healthy in each. Pen memory is a buffer that only fills when writing happens away
-        // from this Mac, so emptying it is the good outcome.
-        let free = max(0, 100 - percentUsed)
-        let pagesFree = Int((Double(free) / 100 * Double(Self.penPageCapacity)).rounded())
-        let tint: NSColor? = percentUsed >= config.memoryWarnPercent ? .systemOrange : nil
-        let label = "Pen memory \(free)% free, room for about \(pagesFree) pages"
-        return gaugeItem(symbol: "internaldrive", label: label, fraction: Double(free) / 100, tint: tint)
-    }
-
-    private func disabled(_ title: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }
-
-    private func action(_ title: String, _ selector: Selector, enabled: Bool = true) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-        item.target = self
-        item.isEnabled = enabled
-        return item
-    }
-
-    @objc private func publishNow() {
-        coordinator.publishAll()
-    }
-
-    @objc private func pairPen() {
-        session.forgetPen()
-    }
-
-    @objc private func openNotes() {
-        NSWorkspace.shared.open(config.repoURL)
-    }
-
-    @objc private func openConfig() {
-        NSWorkspace.shared.open(configURL)
-    }
-
-    @objc private func quit() {
-        NSApp.terminate(nil)
+        (popover.contentViewController as? NSHostingController<StatusPanel>)?
+            .rootView = StatusPanel(model: model, now: panelNow)
+        if popover.isShown { sizePanelToContent() }
+        pinnedPanel?.render(now: panelNow)
     }
 }
