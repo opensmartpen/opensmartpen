@@ -503,7 +503,7 @@ private struct PenTile: View {
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(filled ? onInk : Color.primary)
                     .lineLimit(1)
-                    .padding(.top, 2)
+                    .padding(.top, 4)
                 // Only on the pens you are not using. The open pen states its charge as a
                 // number under its name, and a bar saying the same thing directly above it is
                 // the panel repeating itself.
@@ -514,11 +514,11 @@ private struct PenTile: View {
                         Color.clear.frame(height: 5)
                     }
                 }
-                .padding(.top, 2)
+                .padding(.top, 4)
             }
             .padding(.horizontal, 4)
-            .padding(.top, 6)
-            .padding(.bottom, 5)
+            .padding(.top, 7)
+            .padding(.bottom, 6)
             .frame(width: 64)
             // No hover chip. The chip is what "open" looks like, so drawing the same shape in
             // the same grey under the pointer says a pen is open when none is — and a row of
