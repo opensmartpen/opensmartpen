@@ -47,12 +47,43 @@ final class PanelModel: ObservableObject {
 
     /// The pens this Mac knows, newest reading first.
     @Published private(set) var pens: [PenRow] = []
-    /// The pen whose ink and width are showing. Nothing is open until you open it — the controls
-    /// are for the moment you want them, not a permanent fixture.
-    @Published private(set) var expandedPen: String?
+    /// A pen you opened by clicking, which overrides the one in your hand until you close it.
+    @Published private(set) var chosenPen: String?
+    /// Set by clicking the open pen shut. Cleared the moment a different pen starts writing,
+    /// because that is a new question, not the one you dismissed.
+    @Published private(set) var penClosed = false
+    /// The pen that was writing last time we looked, to notice when it changes.
+    private var lastActivePen: String?
+
+    /// The pen whose ink and width are showing.
+    ///
+    /// Open by default, and open on the pen you are holding: picking up a pen is the clearest
+    /// statement of which pen you mean, and making you click for it afterwards asks you to say
+    /// it twice. A click still overrides, and a click on the open pen closes it.
+    var expandedPen: String? {
+        if let chosenPen { return chosenPen }
+        if penClosed { return nil }
+        return pens.first { $0.active }?.id
+    }
 
     func toggleExpanded(_ mac: String) {
-        expandedPen = expandedPen == mac ? nil : mac
+        if expandedPen == mac {
+            chosenPen = nil
+            penClosed = true
+        } else {
+            chosenPen = mac
+            penClosed = false
+        }
+    }
+
+    /// A pen picking up the writing re-opens the panel on it, whatever was open before. Called
+    /// from `refresh` once the rows are built.
+    private func followActivePen() {
+        let active = pens.first { $0.active }?.id
+        guard active != lastActivePen else { return }
+        lastActivePen = active
+        chosenPen = nil
+        penClosed = false
     }
 
     /// The pen the open controls belong to.
@@ -88,6 +119,10 @@ final class PanelModel: ObservableObject {
         /// Reported by the hardware, never chosen by a click — you select a pen by picking it up,
         /// and a pen that is merely asleep is still the one you were last writing with.
         let active: Bool
+        /// This pen's own state, which is not the panel's. The header answers "is my writing
+        /// safe"; this answers "is this pen awake", and after five idle minutes those two stop
+        /// agreeing.
+        let state: String
     }
     @Published private(set) var pending: [PendingRow] = []
     @Published private(set) var pagesOnPen: Int?
@@ -259,17 +294,31 @@ final class PanelModel: ObservableObject {
         let connected = session.isConnected
             ? PenRecord.normalise(config.penMac ?? "")
             : readings.max(by: { $0.value.at < $1.value.at })?.key
+        let writingNow = coordinator.tracker.pending
+            .contains { now.timeIntervalSince($0.last) < Self.liveWindow }
         pens = live.pens.pens.map { pen in
             let reading = readings[pen.mac]
+            let here = session.isConnected && pen.mac == connected
+            let state: String
+            if !here {
+                state = "Pen off"
+            } else if reading?.charging == true {
+                state = "Charging"
+            } else if writingNow {
+                state = "Writing"
+            } else {
+                state = "Ready"
+            }
             return PenRow(id: pen.mac, name: pen.name, ink: pen.ink, width: pen.width, mode: pen.mode,
                           percent: reading?.battery,
                           low: (reading.map { !$0.charging && $0.battery <= config.lowBatteryPercent }) ?? false,
-                          active: pen.mac == connected)
+                          active: pen.mac == connected, state: state)
         }.sorted {
             // The one in your hand first, then by how recently each was seen.
             if $0.active != $1.active { return $0.active }
             return (readings[$0.id]?.at ?? .distantPast) > (readings[$1.id]?.at ?? .distantPast)
         }
+        followActivePen()
 
         // Any pen used in the last day, not just the connected one.
         if let worst = live.penState.lowBatteries(threshold: config.lowBatteryPercent, now: now).first {
@@ -463,9 +512,9 @@ final class PanelModel: ObservableObject {
         lowPen = ("Red one", 14)
         pens = [
             PenRow(id: "a", name: "Everyday", ink: .black, width: .medium, mode: .writing,
-                   percent: 72, low: false, active: true),
+                   percent: 72, low: false, active: true, state: "Writing"),
             PenRow(id: "b", name: "Red one", ink: .red, width: .thin, mode: .accent,
-                   percent: 14, low: true, active: false),
+                   percent: 14, low: true, active: false, state: "Pen off"),
         ]
         instanceQuestion = nil
         palette = Palette(ink: ["black": "#000000", "red": "#ff0200", "blue": "#00abeb",

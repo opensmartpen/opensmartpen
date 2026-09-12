@@ -129,13 +129,15 @@ struct StatusPanel: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
-            // Quiet on purpose. Syncing happens on its own once you stop writing; this is only
-            // here for the moment you are closing the lid and do not want to wait out the
-            // countdown. A filled primary button would imply the app needs you, and it does not.
-            Button(model.isPublishing ? "Syncing…" : "Sync now", action: model.publishNow)
-                .buttonStyle(QuietButtonStyle())
-                .disabled(model.isPublishing)
-                .padding(.top, 3)
+            // No button. Each row already carries its own countdown, so the panel has already
+            // answered the only question a button could — when does this go out — and a control
+            // that merely shortens a wait the app will finish by itself is furniture. ⌘S still
+            // does it for the moment you are closing the lid.
+            if model.isPublishing {
+                Text("Syncing…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
         }
     }
 
@@ -166,7 +168,26 @@ struct StatusPanel: View {
                 Spacer(minLength: 0)
             }
             if let pen = model.expanded {
-                inkRow(for: pen).padding(.top, 11)
+                // The tile says which pen. This says everything else about it — and it is the
+                // only place the charge appears as a number, which is why the open tile drops
+                // its bar.
+                // Not the name — the tile directly above already carries it, in that pen's own
+                // ink. What the tile cannot say is whether the pen is awake, so that is what goes
+                // here, with the charge on the other end of the same line.
+                HStack(spacing: 6) {
+                    Text(pen.state)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if let percent = pen.percent {
+                        Text("\(percent)%")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(pen.low ? Ink.critical : Color.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                .padding(.top, 10)
+                inkRow(for: pen).padding(.top, 8)
             }
         }
     }
@@ -339,13 +360,18 @@ private struct RecentRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 7) {
-                // Leading, like the status dot in the header: a mark at the start of a line reads
-                // as "this one", and the same mark in the same place means the same thing twice.
-                // Always laid out, so the titles line up whether or not it is drawn.
-                Circle()
-                    .fill(book.latest ? Ink.accent : Color.clear)
-                    .frame(width: 5, height: 5)
+                // On the notebook itself, not in a column of its own. The mark belongs to the
+                // book, the way an unread badge belongs to an app icon — put it at the start of
+                // the line instead and it reads as a bullet, and the title it sits beside is not
+                // the thing it is about.
                 PaperMark(shape: book.shape, binding: book.binding)
+                    .frame(width: 13, height: 13)
+                    .overlay(alignment: .topTrailing) {
+                        Circle()
+                            .fill(book.latest ? Ink.accent : Color.clear)
+                            .frame(width: 5, height: 5)
+                            .offset(x: 3, y: -2)
+                    }
                 Text(book.title)
                     .font(.system(size: 11.5))
                     .lineLimit(1)
@@ -435,10 +461,10 @@ private struct BatteryBar: View {
                 // reads as an underline beneath the name rather than as a level.
                 Capsule().fill(low ? Ink.critical : (onInk ?? Color.secondary))
                     .opacity(onInk == nil ? 1 : 0.65)
-                    .frame(width: max(2, geo.size.width * CGFloat(percent) / 100))
+                    .frame(width: max(3, geo.size.width * CGFloat(percent) / 100))
             }
         }
-        .frame(height: 3)
+        .frame(height: 4)
     }
 }
 
@@ -468,28 +494,33 @@ private struct PenTile: View {
 
     var body: some View {
         Button(action: tap) {
-            VStack(spacing: 5) {
+            // Spaced by hand rather than by one stack gap: the bar belongs to the name above it,
+            // so it sits nearly against it, while the glyph keeps its own air.
+            VStack(spacing: 0) {
                 Pencil(colour: filled ? onInk : inkColour, size: 17)
                 // No dot on a filled tile: the fill is already the statement that this is the pen
                 // you are using, and "• Pen" reads as a bullet point rather than as a status.
-                HStack(spacing: 3.5) {
-                    if pen.active && !filled {
-                        Circle().fill(Ink.accent).frame(width: 4, height: 4)
+                Text(pen.name)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(filled ? onInk : Color.primary)
+                    .lineLimit(1)
+                    .padding(.top, 2)
+                // Only on the pens you are not using. The open pen states its charge as a
+                // number under its name, and a bar saying the same thing directly above it is
+                // the panel repeating itself.
+                Group {
+                    if let percent = pen.percent, !filled {
+                        BatteryBar(percent: percent, low: pen.low, onInk: nil)
+                    } else {
+                        Color.clear.frame(height: 4)
                     }
-                    Text(pen.name)
-                        .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(filled ? onInk : Color.primary)
-                        .lineLimit(1)
                 }
-                if let percent = pen.percent {
-                    BatteryBar(percent: percent, low: pen.low, onInk: filled ? onInk : nil)
-                } else {
-                    Color.clear.frame(height: 3)
-                }
+                .padding(.top, 2)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .frame(width: 80)
+            .padding(.horizontal, 4)
+            .padding(.top, 6)
+            .padding(.bottom, 5)
+            .frame(width: 64)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(filled ? inkColour : hovering ? Color.primary.opacity(0.07) : Color.clear))
             // A black pen filled with black ink would vanish into a dark panel, so a filled tile
@@ -639,22 +670,6 @@ private struct InkButtonStyle: ButtonStyle {
                 .stroke(filled ? Color.clear : Color.primary.opacity(0.15)))
             .foregroundStyle(filled ? (isEnabled ? Color.white : Color.secondary) : Color.primary)
             .opacity(configuration.isPressed ? 0.75 : 1)
-            .contentShape(Rectangle())
-    }
-}
-
-/// A button for something the app will do anyway. It reads as available rather than as required.
-private struct QuietButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 11))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-            .foregroundStyle(isEnabled ? Color.secondary : Color.secondary.opacity(0.5))
-            .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
-            .opacity(configuration.isPressed ? 0.6 : 1)
             .contentShape(Rectangle())
     }
 }

@@ -141,6 +141,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onCommand = { [weak self] key in
             switch key {
             case ",": self?.showSettings(); return true
+            // The panel no longer carries a Sync now button — the countdowns already say when it
+            // happens by itself — but the lid-closing case is real, so the shortcut stays.
+            case "s": self?.model.publishNow(); return true
             case "q": NSApp.terminate(nil); return true
             default: return false
             }
