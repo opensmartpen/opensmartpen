@@ -115,13 +115,10 @@ private struct PenCard: View {
                 InkPicker(selection: binding(\.ink), palette: palette)
             }
             Row("Default width") {
-                Picker("", selection: binding(\.width)) {
-                    ForEach(LineWidth.allCases, id: \.rawValue) { w in
-                        Text(w.rawValue.capitalized).tag(w)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                // Three, because the paper strip has three buttons. `LineWidth.default` is not a
+                // fourth width you can pick — it is the state before anything has been tapped, and
+                // offering it here would be offering "unset" as a setting.
+                WidthChoice(selection: binding(\.width))
             }
             Row("Hardware") {
                 Text(pen.mac).font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary)
@@ -145,13 +142,39 @@ private struct PenCard: View {
     }
 }
 
+/// The three weights the strip offers. A plain row rather than a Picker, because the stored value
+/// can be `.default` — a pen that has never been given one — and a segmented Picker with nothing
+/// matching draws a selection anyway and lies about it.
+private struct WidthChoice: View {
+    @Binding var selection: LineWidth
+    private let choices: [LineWidth] = [.thin, .medium, .thick]
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(choices, id: \.rawValue) { weight in
+                Button { selection = weight } label: {
+                    Text(weight.rawValue.capitalized)
+                        .font(.system(size: 11, weight: selection == weight ? .semibold : .regular))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 5)
+                            .fill(selection == weight ? Color.accentColor.opacity(0.25)
+                                  : Color.primary.opacity(0.06)))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
 private struct InkPicker: View {
     @Binding var selection: InkColor
     let palette: Palette
 
     var body: some View {
         HStack(spacing: 5) {
-            ForEach(InkColor.allCases, id: \.rawValue) { colour in
+            ForEach(choices, id: \.rawValue) { colour in
                 let hex = palette.hex(for: colour)
                 Button { selection = colour } label: {
                     Group {
@@ -170,6 +193,12 @@ private struct InkPicker: View {
                 .help(hex == nil ? "\(colour.rawValue) — no colour assigned" : colour.rawValue)
             }
         }
+    }
+
+    /// A pen may still name an ink the repo has stopped offering. Show it rather than silently
+    /// dropping it, so the setting is visible and can be changed.
+    private var choices: [InkColor] {
+        palette.offered.contains(selection) ? palette.offered : palette.offered + [selection]
     }
 
     private func swatch(_ hex: String?) -> Color? {
