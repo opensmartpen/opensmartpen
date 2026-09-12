@@ -123,6 +123,10 @@ final class PanelModel: ObservableObject {
         /// safe"; this answers "is this pen awake", and after five idle minutes those two stop
         /// agreeing.
         let state: String
+        /// Connected right now, as opposed to merely being the last pen you used. The tile fills
+        /// with ink only for this: the fill says "you are writing with this", and a pen that went
+        /// to sleep twenty minutes ago is not something you are doing.
+        let awake: Bool
     }
     @Published private(set) var pending: [PendingRow] = []
     @Published private(set) var pagesOnPen: Int?
@@ -319,7 +323,7 @@ final class PanelModel: ObservableObject {
             return PenRow(id: pen.mac, name: pen.name, ink: pen.ink, width: pen.width, mode: pen.mode,
                           percent: reading?.battery,
                           low: (reading.map { !$0.charging && $0.battery <= config.lowBatteryPercent }) ?? false,
-                          active: pen.mac == connected, state: state)
+                          active: pen.mac == connected, state: state, awake: here)
         }.sorted {
             // The one in your hand first, then by how recently each was seen.
             if $0.active != $1.active { return $0.active }
@@ -513,9 +517,9 @@ final class PanelModel: ObservableObject {
         lowPen = ("Red one", 14)
         pens = [
             PenRow(id: "a", name: "Everyday", ink: .black, width: .medium, mode: .writing,
-                   percent: 72, low: false, active: true, state: "Writing"),
+                   percent: 72, low: false, active: true, state: "Writing", awake: true),
             PenRow(id: "b", name: "Red one", ink: .red, width: .thin, mode: .accent,
-                   percent: 14, low: true, active: false, state: "Pen off"),
+                   percent: 14, low: true, active: false, state: "Pen off", awake: false),
         ]
         instanceQuestion = nil
         palette = Palette(ink: ["black": "#000000", "red": "#ff0200", "blue": "#00abeb",

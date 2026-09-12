@@ -37,7 +37,7 @@ struct StatusPanel: View {
                 if case let .failing(_, _, error) = model.status { section { failure(error) } }
                 if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
                 if let question = model.instanceQuestion { section { newNotebook(question) } }
-                if !model.recent.isEmpty { section { recent } }
+                if !model.recent.isEmpty { section(inset: 5) { recent } }
                 footer
             }
             // Over the panel rather than in a row of its own. It acts on the window, not on
@@ -157,7 +157,7 @@ struct StatusPanel: View {
             // One click, and no furniture. Unchosen inks drop back; the chosen one is full
             // strength with a thin ring around it — the least that can be drawn and still be
             // unambiguous, and the fewest clicks to change what you are writing with.
-            HStack(spacing: 7) {
+            HStack(spacing: 9) {
                 ForEach(model.inks, id: \.rawValue) { colour in
                     InkDot(colour: Color(inkHex: model.palette.hex(for: colour)) ?? .primary,
                            selected: colour == ink) { model.choose(ink: colour, for: pen) }
@@ -293,19 +293,23 @@ struct StatusPanel: View {
     }()
 
     /// Every section is a hairline plus the same padding, so the layout does not repeat either.
-    private func section<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    /// `inset` is the block's own left margin. A list of rows takes the smaller one and makes it
+    /// up inside each row, so that a row's hover highlight reaches past the text on both sides
+    /// while the text itself still lines up with everything above it.
+    private func section<Content: View>(inset: CGFloat = 14,
+                                        @ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             hairline
             content()
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
+                .padding(.horizontal, inset)
+                .padding(.vertical, inset == 14 ? 11 : 6)
         }
     }
 
     /// Inset to the same margin as everything else, so it reads as a rule between two blocks of
     /// one column rather than as the edge of a box.
     private var hairline: some View {
-        Rectangle().fill(Color.primary.opacity(0.08))
+        Rectangle().fill(Color.primary.opacity(0.11))
             .frame(height: 1)
             .padding(.horizontal, 14)
     }
@@ -342,7 +346,7 @@ private struct RecentRow: View {
 
     var body: some View {
         Button(action: open) {
-            HStack(spacing: 7) {
+            HStack(spacing: 9) {
                 // On the notebook itself, not in a column of its own. The mark belongs to the
                 // book, the way an unread badge belongs to an app icon — put it at the start of
                 // the line instead and it reads as a bullet, and the title it sits beside is not
@@ -360,8 +364,8 @@ private struct RecentRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 6)
             }
-            .padding(.horizontal, 5)
-            .padding(.vertical, 3.5)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -515,8 +519,13 @@ private struct PenTile: View {
     let tap: () -> Void
     @State private var hovering = false
 
-    /// Filled when this is the pen you are using, or the one you have opened.
-    private var filled: Bool { pen.active || open }
+    /// Inked only when the pen is connected. The fill means "you are writing with this", and a
+    /// pen that went to sleep twenty minutes ago is not something you are doing — showing it
+    /// inked makes a sleeping pen look like the live one.
+    private var filled: Bool { pen.awake }
+    /// Opened, but the pen is off. A plain chip, the same grey the rest of the panel selects
+    /// with, so it reads as "this is the one showing" rather than "this is the one writing".
+    private var chipped: Bool { open && !filled }
 
     private var inkColour: Color {
         Color(inkHex: Palette.hexForPreview(pen.ink)) ?? .primary
@@ -557,7 +566,9 @@ private struct PenTile: View {
             .padding(.bottom, 5)
             .frame(width: 64)
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(filled ? inkColour : hovering ? Color.primary.opacity(0.07) : Color.clear))
+                .fill(filled ? inkColour
+                      : chipped ? Color.primary.opacity(0.09)
+                      : hovering ? Color.primary.opacity(0.06) : Color.clear))
             // A black pen filled with black ink would vanish into a dark panel, so a filled tile
             // always carries a hairline.
             .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -712,7 +723,7 @@ private struct MenuItem: View {
                 }
             }
             .padding(.horizontal, 9)
-            .padding(.vertical, 4)
+            .padding(.vertical, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

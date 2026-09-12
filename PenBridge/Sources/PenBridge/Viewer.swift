@@ -91,9 +91,17 @@ final class Viewer: ObservableObject {
     /// How the sheets are arranged. Set from the notebook's binding the first time, and yours
     /// from then on — a layout you chose should not be undone by opening a different notebook.
     @Published var layout: ViewerLayout = .single {
-        didSet { if layout != oldValue { chosenLayout = true; loadVisible() } }
+        didSet { if layout != oldValue { chosenLayout = true; pan = .zero; loadVisible() } }
     }
     private var chosenLayout = false
+    /// How much larger than a fitted sheet the paper is drawn. 1 is the whole sheet in the window.
+    /// Kept across page turns: you zoom in to read a hand, and the next page is in the same hand.
+    @Published private(set) var zoom: Double = 1
+    /// Where the paper has been dragged to, in points, away from the middle of the window.
+    @Published private(set) var pan: CGSize = .zero
+    /// The area the sheets are drawn in. The view owns this number — it is the only one that
+    /// knows it — and the model needs it to keep zoom anchored and pan honest.
+    private(set) var viewport: CGSize = .zero
     @Published private(set) var strokes: [Int: [DrawnStroke]] = [:]
     /// The stroke under the pen, kept apart so it can be drawn before it is finished.
     @Published private(set) var wet: [InkPoint] = []
@@ -203,6 +211,91 @@ final class Viewer: ObservableObject {
     /// True for any sheet on screen.
     func isOnScreen(_ human: Int) -> Bool { visible.contains(human) }
 
+    // MARK: zoom
+
+    /// The space around the sheets, and between them. Here rather than in the view because pan
+    /// has to know how big the paper is to know how far it may be dragged.
+    static let gap: CGFloat = 10
+    static let margin: CGFloat = 34
+    /// Past about eight the dots themselves are the picture, not the writing.
+    static let zoomRange: ClosedRange<Double> = 1...8
+
+    var canZoomIn: Bool { zoom < Self.zoomRange.upperBound - 0.001 }
+    var canZoomOut: Bool { zoom > Self.zoomRange.lowerBound + 0.001 }
+
+    /// One sheet at fit: the paper's own proportions inside the share of the window its slot gets.
+    func fittedSheet(in viewport: CGSize) -> CGSize {
+        let shape = layout.shape
+        let across = max(1, CGFloat(shape.columns)), down = max(1, CGFloat(shape.rows))
+        let width = max(1, (viewport.width - Self.margin - Self.gap * (across - 1)) / across)
+        let height = max(1, (viewport.height - Self.margin - Self.gap * (down - 1)) / down)
+        let g = geometry
+        let scale = min(width / g.widthCells, height / g.heightCells)
+        return CGSize(width: max(1, g.widthCells * scale), height: max(1, g.heightCells * scale))
+    }
+
+    /// Everything on screen, at the zoom in force.
+    private var content: CGSize {
+        let sheet = fittedSheet(in: viewport)
+        let shape = layout.shape
+        return CGSize(
+            width: (sheet.width * CGFloat(shape.columns) + Self.gap * CGFloat(shape.columns - 1)) * zoom,
+            height: (sheet.height * CGFloat(shape.rows) + Self.gap * CGFloat(shape.rows - 1)) * zoom)
+    }
+
+    func setViewport(_ size: CGSize) {
+        guard size != viewport else { return }
+        viewport = size
+        clampPan()
+    }
+
+    /// Zoom about a point in the viewport — the pointer for a wheel or a pinch, the middle for
+    /// anything else — so that what you are pointing at is still under the pointer afterwards.
+    /// Zooming about the middle instead would walk the thing you wanted off the edge.
+    func setZoom(_ factor: Double, about anchor: CGPoint? = nil) {
+        let next = min(max(factor, Self.zoomRange.lowerBound), Self.zoomRange.upperBound)
+        guard abs(next - zoom) > 0.0001 else { return }
+        let middle = CGPoint(x: viewport.width / 2, y: viewport.height / 2)
+        let a = anchor ?? middle
+        let ratio = next / zoom
+        // The paper under the anchor must not move: pan grows with the zoom around that point.
+        pan = CGSize(width: (pan.width - (a.x - middle.x)) * ratio + (a.x - middle.x),
+                     height: (pan.height - (a.y - middle.y)) * ratio + (a.y - middle.y))
+        zoom = next
+        clampPan()
+    }
+
+    func zoomBy(_ factor: Double, about anchor: CGPoint? = nil) {
+        setZoom(zoom * factor, about: anchor)
+    }
+
+    /// The whole page again, in the middle.
+    func zoomToFit() {
+        guard zoom != 1 || pan != .zero else { return }
+        zoom = 1
+        pan = .zero
+    }
+
+    func setPan(_ offset: CGSize) {
+        pan = offset
+        clampPan()
+    }
+
+    func panBy(_ delta: CGSize) {
+        setPan(CGSize(width: pan.width + delta.width, height: pan.height + delta.height))
+    }
+
+    /// The paper cannot be dragged away from the window: you may move it by as much as it
+    /// overflows and no further, which is nothing at all when the whole page is already showing.
+    private func clampPan() {
+        guard viewport.width > 0, viewport.height > 0 else { return }
+        let over = content
+        let slackX = max(0, (over.width - viewport.width) / 2)
+        let slackY = max(0, (over.height - viewport.height) / 2)
+        pan = CGSize(width: min(max(pan.width, -slackX), slackX),
+                     height: min(max(pan.height, -slackY), slackY))
+    }
+
     // MARK: loading
 
     /// Point the viewer at a page, loading the notebook around it.
@@ -251,6 +344,9 @@ final class Viewer: ObservableObject {
         case "2": layout = .spread; return true
         case "3": layout = .pair; return true
         case "4": layout = .grid; return true
+        case "+", "=": zoomBy(1.25); return true
+        case "-", "_": zoomBy(1 / 1.25); return true
+        case "0": zoomToFit(); return true
         default: return false
         }
     }
@@ -365,6 +461,9 @@ final class Viewer: ObservableObject {
 
 struct ViewerView: View {
     @ObservedObject var viewer: Viewer
+    /// Where the paper was when this drag started. A drag reports how far it has come, not where
+    /// it is, so the pan it produces has to be added to something.
+    @State private var panBase: CGSize?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -377,10 +476,12 @@ struct ViewerView: View {
     private var sheets: some View {
         GeometryReader { geo in
             let shape = viewer.layout.shape
-            let gap: CGFloat = 10
-            let available = CGSize(
-                width: (geo.size.width - 34 - gap * CGFloat(shape.columns - 1)) / CGFloat(shape.columns),
-                height: (geo.size.height - 34 - gap * CGFloat(shape.rows - 1)) / CGFloat(shape.rows))
+            // Zoom multiplies the paper and the space between sheets alike, so a spread stays a
+            // spread as it grows. The sheet is drawn at its zoomed size rather than scaled up
+            // afterwards: the ink is redrawn, so it sharpens as you zoom instead of blurring.
+            let sheet = viewer.fittedSheet(in: geo.size)
+            let size = CGSize(width: sheet.width * viewer.zoom, height: sheet.height * viewer.zoom)
+            let gap = Viewer.gap * viewer.zoom
             let slots = viewer.visible
 
             VStack(spacing: gap) {
@@ -389,18 +490,38 @@ struct ViewerView: View {
                         ForEach(0..<shape.columns, id: \.self) { column in
                             let index = row * shape.columns + column
                             if index < slots.count, let page = slots[index] {
-                                Sheet(viewer: viewer, page: page, fit: available)
+                                Sheet(viewer: viewer, page: page, size: size)
                             } else {
                                 // The inside cover, or past the end. The gap is the sheet that
                                 // is not there.
-                                Color.clear.frame(width: available.width, height: available.height)
+                                Color.clear.frame(width: size.width, height: size.height)
                             }
                         }
                     }
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            .offset(x: viewer.pan.width, y: viewer.pan.height)
+            .clipped()
+            .contentShape(Rectangle())
+            // Dragging only means something once there is more paper than window. Below that the
+            // sheets keep their own gestures, so a double-click still lands on the sheet.
+            .gesture(drag, including: viewer.canZoomOut ? .all : .subviews)
+            .onAppear { viewer.setViewport(geo.size) }
+            .onChange(of: geo.size) { viewer.setViewport($0) }
+            .onChange(of: viewer.layout) { _ in viewer.setViewport(geo.size) }
         }
+    }
+
+    private var drag: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                let base = panBase ?? viewer.pan
+                panBase = base
+                viewer.setPan(CGSize(width: base.width + value.translation.width,
+                                     height: base.height + value.translation.height))
+            }
+            .onEnded { _ in panBase = nil }
     }
 
     private var bar: some View {
@@ -435,6 +556,18 @@ struct ViewerView: View {
                 .disabled(!viewer.canStep.forward)
 
             Spacer(minLength: 8)
+
+            // Nothing to say at fit: the page is the page. Once you are in closer, the number is
+            // also the way back out.
+            if viewer.canZoomOut {
+                Button(action: viewer.zoomToFit) {
+                    Text("\(Int((viewer.zoom * 100).rounded()))%")
+                        .font(.system(size: 11))
+                        .monospacedDigit()
+                }
+                .buttonStyle(.borderless)
+                .help("The whole page again (0)")
+            }
 
             Picker("", selection: $viewer.layout) {
                 ForEach(ViewerLayout.allCases) { option in
@@ -499,14 +632,15 @@ private struct PageChip: View {
 private struct Sheet: View {
     @ObservedObject var viewer: Viewer
     let page: Int
-    let fit: CGSize
+    /// How big this sheet is drawn, zoom included. The ink is laid out to it, so zooming in
+    /// redraws the strokes rather than magnifying pixels.
+    let size: CGSize
 
     private var isActive: Bool { viewer.activeIsHere && viewer.activePage == page }
 
     var body: some View {
         let g = viewer.geometry
-        let scale = min(fit.width / g.widthCells, fit.height / g.heightCells)
-        let size = CGSize(width: g.widthCells * scale, height: g.heightCells * scale)
+        let scale = size.width / g.widthCells
 
         // At small sizes the thinnest line would disappear. Rather than clamping each weight
         // independently — which makes thin and thick the same line and throws away the whole point
@@ -572,14 +706,19 @@ extension Color {
     }
 }
 
-/// Resizable, floating so it survives being presented over, and locked to the shape of the paper.
+/// Resizable, and floating so it survives being presented over.
+///
+/// The window is a window: any shape you like. It used to be locked to the paper's proportions,
+/// which meant every window you widened also grew taller, half a screen went to a shape you did
+/// not choose, and opening a spread resized the window under you. The paper keeps its own shape
+/// inside whatever window you make, and zoom is how you get closer to it.
 final class ViewerWindowController: NSWindowController {
     private let viewer: Viewer
     /// The window keeps whatever size you give it, but it has to start somewhere sensible.
     private var hasSized = false
-    /// The bar along the bottom, which is not paper and has to be allowed for when the window is
-    /// locked to the paper's proportions.
+    /// The bar along the bottom, which is not paper: a wheel over it is a wheel over a toolbar.
     private static let barHeight: CGFloat = 31
+    private var wheel: Any?
 
     init(viewer: Viewer) {
         self.viewer = viewer
@@ -594,6 +733,54 @@ final class ViewerWindowController: NSWindowController {
         window.collectionBehavior = [.managed, .fullScreenAuxiliary]
         super.init(window: window)
         window.onKey = { [weak self] key in self?.key(key) ?? false }
+        // Wheel and pinch do not reach SwiftUI on macOS 13, and a view that catches them would
+        // have to sit over the sheets and swallow their clicks. A monitor sees them first and
+        // hands back anything that is not ours.
+        wheel = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .magnify]) {
+            [weak self] event in
+            guard let self, event.window === self.window else { return event }
+            return self.gesture(event) ? nil : event
+        }
+    }
+
+    deinit { if let wheel { NSEvent.removeMonitor(wheel) } }
+
+    /// Pinch zooms. The wheel pans, and zooms while command or option is held — the same pair of
+    /// habits every other document window on the Mac has.
+    private func gesture(_ event: NSEvent) -> Bool {
+        guard let window, let anchor = anchor(of: event, in: window) else { return false }
+        switch event.type {
+        case .magnify:
+            viewer.zoomBy(1 + Double(event.magnification), about: anchor)
+            return true
+        case .scrollWheel:
+            // A trackpad reports points and a mouse wheel reports lines, and one line is not one
+            // point: taken raw, the same gesture moves a hundred times less on a mouse.
+            let step: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 16
+            let dx = event.scrollingDeltaX * step, dy = event.scrollingDeltaY * step
+            if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) {
+                // Exponential, so a given roll of the wheel is the same proportion of a change
+                // whether you are at 100% or at 600%.
+                viewer.zoomBy(exp(Double(dy) * 0.01), about: anchor)
+                return true
+            }
+            guard viewer.canZoomOut else { return false }
+            viewer.panBy(CGSize(width: dx, height: dy))
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Where the pointer is over the sheets, measured from their top left — nil when it is over
+    /// the bar, or outside. Taken from the window rather than from a view so that it does not
+    /// depend on which way up the hosted view happens to be.
+    private func anchor(of event: NSEvent, in window: NSWindow) -> CGPoint? {
+        let rect = window.contentLayoutRect
+        let point = event.locationInWindow
+        guard point.y >= rect.minY + Self.barHeight, point.y <= rect.maxY,
+              point.x >= rect.minX, point.x <= rect.maxX else { return nil }
+        return CGPoint(x: point.x - rect.minX, y: rect.maxY - point.y)
     }
 
     @available(*, unavailable)
@@ -603,36 +790,25 @@ final class ViewerWindowController: NSWindowController {
         switch key {
         case "\u{F702}": viewer.step(-1)          // left arrow
         case "\u{F703}": viewer.step(1)           // right arrow
-        default:
-            guard viewer.handle(key: key) else { return false }
+        default: return viewer.handle(key: key)
         }
-        fit()
         return true
     }
 
-    /// Size the window to the paper.
+    /// Open at the shape of the paper — once.
     ///
-    /// The first time it opens there is nothing to take a size from, so it is taken from the
-    /// screen: a document window that appears at 240 points on a 2000 point display is not a
-    /// choice anybody made. After that the size is yours, and only the proportions are enforced —
-    /// switching a bound notebook between a spread and a single sheet changes the width and leaves
-    /// the height where you put it.
-    func fit(initial: Bool = false) {
+    /// The first time there is nothing to take a size from, so it is taken from the screen and
+    /// from the notebook: a document window that appears at 240 points on a 2000 point display is
+    /// not a choice anybody made. From then on the size is yours and nothing touches it.
+    private func sizeToPaper() {
         guard let window else { return }
         let paper = viewer.aspect
         guard paper > 0 else { return }
         let visible = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
 
-        // Height carries the bar as well as the sheet, so the locked ratio is the paper's adjusted
-        // for it. Any residual difference is absorbed by the letterboxing the canvas already does.
-        var height: CGFloat
-        if initial {
-            height = min(visible.height * 0.82, 940)
-        } else {
-            height = window.contentLayoutRect.height
-        }
-        height = max(window.minSize.height, height)
+        // Height carries the bar as well as the sheet, so the paper's ratio is adjusted for it.
+        var height = max(window.minSize.height, min(visible.height * 0.82, 940))
         var width = (height - Self.barHeight) * paper
 
         // A spread on a narrow screen would otherwise run off both sides.
@@ -642,9 +818,8 @@ final class ViewerWindowController: NSWindowController {
             height = width / paper + Self.barHeight
         }
 
-        window.contentAspectRatio = NSSize(width: width, height: height)
         window.setContentSize(NSSize(width: width, height: height))
-        if initial { window.center() }
+        window.center()
     }
 
     override func showWindow(_ sender: Any?) {
@@ -652,7 +827,7 @@ final class ViewerWindowController: NSWindowController {
         hasSized = true
         super.showWindow(sender)
         window?.title = viewer.title
-        fit(initial: first)
+        if first { sizeToPaper() }
     }
 
     /// The window is named for the notebook in it, not for the app.
