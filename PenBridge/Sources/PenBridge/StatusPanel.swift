@@ -432,28 +432,25 @@ private struct InkDot: View {
 
     var body: some View {
         Button(action: choose) {
-            ZStack {
-                // Every ink the same size — a row of dots that changed size as you clicked along
-                // it would jitter, and the swatch is also how you tell the colours apart, which
-                // a smaller one does worse. The unchosen ones step back by weight alone: enough
-                // colour to know which is which, not enough to compete with the ink that is
-                // actually loaded.
-                Circle()
-                    .fill(colour)
-                    .opacity(selected ? 1 : hovering ? 0.6 : 0.3)
-                    .frame(width: 14, height: 14)
-                // Chosen is a hole punched through the middle, the way a radio button is a dot
-                // inside a ring — and unlike a ring drawn around the outside, it costs no space,
-                // so nothing moves when the choice changes.
-                if selected {
-                    Circle()
-                        .fill(punch)
-                        .frame(width: 5, height: 5)
-                }
-            }
-            .frame(width: 14, height: 14)
-            .padding(3)
-            .contentShape(Rectangle())
+            // Every ink the same size — a row of dots that changed size as you clicked along it
+            // would jitter, and the swatch is also how you tell the colours apart, which a
+            // smaller one does worse. The unchosen ones step back by weight alone: enough colour
+            // to know which is which, not enough to compete with the ink that is loaded.
+            //
+            // 16 and 6 rather than 14 and 5: an odd difference leaves the punch half a point off
+            // the grid on each side, and half a point is exactly the amount that reads as
+            // crooked. As an overlay rather than a second stack child, so the punch is centred
+            // on the swatch itself and cannot drift from it.
+            Circle()
+                .fill(colour)
+                .opacity(selected ? 1 : hovering ? 0.6 : 0.3)
+                .frame(width: 16, height: 16)
+                .overlay(Circle()
+                    .fill(punch)
+                    .frame(width: 6, height: 6)
+                    .opacity(selected ? 1 : 0))
+                .padding(3)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
