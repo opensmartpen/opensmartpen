@@ -433,13 +433,15 @@ private struct InkDot: View {
     var body: some View {
         Button(action: choose) {
             ZStack {
-                // The unchosen inks are held well back and drawn small. They are a menu you are
-                // not using: enough colour to know which is which, not enough to compete with the
-                // one ink that is actually loaded.
+                // Every ink the same size — a row of dots that changed size as you clicked along
+                // it would jitter, and the swatch is also how you tell the colours apart, which
+                // a smaller one does worse. The unchosen ones step back by weight alone: enough
+                // colour to know which is which, not enough to compete with the ink that is
+                // actually loaded.
                 Circle()
                     .fill(colour)
                     .opacity(selected ? 1 : hovering ? 0.6 : 0.3)
-                    .frame(width: selected ? 14 : 11, height: selected ? 14 : 11)
+                    .frame(width: 14, height: 14)
                 // Chosen is a hole punched through the middle, the way a radio button is a dot
                 // inside a ring — and unlike a ring drawn around the outside, it costs no space,
                 // so nothing moves when the choice changes.
