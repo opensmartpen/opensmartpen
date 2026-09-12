@@ -52,6 +52,10 @@ final class PanelModel: ObservableObject {
     /// Set by clicking the open pen shut. Cleared the moment a different pen starts writing,
     /// because that is a new question, not the one you dismissed.
     @Published private(set) var penClosed = false
+    /// The notebook the pen is writing in right now, by book key. Taken from the tracker rather
+    /// than from the repo scan: the scan is what the panel was built from when it opened, and a
+    /// notebook you switched to a minute ago is not in it yet.
+    @Published private(set) var activeBook: String?
     /// The pen that was writing last time we looked, to notice when it changes.
     private var lastActivePen: String?
 
@@ -82,6 +86,12 @@ final class PanelModel: ObservableObject {
         let active = pens.first { $0.active }?.id
         guard active != lastActivePen else { return }
         lastActivePen = active
+        openTheActivePen()
+    }
+
+    /// Also on a new notebook: starting to write somewhere else is the same kind of event as
+    /// picking up a different pen, and the answer to both is "show me what I am writing with".
+    private func openTheActivePen() {
         chosenPen = nil
         penClosed = false
     }
@@ -288,6 +298,17 @@ final class PanelModel: ObservableObject {
                               isLive: live)
         }
 
+        // The notebook with the newest stroke in it, which is the one the mark belongs on. When
+        // it changes, the repo scan behind the list is out of date — a notebook you have just
+        // started is not in it at all — so the list is rebuilt and the pen re-opened.
+        if let newest = coordinator.tracker.pending.max(by: { $0.last < $1.last })?.page.bookKey,
+           newest != activeBook {
+            activeBook = newest
+            refreshRecent()
+            openTheActivePen()
+        }
+        markActiveBook()
+
         if let record = coordinator.lastPublish {
             lastPublish = Publish(date: record.date, commit: record.commit, pages: record.pages)
         }
@@ -387,7 +408,14 @@ final class PanelModel: ObservableObject {
                               binding: books.record(for: entry.page)?.binding ?? .pad)
         }
         recent = Array(recent.prefix(4))
-        if !recent.isEmpty { recent[0].latest = true }
+        markActiveBook()
+    }
+
+    /// One mark, on the notebook being written in. Falls back to the newest in the list, which is
+    /// the same notebook whenever the app has been running long enough to have seen a stroke.
+    private func markActiveBook() {
+        let key = activeBook ?? recent.first?.id
+        for i in recent.indices { recent[i].latest = recent[i].id == key }
     }
 
     /// Set by the app delegate, which owns the window.

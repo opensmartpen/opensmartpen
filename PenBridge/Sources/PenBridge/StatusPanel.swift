@@ -33,7 +33,10 @@ struct StatusPanel: View {
                 // whole app — and it was saying a third time what the pen's own line and the
                 // page countdowns already say, in a larger type size than either.
                 top
-                if !model.pending.isEmpty { section { pending } }
+                // No list of pages waiting. It named the same notebook that is already in the
+                // list below, one row further down, and the countdown beside it answered a
+                // question about a thing the app finishes on its own. What survives of it is the
+                // mark on that notebook in the list.
                 if case let .failing(_, _, error) = model.status { section { failure(error) } }
                 if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
                 if let question = model.instanceQuestion { section { newNotebook(question) } }
@@ -60,36 +63,6 @@ struct StatusPanel: View {
             wakeHint
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
-        }
-    }
-
-    // MARK: pending — one row per page, the countdown doing all the talking
-
-    private var pending: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(model.pending.prefix(5)) { row in
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(row.isLive ? Ink.accent : Color.clear)
-                        .frame(width: 5, height: 5)
-                    Text(row.label.oneLine)
-                        .font(.system(size: 11.5))
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                    Spacer(minLength: 6)
-                    if let deadline = row.deadline {
-                        Text(Self.clock(to: deadline, from: now))
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
-                            .monospacedDigit()
-                    }
-                }
-            }
-            if model.pending.count > 5 {
-                Text("+\(model.pending.count - 5)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-            }
         }
     }
 
@@ -254,8 +227,12 @@ struct StatusPanel: View {
                 // Nothing here for opening a notebook: clicking one in the list above already
                 // does that, and "Reveal notes" is a folder you rarely want and can reach from
                 // Settings. What is left is what a menubar app's menu is actually for.
-                MenuItem(title: "Settings…", shortcut: "⌘,", action: model.openConfig)
-                MenuItem(title: "Quit", shortcut: "⌘Q") { NSApp.terminate(nil) }
+                // No shortcuts printed beside them. A non-activating panel does not reliably
+                // become key, so the keystrokes it advertised often did nothing — and a
+                // shortcut that fails half the time is worse than no shortcut at all. The
+                // handler stays; only the promise is gone.
+                MenuItem(title: "Settings…", action: model.openConfig)
+                MenuItem(title: "Quit") { NSApp.terminate(nil) }
             }
             .padding(.vertical, 4)
             .padding(.horizontal, 5)
@@ -471,10 +448,14 @@ private struct BatteryBar: View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill((onInk ?? Color.primary).opacity(0.2))
-                // Held well back on a filled tile: at full strength a bar the width of the tile
-                // reads as an underline beneath the name rather than as a level.
-                Capsule().fill(low ? Ink.critical : (onInk ?? Color.secondary))
-                    .opacity(onInk == nil ? 1 : 0.65)
+                // The app's own violet, not a grey. A grey level on a grey track is two greys
+                // and reads as an underline; the violet is the one colour the panel already owns
+                // and it separates the level from its track at a glance. Red only when flat,
+                // which is the one thing about a battery worth interrupting you for.
+                //
+                // Held back on a filled tile, where the usual colours disappear into the ink.
+                Capsule().fill(low ? Ink.critical : (onInk ?? Ink.accent))
+                    .opacity(onInk == nil ? 0.8 : 0.65)
                     .frame(width: max(4, geo.size.width * CGFloat(percent) / 100))
             }
         }
@@ -486,13 +467,12 @@ private struct BatteryBar: View {
 /// answer to "what does this pen write in". Closed, it shows its battery instead, because a tile
 /// you are not using has nothing else worth saying.
 ///
-/// Which pen is in your hand is reported, never chosen: a click that "selected" a pen would be a
-/// second and disagreeing answer to a question the hardware already settled.
+/// Which pen is in your hand is reported, not asked for: picking one up opens it. A click is
+/// only for looking at a pen you are not holding, or for putting the controls away.
 private struct PenTile: View {
     let pen: PanelModel.PenRow
     let open: Bool
     let tap: () -> Void
-    @State private var hovering = false
 
     /// Inked only when the tile is open and the pen is connected. Both halves matter: the fill is
     /// the selection, so a closed tile carries none of it; and the colour is what you are writing
@@ -540,10 +520,12 @@ private struct PenTile: View {
             .padding(.top, 6)
             .padding(.bottom, 5)
             .frame(width: 64)
+            // No hover chip. The chip is what "open" looks like, so drawing the same shape in
+            // the same grey under the pointer says a pen is open when none is — and a row of
+            // tiles that lights up as the pointer crosses it is the panel fidgeting.
             .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(filled ? inkColour
-                      : chipped ? Color.primary.opacity(0.09)
-                      : hovering ? Color.primary.opacity(0.06) : Color.clear))
+                      : chipped ? Color.primary.opacity(0.09) : Color.clear))
             // A black pen filled with black ink would vanish into a dark panel, so a filled tile
             // always carries a hairline.
             .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -551,7 +533,6 @@ private struct PenTile: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
         .help(pen.percent.map { "\(pen.name) · \($0)%" } ?? pen.name)
     }
 }
