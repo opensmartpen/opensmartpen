@@ -2,27 +2,16 @@ import CoreBluetooth
 import Foundation
 import NISDK3
 import BrainioPenCore
+import BrainioPenUI
 
 /// Keeps one pen connected and drained. Scans whenever no pen is connected, connects to the paired pen
 /// (or pairs with the first pen seen), authorises, drains offline memory notebook by notebook, and
 /// forwards live strokes. All SDK callbacks are marshalled onto the main queue.
 final class PenSession: NSObject {
-    enum State: Equatable {
-        case bluetoothOff
-        case scanning
-        case connecting
-        case authorizing
-        case ready
-        case draining(remaining: Int)
-    }
-
-    /// How far through pen memory we are, for the panel. The SDK reports a percentage per book,
-    /// so this is per-book progress plus which book we are on.
-    struct Drain: Equatable {
-        let index: Int
-        let count: Int
-        let percent: Int
-    }
+    /// Both of these are declared in the UI layer, where the panel needs them, and used here under
+    /// their old names. The SDK stops at this file: nothing above it ever sees a `PenSettingStruct`.
+    typealias State = PenLinkState
+    typealias Drain = DrainProgress
 
     private(set) var state: State = .scanning { didSet { if state != oldValue { onChange?() } } }
 
@@ -544,5 +533,21 @@ extension PenSession: PenDelegate {
         default:
             Log.debug("pen message: \(msg)")
         }
+    }
+}
+
+
+// MARK: - PenLink
+
+/// The panel's view of the pen. Everything the SDK reports is turned into plain numbers here, so
+/// that `BrainioPenUI` builds and runs with no pen and no SDK behind it.
+extension PenSession: PenLink {
+    var linkState: PenLinkState { state }
+    var drainProgress: DrainProgress? { drain }
+
+    var reading: PenReport? {
+        guard let s = setting else { return nil }
+        return PenReport(battery: Int(s.battLevel), charging: s.charging == .On,
+                          memoryUsedPercent: Int(s.memoryUsed))
     }
 }

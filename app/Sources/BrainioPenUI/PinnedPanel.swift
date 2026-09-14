@@ -6,13 +6,13 @@ import SwiftUI
 /// Same model, same view — only the container changes. The popover closes when you click away,
 /// which makes it useless for watching the panel change while you write or while the code is
 /// rebuilt. This window stays above other windows and on every space.
-final class PinnedPanelController: NSWindowController, NSWindowDelegate {
+public final class PinnedPanelController: NSWindowController, NSWindowDelegate {
     private let model: PanelModel
     private let host: NSHostingController<StatusPanel>
     /// Told when the user closes the window, so the panel can show "Pin" again.
-    var onClose: (() -> Void)?
+    public var onClose: (() -> Void)?
 
-    init(model: PanelModel, now: Date, from panelFrame: NSRect?) {
+    public init(model: PanelModel, now: Date, from panelFrame: NSRect?) {
         self.model = model
         host = NSHostingController(rootView: StatusPanel(model: model, now: now))
 
@@ -66,7 +66,7 @@ final class PinnedPanelController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     /// `StatusPanel` takes `now` as a value, so the countdowns only move if the view is rebuilt.
-    func render(now: Date) {
+    public func render(now: Date) {
         host.rootView = StatusPanel(model: model, now: now)
         fit()
     }
@@ -83,7 +83,7 @@ final class PinnedPanelController: NSWindowController, NSWindowDelegate {
         window.setFrameTopLeftPoint(NSPoint(x: window.frame.minX, y: top))
     }
 
-    func windowWillClose(_ notification: Notification) {
+    public func windowWillClose(_ notification: Notification) {
         onClose?()
     }
 }

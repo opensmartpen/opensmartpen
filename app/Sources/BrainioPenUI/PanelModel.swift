@@ -3,16 +3,16 @@ import Combine
 import Foundation
 import BrainioPenCore
 
-/// Everything the panel draws, derived from `PenSession` and `SyncCoordinator` and nothing else.
+/// Everything the panel draws, derived from a `PenLink` and a `SyncCoordinator` and nothing else.
 /// Both of those already publish an `onChange` closure; this turns those into one observable
 /// snapshot so the view never reaches into the pen or the git layer itself.
 ///
-/// Lives on the main thread: every caller (`SyncCoordinator.finish`, `PenSession`'s marshalled
-/// SDK callbacks) is already there.
-final class PanelModel: ObservableObject {
+/// Lives on the main thread: every caller (`SyncCoordinator.finish`, the pen's marshalled SDK
+/// callbacks) is already there.
+public final class PanelModel: ObservableObject {
     /// What the header says, in the order the person cares about: a failure outranks a transfer,
     /// which outranks ordinary connected life.
-    enum Status: Equatable {
+    public enum Status: Equatable {
         case asleep                      // the A1 powers itself off after five minutes: the usual state
         case bluetoothOff
         case connecting
@@ -22,28 +22,41 @@ final class PanelModel: ObservableObject {
         case connected
     }
 
-    struct PendingRow: Identifiable, Equatable {
-        let id: String
-        let label: PageLabel
+    public struct PendingRow: Identifiable, Equatable {
+        public let id: String
+        public let label: PageLabel
         /// Nil while the page is still being written: its timer restarts on every stroke, so a
         /// countdown there would tick backwards.
-        let deadline: Date?
-        let isLive: Bool
+        public let deadline: Date?
+        public let isLive: Bool
+
+        public init(id: String, label: PageLabel, deadline: Date?, isLive: Bool) {
+            self.id = id
+            self.label = label
+            self.deadline = deadline
+            self.isLive = isLive
+        }
     }
 
-    struct Publish: Equatable {
-        let date: Date
-        let commit: String?
-        let pages: Int
+    public struct Publish: Equatable {
+        public let date: Date
+        public let commit: String?
+        public let pages: Int
+
+        public init(date: Date, commit: String?, pages: Int) {
+            self.date = date
+            self.commit = commit
+            self.pages = pages
+        }
     }
 
-    @Published private(set) var status: Status = .asleep
+    @Published public private(set) var status: Status = .asleep
     @Published private(set) var penName = ""
-    @Published private(set) var battery: Battery?
+    @Published public private(set) var battery: Battery?
     /// The flattest pen used in the last day, whether or not it is the one in your hand. With one
     /// pen this is the same fact; with three it is the one that matters, because the pen that
     /// needs charging is rarely the pen you are holding.
-    @Published private(set) var lowPen: (name: String, percent: Int)?
+    @Published public private(set) var lowPen: (name: String, percent: Int)?
 
     /// The pens this Mac knows, newest reading first.
     @Published private(set) var pens: [PenRow] = []
@@ -117,28 +130,42 @@ final class PanelModel: ObservableObject {
         refresh()
     }
 
-    struct PenRow: Identifiable, Equatable {
-        let id: String          // MAC
-        let name: String
-        let ink: InkColor
-        let width: LineWidth
-        let mode: PenMode
-        let percent: Int?
-        let low: Bool
+    public struct PenRow: Identifiable, Equatable {
+        public let id: String          // MAC
+        public let name: String
+        public let ink: InkColor
+        public let width: LineWidth
+        public let mode: PenMode
+        public let percent: Int?
+        public let low: Bool
         /// The pen you are using: the one connected, or failing that the one seen most recently.
         /// Reported by the hardware, never chosen by a click — you select a pen by picking it up,
         /// and a pen that is merely asleep is still the one you were last writing with.
-        let active: Bool
+        public let active: Bool
         /// This pen's own state, which is not the panel's. The header answers "is my writing
         /// safe"; this answers "is this pen awake", and after five idle minutes those two stop
         /// agreeing.
-        let state: String
+        public let state: String
         /// Connected right now, as opposed to merely being the last pen you used. The tile fills
         /// with ink only for this: the fill says "you are writing with this", and a pen that went
         /// to sleep twenty minutes ago is not something you are doing.
-        let awake: Bool
+        public let awake: Bool
+
+        public init(id: String, name: String, ink: InkColor, width: LineWidth, mode: PenMode,
+                    percent: Int?, low: Bool, active: Bool, state: String, awake: Bool) {
+            self.id = id
+            self.name = name
+            self.ink = ink
+            self.width = width
+            self.mode = mode
+            self.percent = percent
+            self.low = low
+            self.active = active
+            self.state = state
+            self.awake = awake
+        }
     }
-    @Published private(set) var pending: [PendingRow] = []
+    @Published public private(set) var pending: [PendingRow] = []
     @Published private(set) var pagesOnPen: Int?
     @Published private(set) var lastPublish: Publish?
     @Published private(set) var isPublishing = false
@@ -163,11 +190,18 @@ final class PanelModel: ObservableObject {
     /// one set of files and nobody notices.
     @Published private(set) var instanceQuestion: InstanceQuestion?
 
-    struct InstanceQuestion: Equatable {
-        let bookKey: String
-        let title: String
-        let at: Int
-        let reason: InstanceSuspicion.Reason
+    public struct InstanceQuestion: Equatable {
+        public let bookKey: String
+        public let title: String
+        public let at: Int
+        public let reason: InstanceSuspicion.Reason
+
+        public init(bookKey: String, title: String, at: Int, reason: InstanceSuspicion.Reason) {
+            self.bookKey = bookKey
+            self.title = title
+            self.at = at
+            self.reason = reason
+        }
 
         var why: String {
             switch reason {
@@ -177,7 +211,7 @@ final class PanelModel: ObservableObject {
         }
     }
 
-    func ask(_ suspicion: InstanceSuspicion, title: String) {
+    public func ask(_ suspicion: InstanceSuspicion, title: String) {
         instanceQuestion = InstanceQuestion(bookKey: suspicion.book, title: title,
                                             at: suspicion.at, reason: suspicion.reason)
     }
@@ -200,23 +234,38 @@ final class PanelModel: ObservableObject {
 
     /// A notebook, not a page. What you reach for is the book; which page it falls open at is the
     /// viewer's job, and it always falls open at the last one you wrote.
-    struct RecentBook: Identifiable, Equatable {
-        let id: String
-        let title: String
+    public struct RecentBook: Identifiable, Equatable {
+        public let id: String
+        public let title: String
         /// Where it will open: the most recently written page in it.
-        let page: PageID
+        public let page: PageID
         /// The most recently written of all the notebooks. Marked, because "the one you are in"
         /// is what you are looking for when you open the panel.
-        var latest: Bool = false
+        public var latest: Bool = false
         /// Loose sheets or a bound notebook — the two look different on the desk, so they look
         /// different here.
-        let binding: KnownBooks.Binding
+        public let binding: KnownBooks.Binding
+
+        public init(id: String, title: String, page: PageID, latest: Bool = false,
+                    binding: KnownBooks.Binding) {
+            self.id = id
+            self.title = title
+            self.page = page
+            self.latest = latest
+            self.binding = binding
+        }
     }
 
-    struct Battery: Equatable {
-        let percent: Int
-        let charging: Bool
-        let low: Bool
+    public struct Battery: Equatable {
+        public let percent: Int
+        public let charging: Bool
+        public let low: Bool
+
+        public init(percent: Int, charging: Bool, low: Bool) {
+            self.percent = percent
+            self.charging = charging
+            self.low = low
+        }
     }
 
     /// A page written within this many seconds counts as being written right now.
@@ -225,7 +274,7 @@ final class PanelModel: ObservableObject {
     /// Everything the model derives from. Absent in the design window, which sets the published
     /// properties directly instead — that is the whole of what "design mode" means here.
     struct Live {
-        let session: PenSession
+        let session: PenLink
         let coordinator: SyncCoordinator
         let config: Config
         let books: BookRegistry
@@ -236,21 +285,22 @@ final class PanelModel: ObservableObject {
     private let live: Live?
     private var lastPaletteLoad = Date.distantPast
 
-    init(session: PenSession, coordinator: SyncCoordinator, config: Config,
-         books: BookRegistry, pens: PenRegistry, penState: PenState) {
+    public init(session: PenLink, coordinator: SyncCoordinator, config: Config,
+                books: BookRegistry, pens: PenRegistry, penState: PenState) {
         live = Live(session: session, coordinator: coordinator, config: config,
                     books: books, pens: pens, penState: penState)
     }
 
-    /// A model with no pen and no repo behind it, for the design window.
-    init(scenario: Scenario) {
+    /// A model with no pen and no repo behind it, for the design window. What it shows comes
+    /// from a `Snapshot` and from nothing else.
+    public init(snapshot: Snapshot) {
         live = nil
-        apply(scenario)
+        apply(snapshot)
     }
 
     /// Recompute from live state. Called on every change and once a second while the panel is open,
     /// which is what keeps the countdowns moving.
-    func refresh(now: Date = Date()) {
+    public func refresh(now: Date = Date()) {
         guard let live else { return }   // design mode: the published values are the source
         let session = live.session, coordinator = live.coordinator
         let config = live.config, books = live.books
@@ -273,15 +323,14 @@ final class PanelModel: ObservableObject {
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
         // and the macOS Bluetooth menu sets the convention: a battery for what is connected,
         // nothing at all for the rest.
-        if let s = session.setting, session.isConnected {
-            let pct = Int(s.battLevel)
-            let charging = s.charging == .On
-            battery = Battery(percent: pct, charging: charging,
-                              low: pct <= config.lowBatteryPercent && !charging)
-            let held = PenMemory.pages(usedPercent: Int(s.memoryUsed))
+        if let s = session.reading, session.isConnected {
+            let pct = s.battery
+            battery = Battery(percent: pct, charging: s.charging,
+                              low: pct <= config.lowBatteryPercent && !s.charging)
+            let held = PenMemory.pages(usedPercent: s.memoryUsedPercent)
             pagesOnPen = held > 0 ? held : nil
             if let mac = config.penMac {
-                live.penState.record(mac: mac, battery: pct, charging: charging, at: now)
+                live.penState.record(mac: mac, battery: pct, charging: s.charging, at: now)
             }
         } else {
             battery = nil
@@ -328,7 +377,7 @@ final class PanelModel: ObservableObject {
                 // The header used to carry this, above everything, in bold. It belongs to the
                 // pen: the reason you cannot see your writing is a fact about this pen, and
                 // Bluetooth being off is a different reason from the pen being asleep.
-                switch session.state {
+                switch session.linkState {
                 case .bluetoothOff: state = "Bluetooth off"
                 case .connecting, .authorizing: state = "Connecting"
                 default: state = "Pen off"
@@ -370,7 +419,7 @@ final class PanelModel: ObservableObject {
             return .failing(attempts: coordinator.consecutiveFailures, nextTry: coordinator.nextRetryAt,
                             error: error)
         }
-        switch session.state {
+        switch session.linkState {
         case .bluetoothOff:
             return .bluetoothOff
         case .scanning:
@@ -378,7 +427,7 @@ final class PanelModel: ObservableObject {
         case .connecting, .authorizing:
             return .connecting
         case .draining:
-            if let d = session.drain {
+            if let d = session.drainProgress {
                 return .copying(book: d.index, of: d.count, percent: d.percent)
             }
             return .copying(book: 1, of: 1, percent: 0)
@@ -392,7 +441,7 @@ final class PanelModel: ObservableObject {
 
     /// Scanning the repo is too much for the one-second tick, so the recent list is rebuilt only
     /// when the panel is opened.
-    func refreshRecent() {
+    public func refreshRecent() {
         guard let books = live?.books else { return }
         // Newest first, one row per notebook: the same book appearing four times because you wrote
         // four pages in it says nothing you did not already know.
@@ -417,29 +466,29 @@ final class PanelModel: ObservableObject {
     }
 
     /// Set by the app delegate, which owns the window.
-    var onOpenPage: ((PageID) -> Void)?
+    public var onOpenPage: ((PageID) -> Void)?
 
     /// Never a PNG in Preview: one viewer, whether the ink arrived a second ago or last month.
     func open(_ book: RecentBook) { onOpenPage?(book.page) }
 
     /// Set by the app delegate, which owns the window.
-    var onShowLive: (() -> Void)?
+    public var onShowLive: (() -> Void)?
 
     func showLive() { onShowLive?() }
 
     /// True while the panel is also open in its own window.
     @Published private(set) var isPinned = false
 
-    var onTogglePin: (() -> Void)?
+    public var onTogglePin: (() -> Void)?
 
     func togglePin() { onTogglePin?() }
 
     /// Called by the app delegate when the pinned window opens or closes.
-    func setPinned(_ pinned: Bool) { isPinned = pinned }
+    public func setPinned(_ pinned: Bool) { isPinned = pinned }
 
     // MARK: actions
 
-    func publishNow() {
+    public func publishNow() {
         live?.coordinator.publishAll()
     }
 
@@ -449,7 +498,7 @@ final class PanelModel: ObservableObject {
     }
 
     /// Set by the app delegate, which owns the window.
-    var onOpenSettings: (() -> Void)?
+    public var onOpenSettings: (() -> Void)?
 
     func openConfig() { onOpenSettings?() }
 
@@ -489,125 +538,54 @@ final class PanelModel: ObservableObject {
         live?.session.forgetPen()
     }
 
-    // MARK: - design mode
+    // MARK: - a model with nothing behind it
 
-    /// The states the panel can be in, as fixtures. Kept here rather than in the design window
-    /// because `private(set)` on the published properties is file-scoped — and kept at all because
-    /// several of these states are hard to reach on demand with real hardware: a failing push, a
-    /// pen memory drain and a first run each take deliberate setup to see even once.
-    enum Scenario: String, CaseIterable {
-        case synced, writing, waiting, copying, failing, asleep, bluetoothOff, firstRun
-        case newNotebook, threePens
+    /// Every published property, as one value.
+    ///
+    /// This is the whole of the seam the design window needs: it hands over a state, the model
+    /// shows it, and no fixture data lives in here. `private(set)` on the published properties is
+    /// module-scoped, so without this the states would have to be written in this file — which is
+    /// how a production model ends up carrying a hundred lines of make-believe.
+    public struct Snapshot {
+        public var status: Status = .asleep
+        public var penName = "Pen"
+        public var penDisplayName = "Pen"
+        public var battery: Battery?
+        public var lowPen: (name: String, percent: Int)?
+        public var pens: [PenRow] = []
+        public var pending: [PendingRow] = []
+        public var pagesOnPen: Int?
+        public var lastPublish: Publish?
+        public var isPublishing = false
+        public var recent: [RecentBook] = []
+        public var lastSeen: Date?
+        public var ink: InkColor = .black
+        public var width: LineWidth = .default
+        public var palette = Palette()
+        public var instanceQuestion: InstanceQuestion?
 
-        var title: String {
-            switch self {
-            case .synced: return "All synced"
-            case .writing: return "Writing"
-            case .waiting: return "Waiting to sync"
-            case .copying: return "Copying"
-            case .failing: return "Can\u{2019}t sync"
-            case .asleep: return "No pen"
-            case .bluetoothOff: return "Bluetooth off"
-            case .firstRun: return "First run"
-            case .newNotebook: return "New notebook?"
-            case .threePens: return "Three pens"
-            }
-        }
-
-        var note: String {
-            switch self {
-            case .synced: return "nothing pending, pen awake"
-            case .writing: return "strokes arriving now"
-            case .waiting: return "in the quiet window"
-            case .copying: return "draining pen memory"
-            case .failing: return "3+ push failures"
-            case .asleep: return "the usual state"
-            case .bluetoothOff: return "the one real blocker"
-            case .firstRun: return "never paired"
-            case .newNotebook: return "the one question we ask"
-            case .threePens: return "what the width is cut for"
-            }
-        }
+        public init() {}
     }
 
-    private static func label(_ title: String, _ page: Int) -> PageLabel {
-        PageLabel(title: title, detail: "page \(page)")
-    }
-
-    /// Fill the published properties by hand. Only ever called on a model built with `init(scenario:)`.
-    func apply(_ scenario: Scenario) {
-        let now = Date()
-        let lamy = Self.label("LAMY digital paper", 6)
-        let pad = Self.label("Ncode A4 pad", 3)
-
-        penName = "Pen"
-        penDisplayName = "Everyday"
-        lowPen = ("Red one", 14)
-        pens = [
-            PenRow(id: "a", name: "Everyday", ink: .black, width: .medium, mode: .writing,
-                   percent: 72, low: false, active: true, state: "Writing", awake: true),
-            PenRow(id: "b", name: "Red one", ink: .red, width: .thin, mode: .accent,
-                   percent: 14, low: true, active: false, state: "Pen off", awake: false),
-        ]
-        instanceQuestion = nil
-        palette = Palette(ink: ["black": "#000000", "red": "#ff0200", "blue": "#00abeb",
-                                "green": "#3cdd00", "yellow": "#ffd400"])
-        ink = .red
-        width = .medium
-        battery = Battery(percent: 16, charging: false, low: true)
-        pagesOnPen = nil
-        pending = []
-        isPublishing = false
-        lastPublish = Publish(date: now.addingTimeInterval(-260), commit: "4e35b96", pages: 2)
-        recent = [
-            RecentBook(id: "b1", title: "LAMY digital paper",
-                       page: PageID(section: 3, owner: 1012, book: 3017, page: 6),
-                       latest: true, binding: .bound),
-            RecentBook(id: "b2", title: "Ncode A4 pad",
-                       page: PageID(section: 3, owner: 27, book: 450, page: 3),
-                       binding: .pad),
-        ]
-
-        switch scenario {
-        case .synced:
-            status = .connected
-        case .writing:
-            pending = [PendingRow(id: "p1", label: lamy, deadline: nil, isLive: true)]
-            status = .writing(page: lamy)
-        case .waiting:
-            pending = [PendingRow(id: "p1", label: lamy, deadline: now.addingTimeInterval(372), isLive: false),
-                       PendingRow(id: "p2", label: pad, deadline: now.addingTimeInterval(161), isLive: false)]
-            status = .connected
-        case .copying:
-            pagesOnPen = 3
-            status = .copying(book: 2, of: 5, percent: 62)
-        case .failing:
-            pending = [PendingRow(id: "p1", label: lamy, deadline: now, isLive: false),
-                       PendingRow(id: "p2", label: pad, deadline: now, isLive: false)]
-            recent = []
-            status = .failing(attempts: 4, nextTry: now.addingTimeInterval(120),
-                              error: "fatal: could not read from remote repository")
-        case .asleep:
-            status = .asleep
-        case .bluetoothOff:
-            battery = nil
-            status = .bluetoothOff
-        case .firstRun:
-            battery = nil
-            lastPublish = nil
-            recent = []
-            status = .asleep
-        case .newNotebook:
-            status = .connected
-            instanceQuestion = InstanceQuestion(bookKey: "s3/o27/b450", title: "Ncode A4 pad",
-                                                at: 0, reason: .sequenceRestart)
-        case .threePens:
-            // The width the panel is cut to. Three tiles and the pin are what decides it, so the
-            // case has to be visible — a measurement nobody can look at goes wrong unnoticed.
-            pens.append(PenRow(id: "c", name: "Highlighter", ink: .yellow, width: .thick,
-                               mode: .highlight, percent: 48, low: false, active: false,
-                               state: "Pen off", awake: false))
-            status = .connected
-        }
+    /// Show exactly this and derive nothing. Only ever called on a model built with
+    /// `init(snapshot:)`, which has no pen and no repo to derive from.
+    public func apply(_ snapshot: Snapshot) {
+        status = snapshot.status
+        penName = snapshot.penName
+        penDisplayName = snapshot.penDisplayName
+        battery = snapshot.battery
+        lowPen = snapshot.lowPen
+        pens = snapshot.pens
+        pending = snapshot.pending
+        pagesOnPen = snapshot.pagesOnPen
+        lastPublish = snapshot.lastPublish
+        isPublishing = snapshot.isPublishing
+        recent = snapshot.recent
+        lastSeen = snapshot.lastSeen
+        ink = snapshot.ink
+        width = snapshot.width
+        palette = snapshot.palette
+        instanceQuestion = snapshot.instanceQuestion
+        markActiveBook()
     }
 }

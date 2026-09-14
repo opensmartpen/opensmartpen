@@ -12,8 +12,10 @@ public enum KnownBooks {
     public struct Product {
         public let title: String
         public let binding: Binding
-        public let widthMM: Double
-        public let heightMM: Double
+        /// Nil where we have never measured the paper. The controller is the case: neither LAMY
+        /// nor NeoLAB publish the card's size, and our own taps bound the buttons, not the card.
+        public let widthMM: Double?
+        public let heightMM: Double?
         public let firstPage: Int
         public let note: String?
     }
@@ -26,6 +28,10 @@ public enum KnownBooks {
         "s3/o1012/b3017": Product(
             title: "LAMY notebook", binding: .bound, widthMM: 145, heightMM: 210, firstPage: 1,
             note: "NeoLAB LAMY digital paper, 192 pages, dot ruled (145 x 210 mm)"),
+        "s3/o1013/b1": Product(
+            title: "LAMY paper controller", binding: .pad, widthMM: nil, heightMM: nil,
+            firstPage: 11,
+            note: "The printed bookmark in the LAMY notebook. Ncode paper, one page, page 11."),
     ]
 
     /// How the paper is held together, which decides how it is read. A pad is loose sheets, seen

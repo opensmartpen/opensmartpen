@@ -43,12 +43,17 @@ enum Ink {
 /// battery is a number in the header rather than a labelled gauge, and nothing the header has
 /// already said is repeated underneath it. Prose survives in exactly two states — a failure and a
 /// first run — because those are the only ones where the next move is not obvious.
-struct StatusPanel: View {
+public struct StatusPanel: View {
     @ObservedObject var model: PanelModel
     /// Ticks while the panel is open so the countdowns move.
     let now: Date
 
-    var body: some View {
+    public init(model: PanelModel, now: Date) {
+        self.model = model
+        self.now = now
+    }
+
+    public var body: some View {
         ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 0) {
                 // The pens come first and carry no rule above them: there is nothing above them

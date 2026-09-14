@@ -7,7 +7,7 @@ import SwiftUI
 /// The panel deliberately carries almost no words, which only works if there is somewhere else to
 /// put them. This is that place: the pens and the notebooks, where naming actually happens, plus
 /// the handful of settings that were previously only reachable by editing JSON by hand.
-final class SettingsStore: ObservableObject {
+public final class SettingsStore: ObservableObject {
     @Published var pens: [PenRecord] = []
     @Published var books: [BookRecord] = []
     @Published var config: Config
@@ -17,9 +17,9 @@ final class SettingsStore: ObservableObject {
     private let bookRegistry: BookRegistry
     private let configURL: URL
     /// Told when a setting that the running app cares about has changed.
-    var onConfigChange: ((Config) -> Void)?
+    public var onConfigChange: ((Config) -> Void)?
 
-    init(pens: PenRegistry, books: BookRegistry, config: Config, configURL: URL) {
+    public init(pens: PenRegistry, books: BookRegistry, config: Config, configURL: URL) {
         penRegistry = pens
         bookRegistry = books
         self.config = config
@@ -338,10 +338,10 @@ private struct Hint: View {
 
 // MARK: - window
 
-final class SettingsWindowController: NSWindowController {
+public final class SettingsWindowController: NSWindowController {
     let store: SettingsStore
 
-    init(store: SettingsStore) {
+    public init(store: SettingsStore) {
         self.store = store
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 420),
                               styleMask: [.titled, .closable, .miniaturizable],
@@ -357,7 +357,7 @@ final class SettingsWindowController: NSWindowController {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    override func showWindow(_ sender: Any?) {
+    public override func showWindow(_ sender: Any?) {
         store.reload()
         super.showWindow(sender)
     }

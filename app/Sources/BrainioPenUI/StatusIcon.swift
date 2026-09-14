@@ -8,15 +8,15 @@ import AppKit
 /// - pencil with a drop    ink not yet synced: pages are waiting
 /// - red pencil + percent  battery at or below the configured level, not charging
 /// - dimmed pencil         Brainio Pen cannot work: Bluetooth off, or no permission for it
-enum StatusIcon {
-    struct Appearance {
-        let image: NSImage
-        let title: NSAttributedString
-        let dimmed: Bool
-        let tooltip: String
+public enum StatusIcon {
+    public struct Appearance {
+        public let image: NSImage
+        public let title: NSAttributedString
+        public let dimmed: Bool
+        public let tooltip: String
     }
 
-    static func make(pendingPages: Int, battery: (percent: Int, low: Bool)?, working: Bool) -> Appearance {
+    public static func make(pendingPages: Int, battery: (percent: Int, low: Bool)?, working: Bool) -> Appearance {
         if let battery, battery.low {
             return Appearance(
                 image: pencil(drop: pendingPages > 0, tint: .systemRed),

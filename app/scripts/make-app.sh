@@ -10,7 +10,7 @@ APP="$OUT/Brainio Pen.app"
 BUNDLE_ID="com.brainio.pen"
 VERSION="$(grep -o 'static let version = "[^"]*"' Sources/BrainioPen/AppDelegate.swift | cut -d'"' -f2)"
 
-swift build -c release 2>&1 | grep -E "error|Build complete" || true
+swift build -c release --product brainio-pen 2>&1 | grep -E "error|Build complete" || true
 BIN=".build/release/brainio-pen"
 [ -x "$BIN" ] || { echo "build failed: $BIN missing" >&2; exit 1; }
 

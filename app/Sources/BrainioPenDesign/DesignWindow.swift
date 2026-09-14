@@ -1,21 +1,22 @@
 import AppKit
 import BrainioPenCore
+import BrainioPenUI
 import SwiftUI
 
 /// A detached, always-visible copy of the panel for working on the design.
 ///
-/// Run with `BRAINIO_PEN_DESIGN=1` and the app does nothing else: no pen, no git, no menubar item.
-/// That is deliberate — it means the design window can run beside the installed LaunchAgent
-/// without two processes committing to the same repo.
+/// This is the whole of `brainio-pen-design`: no pen, no git, no menubar item. That is deliberate
+/// — it means the design window can run beside the installed LaunchAgent without two processes
+/// committing to the same repo.
 ///
 /// Both appearances are drawn side by side, because a light-only check is how a panel ends up with
-/// one hard-coded colour that vanishes in dark mode. States come from `PanelModel.Scenario`:
-/// several of them — a failing push, a memory drain, a first run — take real effort to provoke
-/// with actual hardware, and a design pass should not depend on being able to.
+/// one hard-coded colour that vanishes in dark mode. States come from `Scenario`: several of them
+/// — a failing push, a memory drain, a first run — take real effort to provoke with actual
+/// hardware, and a design pass should not depend on being able to.
 final class DesignWindowController: NSWindowController, NSWindowDelegate {
     private static let scenarioKey = "design.scenario"
 
-    private let model = PanelModel(scenario: .synced)
+    private let model = PanelModel(snapshot: Scenario.synced.snapshot)
     private var hosts: [NSHostingController<StatusPanel>] = []
     private var picker: NSSegmentedControl!
     private var caption: NSTextField!
@@ -39,7 +40,7 @@ final class DesignWindowController: NSWindowController, NSWindowDelegate {
         build()
 
         let saved = UserDefaults.standard.string(forKey: Self.scenarioKey)
-            .flatMap(PanelModel.Scenario.init(rawValue:)) ?? .synced
+            .flatMap(Scenario.init(rawValue:)) ?? .synced
         select(saved)
     }
 
@@ -48,7 +49,7 @@ final class DesignWindowController: NSWindowController, NSWindowDelegate {
     private func build() {
         guard let content = window?.contentView else { return }
 
-        picker = NSSegmentedControl(labels: PanelModel.Scenario.allCases.map(\.title),
+        picker = NSSegmentedControl(labels: Scenario.allCases.map(\.title),
                                     trackingMode: .selectOne, target: self, action: #selector(pick))
         picker.segmentStyle = .texturedRounded
 
@@ -139,13 +140,13 @@ final class DesignWindowController: NSWindowController, NSWindowDelegate {
     // MARK: state
 
     @objc private func pick() {
-        select(PanelModel.Scenario.allCases[picker.selectedSegment])
+        select(Scenario.allCases[picker.selectedSegment])
     }
 
-    private func select(_ scenario: PanelModel.Scenario) {
-        model.apply(scenario)
+    private func select(_ scenario: Scenario) {
+        model.apply(scenario.snapshot)
         caption.stringValue = scenario.note
-        picker.selectedSegment = PanelModel.Scenario.allCases.firstIndex(of: scenario) ?? 0
+        picker.selectedSegment = Scenario.allCases.firstIndex(of: scenario) ?? 0
         UserDefaults.standard.set(scenario.rawValue, forKey: Self.scenarioKey)
         tick()
     }

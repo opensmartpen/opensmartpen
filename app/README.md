@@ -113,12 +113,18 @@ picker for every state it can be in, and rebuilds and reopens it whenever a sour
 The window keeps its position and its selected state across a rebuild, so the loop reads as a
 reload.
 
-Design mode runs nothing else — no pen, no git, no menubar item — so it is safe to run while the
-installed LaunchAgent is running. `BRAINIO_PEN_DESIGN=1 .build/debug/brainio-pen` opens the same
-window without the rebuild loop.
+This is a separate app, `brainio-pen-design`, not a mode of the one people install. It runs
+nothing else — no pen, no git, no menubar item — so it is safe to run while the installed
+LaunchAgent is running. `.build/debug/brainio-pen-design` opens the same window without the
+rebuild loop.
 
-The states come from `PanelModel.Scenario` rather than from hardware, because a failing push, a
-memory drain and a first run each take deliberate setup to see even once.
+The states come from `Scenario` in `Sources/BrainioPenDesign` rather than from hardware, because a
+failing push, a memory drain and a first run each take deliberate setup to see even once. No
+fixture is reachable from the shipped app: nothing in it can import that target.
+
+The panel gets a state through `PanelModel.Snapshot` — every published property as one value —
+and the model itself carries no make-believe. The viewer has no design window yet; it is the one
+part of the UI still worked on by running the whole app.
 
 ### The app icon
 
@@ -171,8 +177,12 @@ unnoticed. Confirming records a boundary date, and the derived layer routes page
 
 ## Layout
 
+Four layers, each unable to reach the one above it. See [ADR-003](../docs/adrs/003-ui-layer-separate-from-the-pen-sdk.md).
+
 - `Sources/BrainioPenCore` — no SDK dependency, no AppKit, fully unit-tested: models and JSONL serialisation, `StrokeAssembler` (dots → strokes), `RawStore` (append-only files), `QuietTracker` (what is pending and when it publishes), `Notebook`/`PageNaming` (how a page is described to a person), `GitPublisher`, `SyncCoordinator` (write, track, publish, back off, notify), `Config`, notifiers.
-- `Sources/BrainioPen` — the app: `PenSession` (NISDK3 delegates, connection and drain state machine), `SDKMapping`, `PanelModel` (one observable snapshot fed by the existing `onChange` closures), `StatusPanel` (SwiftUI), `StatusIcon` (the pencil and its states), `AppDelegate` (status item and popover), `UserNotifier`.
+- `Sources/BrainioPenUI` — every window and view, and no SDK: `PanelModel` (one observable snapshot fed by the existing `onChange` closures), `StatusPanel` (SwiftUI), `StatusIcon` (the pencil and its states), `Viewer`, the pinned and menubar panels, the settings window. `PenLink` is the whole of what it knows about a pen — a protocol of plain values, so the layer builds and runs with no pen and no SDK linked in.
+- `Sources/BrainioPen` — the app: `PenSession` (NISDK3 delegates, connection and drain state machine, and the only conformance to `PenLink`), `SDKMapping`, `AppDelegate` (status item and popover), `UserNotifier`.
+- `Sources/BrainioPenDesign` + `Sources/BrainioPenDesignApp` — the design window and its fixtures, and the `brainio-pen-design` executable that opens it. Nothing else imports these, so none of it ships.
 - `Tests/BrainioPenCoreTests` — includes tests that drive real `git` in a temporary repository.
 
 ## Not yet verified against hardware

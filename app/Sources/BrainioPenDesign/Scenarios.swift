@@ -1,0 +1,141 @@
+import BrainioPenCore
+import BrainioPenUI
+import Foundation
+
+private typealias Snapshot = PanelModel.Snapshot
+private typealias PenRow = PanelModel.PenRow
+private typealias PendingRow = PanelModel.PendingRow
+private typealias RecentBook = PanelModel.RecentBook
+private typealias Battery = PanelModel.Battery
+private typealias Publish = PanelModel.Publish
+private typealias InstanceQuestion = PanelModel.InstanceQuestion
+
+/// The states the panel can be in, as fixtures.
+///
+/// They are here, and not in the model, because none of this is true: it is make-believe for
+/// looking at. Nothing in the shipped app can import this module, so none of it can reach the
+/// menubar by accident.
+///
+/// They exist at all because several of these states are hard to reach on demand with real
+/// hardware: a failing push, a pen memory drain and a first run each take deliberate setup to
+/// see even once.
+public enum Scenario: String, CaseIterable {
+    case synced, writing, waiting, copying, failing, asleep, bluetoothOff, firstRun
+    case newNotebook, threePens
+
+    public var title: String {
+        switch self {
+        case .synced: return "All synced"
+        case .writing: return "Writing"
+        case .waiting: return "Waiting to sync"
+        case .copying: return "Copying"
+        case .failing: return "Can\u{2019}t sync"
+        case .asleep: return "No pen"
+        case .bluetoothOff: return "Bluetooth off"
+        case .firstRun: return "First run"
+        case .newNotebook: return "New notebook?"
+        case .threePens: return "Three pens"
+        }
+    }
+
+    public var note: String {
+        switch self {
+        case .synced: return "nothing pending, pen awake"
+        case .writing: return "strokes arriving now"
+        case .waiting: return "in the quiet window"
+        case .copying: return "draining pen memory"
+        case .failing: return "3+ push failures"
+        case .asleep: return "the usual state"
+        case .bluetoothOff: return "the one real blocker"
+        case .firstRun: return "never paired"
+        case .newNotebook: return "the one question we ask"
+        case .threePens: return "what the width is cut for"
+        }
+    }
+
+    /// Everything the panel draws, for this state. Built fresh on every read: the countdowns are
+    /// measured from `now`, so a fixture held from an hour ago would show an hour of overdue.
+    public var snapshot: PanelModel.Snapshot {
+        let now = Date()
+        let lamy = Self.label("LAMY digital paper", 6)
+        let pad = Self.label("Ncode A4 pad", 3)
+        var s = Self.base(now: now)
+
+        switch self {
+        case .synced:
+            s.status = .connected
+        case .writing:
+            s.pending = [PendingRow(id: "p1", label: lamy, deadline: nil, isLive: true)]
+            s.status = .writing(page: lamy)
+        case .waiting:
+            s.pending = [PendingRow(id: "p1", label: lamy, deadline: now.addingTimeInterval(372), isLive: false),
+                         PendingRow(id: "p2", label: pad, deadline: now.addingTimeInterval(161), isLive: false)]
+            s.status = .connected
+        case .copying:
+            s.pagesOnPen = 3
+            s.status = .copying(book: 2, of: 5, percent: 62)
+        case .failing:
+            s.pending = [PendingRow(id: "p1", label: lamy, deadline: now, isLive: false),
+                         PendingRow(id: "p2", label: pad, deadline: now, isLive: false)]
+            s.recent = []
+            s.status = .failing(attempts: 4, nextTry: now.addingTimeInterval(120),
+                                error: "fatal: could not read from remote repository")
+        case .asleep:
+            s.status = .asleep
+        case .bluetoothOff:
+            s.battery = nil
+            s.status = .bluetoothOff
+        case .firstRun:
+            s.battery = nil
+            s.lastPublish = nil
+            s.recent = []
+            s.status = .asleep
+        case .newNotebook:
+            s.status = .connected
+            s.instanceQuestion = InstanceQuestion(bookKey: "s3/o27/b450", title: "Ncode A4 pad",
+                                                  at: 0, reason: .sequenceRestart)
+        case .threePens:
+            // The width the panel is cut to. Three tiles and the pin are what decides it, so the
+            // case has to be visible — a measurement nobody can look at goes wrong unnoticed.
+            s.pens.append(PenRow(id: "c", name: "Highlighter", ink: .yellow, width: .thick,
+                                 mode: .highlight, percent: 48, low: false, active: false,
+                                 state: "Pen off", awake: false))
+            s.status = .connected
+        }
+        return s
+    }
+
+    /// What every state has in common: two pens, a full palette and two notebooks written in
+    /// recently. Each case then changes only what it is about.
+    private static func base(now: Date) -> Snapshot {
+        var s = Snapshot()
+        s.penName = "Pen"
+        s.penDisplayName = "Everyday"
+        s.lowPen = ("Red one", 14)
+        s.pens = [
+            PenRow(id: "a", name: "Everyday", ink: .black, width: .medium, mode: .writing,
+                   percent: 72, low: false, active: true, state: "Writing", awake: true),
+            PenRow(id: "b", name: "Red one", ink: .red, width: .thin, mode: .accent,
+                   percent: 14, low: true, active: false, state: "Pen off", awake: false),
+        ]
+        s.palette = Palette(ink: ["black": "#000000", "red": "#ff0200", "blue": "#00abeb",
+                                  "green": "#3cdd00", "yellow": "#ffd400"])
+        s.ink = .red
+        s.width = .medium
+        s.battery = Battery(percent: 16, charging: false, low: true)
+        s.lastPublish = Publish(date: now.addingTimeInterval(-260), commit: "4e35b96", pages: 2)
+        s.recent = [
+            RecentBook(id: "b1", title: "LAMY digital paper",
+                       page: PageID(section: 3, owner: 1012, book: 3017, page: 6),
+                       latest: true, binding: .bound),
+            RecentBook(id: "b2", title: "Ncode A4 pad",
+                       page: PageID(section: 3, owner: 27, book: 450, page: 3),
+                       binding: .pad),
+        ]
+        return s
+    }
+
+    private static func label(_ title: String, _ page: Int) -> PageLabel {
+        PageLabel(title: title, detail: "page \(page)")
+    }
+}

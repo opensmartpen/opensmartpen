@@ -7,7 +7,7 @@ import SwiftUI
 /// and it centres itself on the item it comes from. Neither is what the system does — open Battery
 /// or Wi-Fi and the panel is a plain rounded rectangle whose left edge lines up with the icon.
 /// A popover reads as a document affordance; this reads as part of the menubar.
-final class MenuBarPanel: NSPanel {
+public final class MenuBarPanel: NSPanel {
     /// Distance below the menubar, matching the system's own gap.
     private static let gap: CGFloat = 6
     /// Never closer than this to the edge of the screen.
@@ -16,7 +16,7 @@ final class MenuBarPanel: NSPanel {
     private var outsideClick: Any?
     private var onClose: (() -> Void)?
 
-    init(content: NSViewController) {
+    public init(content: NSViewController) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
@@ -52,11 +52,11 @@ final class MenuBarPanel: NSPanel {
         contentView = blur
     }
 
-    override var canBecomeKey: Bool { true }
+    public override var canBecomeKey: Bool { true }
 
     /// Show under a status item, left edges aligned — not centred, which is the popover behaviour
     /// and not the system's.
-    func show(under button: NSStatusBarButton, onClose: @escaping () -> Void) {
+    public func show(under button: NSStatusBarButton, onClose: @escaping () -> Void) {
         self.onClose = onClose
 
         guard let content = contentView?.subviews.first else { return }
@@ -92,26 +92,26 @@ final class MenuBarPanel: NSPanel {
         }
     }
 
-    func dismiss() {
+    public func dismiss() {
         if let outsideClick { NSEvent.removeMonitor(outsideClick) }
         outsideClick = nil
         orderOut(nil)
         onClose?()
     }
 
-    override func resignKey() {
+    public override func resignKey() {
         super.resignKey()
         dismiss()
     }
 
     /// Escape closes it, as it closes a menu.
-    override func cancelOperation(_ sender: Any?) { dismiss() }
+    public override func cancelOperation(_ sender: Any?) { dismiss() }
 
     /// The footer advertises ⌘, and ⌘Q, so they have to work. A borderless panel has no menu bar
     /// of its own to route them through.
-    var onCommand: ((String) -> Bool)?
+    public var onCommand: ((String) -> Bool)?
 
-    override func keyDown(with event: NSEvent) {
+    public override func keyDown(with event: NSEvent) {
         if event.modifierFlags.contains(.command),
            let key = event.charactersIgnoringModifiers,
            onCommand?(key) == true { return }
@@ -120,7 +120,7 @@ final class MenuBarPanel: NSPanel {
 
     /// Re-measure after the content changes height — a page arriving, a countdown ending — keeping
     /// the top edge still so the panel grows downward rather than jumping.
-    func resizeToContent() {
+    public func resizeToContent() {
         guard isVisible, let content = contentView?.subviews.first else { return }
         content.layoutSubtreeIfNeeded()
         let size = content.fittingSize

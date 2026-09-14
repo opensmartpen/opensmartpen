@@ -76,7 +76,7 @@ enum ViewerLayout: String, CaseIterable, Identifiable {
 /// Everything the viewer shows. One object serves both jobs — the page under your pen right now,
 /// and any page you page back to — because they are the same thing seen at different moments, and
 /// two viewers would be two chances to disagree about what a page looks like.
-final class Viewer: ObservableObject {
+public final class Viewer: ObservableObject {
     @Published private(set) var book: BookRecord?
     /// Human page numbers present in this notebook, ascending.
     @Published private(set) var pages: [Int] = []
@@ -115,12 +115,12 @@ final class Viewer: ObservableObject {
     private var pending: [InkPoint] = []
     private var flushing = false
 
-    init(books: BookRegistry, repo: URL) {
+    public init(books: BookRegistry, repo: URL) {
         self.books = books
         self.repo = repo
     }
 
-    func attach(modeLog: ModeLog?) { self.modeLog = modeLog }
+    public func attach(modeLog: ModeLog?) { self.modeLog = modeLog }
 
     var geometry: PageGeometry { book?.geometry ?? .a4 }
 
@@ -295,7 +295,7 @@ final class Viewer: ObservableObject {
     // MARK: loading
 
     /// Point the viewer at a page, loading the notebook around it.
-    func show(page ncode: PageID) {
+    public func show(page ncode: PageID) {
         let record = books.record(for: ncode)
         if bookKey != ncode.bookKey {
             bookKey = ncode.bookKey
@@ -322,7 +322,7 @@ final class Viewer: ObservableObject {
     /// Jump back to whatever was written last, and follow it from now on.
     /// Back to whatever was written last, wherever it was — including a different notebook, which
     /// is why the button does not say "live": it is not a mode, it is a jump.
-    func goLatest() {
+    public func goLatest() {
         following = true
         if let recent = books.recentPages(limit: 1).first { show(page: recent.page) }
         else if let active = activePage { page = active; loadIfNeeded(active) }
@@ -392,7 +392,7 @@ final class Viewer: ObservableObject {
 
     /// One dot from the pen, ahead of stroke assembly: a stroke is only finished on pen-up, and
     /// waiting for that would make writing appear a word at a time.
-    func receive(page id: PageID, dot: DotSample, event: DotEvent) {
+    public func receive(page id: PageID, dot: DotSample, event: DotEvent) {
         let human = books.record(for: id)?.humanPage(id.page) ?? id.page
         activeBook = id.bookKey
         activePage = human
@@ -742,7 +742,7 @@ extension Color {
 /// which meant every window you widened also grew taller, half a screen went to a shape you did
 /// not choose, and opening a spread resized the window under you. The paper keeps its own shape
 /// inside whatever window you make, and zoom is how you get closer to it.
-final class ViewerWindowController: NSWindowController {
+public final class ViewerWindowController: NSWindowController {
     private let viewer: Viewer
     /// The window keeps whatever size you give it, but it has to start somewhere sensible.
     private var hasSized = false
@@ -750,7 +750,7 @@ final class ViewerWindowController: NSWindowController {
     private static let barHeight: CGFloat = 31
     private var wheel: Any?
 
-    init(viewer: Viewer) {
+    public init(viewer: Viewer) {
         self.viewer = viewer
         let window = ViewerWindow(
             contentRect: NSRect(x: 0, y: 0, width: 820, height: 700),
@@ -850,7 +850,7 @@ final class ViewerWindowController: NSWindowController {
         window.center()
     }
 
-    override func showWindow(_ sender: Any?) {
+    public override func showWindow(_ sender: Any?) {
         let first = !hasSized
         hasSized = true
         super.showWindow(sender)
@@ -859,7 +859,7 @@ final class ViewerWindowController: NSWindowController {
     }
 
     /// The window is named for the notebook in it, not for the app.
-    func retitle() { window?.title = viewer.title }
+    public func retitle() { window?.title = viewer.title }
 }
 
 /// A window that hands keystrokes to the viewer before AppKit beeps at them.

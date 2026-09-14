@@ -144,11 +144,12 @@ public final class BookRegistry {
     public func ensureRecord(for page: PageID) -> BookRecord? {
         if let existing = record(for: page) { return existing }
         let known = KnownBooks.product(forBookKey: page.bookKey)
-        let title = known?.title ?? KnownBooks.fallbackTitle(widthMM: known?.widthMM,
-                                                             heightMM: known?.heightMM)
+        let width = known.flatMap(\.widthMM)
+        let height = known.flatMap(\.heightMM)
+        let title = known?.title ?? KnownBooks.fallbackTitle(widthMM: width, heightMM: height)
         let record = BookRecord(slug: uniqueSlug(from: title), id: page.bookKey, title: title,
                                 firstPage: known?.firstPage ?? 1,
-                                widthMM: known?.widthMM, heightMM: known?.heightMM,
+                                widthMM: width, heightMM: height,
                                 binding: known?.binding ?? .pad)
         return save(record) ? record : nil
     }

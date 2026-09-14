@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import BrainioPenCore
+import BrainioPenUI
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -26,7 +27,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastSeenPage: String?
     private var viewer: Viewer!
     private var viewerWindow: ViewerWindowController?
-    private var designWindow: DesignWindowController?
     private var pinnedPanel: PinnedPanelController?
     private var tickTimer: Timer?
     /// Runs only while the panel is open; drives the per-page countdowns.
@@ -36,16 +36,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.verbose = ProcessInfo.processInfo.environment["BRAINIO_PEN_VERBOSE"] != nil
 
-        // Design mode is the whole app: no pen, no repo, no menubar item. That is what lets it run
-        // beside the installed LaunchAgent without two processes writing to the same notes repo.
-        if ProcessInfo.processInfo.environment["BRAINIO_PEN_DESIGN"] != nil {
-            designWindow = DesignWindowController()
-            NSApp.setActivationPolicy(.regular)
-            NSApp.activate(ignoringOtherApps: true)
-            designWindow?.showWindow(nil)
-            designWindow?.window?.makeKeyAndOrderFront(nil)
-            return
-        }
         let base: Notifier = UserNotifier.isAvailable ? UserNotifier() : OSAScriptNotifier()
         notifier = DedupingNotifier(base)
 
@@ -90,8 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // an edit to one file in the repo, not a code change.
         coordinator.modeLog?.offered = Set(Palette.load(root: config.repoURL).offered)
         viewer = Viewer(books: books, repo: config.repoURL)
+        // Paper we capture from but never read back. The coordinator still stores every tap in
+        // raw and decodes it as a command; what stops here is everything that treats a book as a
+        // notebook — a record in books/, the new-copy question, and the live page in the viewer.
+        let controlBooks = Set(config.controlBooks)
         session.onDot = { [weak self] page, dot, event in
             guard let self else { return }
+            guard !controlBooks.contains(page.bookKey) else { return }
             // A notebook Brainio Pen has never met gets a record the moment a page arrives from it,
             // so its pages stop being anonymous and start being rendered. Silent on purpose:
             // writing is never interrupted to ask a question.
