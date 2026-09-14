@@ -37,7 +37,13 @@ A surface identity exists only because the pen read the pattern printed on a she
 
 **A stroke is filed under its surface identity.** Only the client that sensed the surface can give one. We take the client's own and use nothing else. The format does not depend on Ncode. A client that senses another kind of surface brings its own surface identity, and the same format holds its strokes.
 
-**The root is `~/Brainio/pen`.** The data stays outside the app, so you can delete the app and install it again. Brainio will have more products than the pen. Each one gets its own folder below `~/Brainio`, and none of them can disturb the others.
+**The root is `~/Brainio/pen`, where a person can see it.** The data stays outside the app, so you can delete the app and install it again. Brainio will have more products than the pen. Each one gets its own folder below `~/Brainio`, and none of them can disturb the others.
+
+macOS keeps the data of an application in `~/Library/Application Support`. We do not put these files there. That location is for data that a person must never open: caches, indexes, a database. These files are the opposite. They are the person's own notes, and we made them readable on purpose. A person opens the folder, reads a page, moves a book, and keeps a copy. A location that Finder hides works against all of those.
+
+The root of the home folder is not usual, and we accept that. The other visible location is `~/Documents`. Many Macs sync that folder to iCloud. Then each new line in a record becomes an upload. iCloud can also remove a local file to make space. We add to a record all day, and it must be there when we read it. That is the worst thing to put in such a folder.
+
+A person who disagrees moves the folder. The location is one field in the configuration, `dataPath`. No part of the app calculates a path from the home folder.
 
 **Each copy of a notebook is one folder.** We generate an id the first time we see a new copy. The folder holds everything about that copy: its record, its captured pages, and the readable files made from them.
 
@@ -91,6 +97,8 @@ The number a person counts to is not thrown away. `book.json` holds which sheet 
 - **Decide the copy late, from a date in the record** — nothing ever moves, but every reader must apply the boundary. One notebook also cannot be held apart from the rest.
 - **Ask the person when a new copy appears** — the app must run without attention. A question at the wrong moment is worse than a guess we can repair.
 - **Put the pen's data at `~/Brainio`** — a second Brainio product would then have to share that folder, or move the first one.
+- **Put the data in `~/Library/Application Support`** — the macOS convention, and the right one for data a person must never open. These are the person's notes, which is the opposite kind of data.
+- **Put the data in `~/Documents`** — the usual place for documents, and the usual place that syncs to iCloud. An append-only record uploaded on every line, and evicted when the disk fills, is a record we cannot trust.
 - **Put the title in the folder name** — a rename would then move every file and break every link into it.
 - **Number a readable file as a person counts pages** — `raw/p4.jsonl` then becomes `pages/page-01.svg`, and every tool needs the book record before it can pair the two. The offset is still there for a person to read; it does not have to name a file as well.
 - **File a setting under the page of the tap that caused it** — a click in the app has no page, so many settings would have no home.
@@ -104,4 +112,5 @@ The number a person counts to is not thrown away. `book.json` holds which sheet 
 - **Harder:** the surface identity alone no longer finds a page. Something must read the book records to learn which folder holds it.
 - **Harder:** a repair moves files, so a tool must exist to do it. Until it does, a wrong guess is fixed by hand.
 - **Harder:** a readable file carries the pen's page number, which is not the number printed on the sheet. The LAMY notebook starts at `p4.svg` and has no `p1`.
+- **Harder:** a folder in the root of the home folder is not what a Mac user expects. We accept one strange folder, which a person learns one time, instead of a location that works against reading the files every day.
 - **Committed-to:** the generated id as opaque and permanent, a page as movable between book folders, and one file for every setting.
