@@ -1,6 +1,7 @@
 import Foundation
 
-/// Appends strokes to per-page JSONL files under the notes repository.
+/// Appends strokes to one captured file for each page, inside the book copy that page belongs to
+/// (ADR-002): `books/<copy>/raw/p12.jsonl`.
 ///
 /// Deduplicates: the pen delivers the stroke in progress at connection time both from its memory and
 /// live, identical dots with a few milliseconds of clock offset. A stroke is dropped when the same
@@ -9,7 +10,9 @@ import Foundation
 public final class RawStore {
     public let root: URL
     public var duplicateWindowMs = 500
-    private let client: String
+    /// Which build wrote this file, for the header line. Not a client in the ADR-001 sense: the
+    /// events in the file were produced by the pen, and each one says so.
+    private let app: String
     private let sdk: String
     private let fm = FileManager.default
 
@@ -42,73 +45,88 @@ public final class RawStore {
         static func num(_ v: Any) -> Double { (v as? NSNumber)?.doubleValue ?? 0 }
     }
 
-    /// Signatures of strokes already on disk, per page, loaded lazily.
-    private var known: [PageID: [Signature]] = [:]
+    /// What is already on a page: the strokes' signatures, for dedup, and where their ink is, for
+    /// the question of whether a fresh copy of the notebook has been opened.
+    private struct Page {
+        var signatures: [Signature] = []
+        var ink = InkGrid()
+    }
 
-    public init(root: URL, client: String, sdk: String) {
+    private var known: [PageRef: Page] = [:]
+
+    public init(root: URL, app: String, sdk: String) {
         self.root = root
-        self.client = client
+        self.app = app
         self.sdk = sdk
     }
 
-    public func fileURL(for page: PageID) -> URL {
-        root.appendingPathComponent(page.rawRelativePath)
+    public func fileURL(for ref: PageRef) -> URL {
+        root.appendingPathComponent(ref.rawRelativePath)
     }
 
-    /// Append strokes, grouped by page. Creates the file with a meta line on first write.
-    /// Returns the set of pages that received at least one new stroke.
+    /// The share of these strokes' dots that land on ink already in this page's file, 0 to 1.
+    /// Reading the file, not a guess: the question is whether one sheet is holding two notebooks.
+    public func inkOverlap(_ strokes: [Stroke], with ref: PageRef) -> Double {
+        let page = load(ref)
+        guard !page.ink.isEmpty else { return 0 }
+        return page.ink.share(of: strokes.flatMap(\.dots))
+    }
+
+    /// Ncode pages this copy already holds, for a watcher adopting what is on disk at launch.
+    public func pages(in folder: BookFolder) -> [Int] {
+        let dir = root.appendingPathComponent(folder.relativePath).appendingPathComponent("raw")
+        return ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).compactMap { name in
+            guard name.hasPrefix("p"), name.hasSuffix(".jsonl") else { return nil }
+            return Int(name.dropFirst().dropLast(6))
+        }
+    }
+
+    /// Append strokes to one copy, grouped by page. Creates each file with a meta line on first
+    /// write. Returns the pages that received at least one new stroke.
     @discardableResult
-    public func append(_ strokes: [Stroke], now: Date = Date()) throws -> Set<PageID> {
-        var byPage: [PageID: [Stroke]] = [:]
-        for s in strokes { byPage[s.page, default: []].append(s) }
-        var touched: Set<PageID> = []
-        for (page, list) in byPage {
-            let url = fileURL(for: page)
-            var seen = try loadSignatures(page)
+    public func append(_ strokes: [Stroke], to folder: BookFolder, now: Date = Date()) throws -> Set<PageRef> {
+        var byPage: [PageRef: [Stroke]] = [:]
+        for s in strokes { byPage[PageRef(folder: folder, page: s.page), default: []].append(s) }
+        var touched: Set<PageRef> = []
+        for (ref, list) in byPage {
+            let url = fileURL(for: ref)
+            var page = load(ref)
             var text = ""
             let exists = fm.fileExists(atPath: url.path)
             for s in list.sorted(by: { $0.start < $1.start }) {
                 let sig = Signature(s)
-                if seen.contains(where: { $0 == sig && abs($0.start - sig.start) <= duplicateWindowMs }) {
-                    Log.info("dropped duplicate \(s.source.rawValue) stroke at \(s.start) on \(page)")
+                if page.signatures.contains(where: { $0 == sig && abs($0.start - sig.start) <= duplicateWindowMs }) {
+                    Log.info("dropped duplicate \(s.source.rawValue) stroke at \(s.start) on \(ref)")
                     continue
                 }
-                seen.append(sig)
+                page.signatures.append(sig)
+                page.ink.add(s.dots)
                 text += JSONL.strokeLine(s) + "\n"
             }
-            known[page] = seen
+            known[ref] = page
             guard !text.isEmpty else { continue }
-            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             if !exists {
-                text = JSONL.metaLine(captured: Int(now.timeIntervalSince1970 * 1000), client: client, sdk: sdk) + "\n" + text
+                text = JSONL.metaLine(captured: Int(now.timeIntervalSince1970 * 1000), app: app, sdk: sdk) + "\n" + text
             }
-            try appendAtomically(text, to: url)
-            touched.insert(page)
+            try AppendOnlyFile.append(text, to: url)
+            touched.insert(ref)
         }
         return touched
     }
 
     /// Rounded coordinates as they will be written, so signatures compare equal after a round trip.
-    private func loadSignatures(_ page: PageID) throws -> [Signature] {
-        if let cached = known[page] { return cached }
-        let url = fileURL(for: page)
-        guard fm.fileExists(atPath: url.path) else { return [] }
-        let text = try String(contentsOf: url, encoding: .utf8)
-        let sigs = text.split(separator: "\n").compactMap { Signature(line: String($0)) }
-        known[page] = sigs
-        return sigs
-    }
-
-    private func appendAtomically(_ text: String, to url: URL) throws {
-        let data = Data(text.utf8)
-        if !fm.fileExists(atPath: url.path) {
-            try data.write(to: url, options: .atomic)
-            return
+    private func load(_ ref: PageRef) -> Page {
+        if let cached = known[ref] { return cached }
+        let url = fileURL(for: ref)
+        var page = Page()
+        if let text = try? String(contentsOf: url, encoding: .utf8) {
+            for line in text.split(separator: "\n") {
+                guard let sig = Signature(line: String(line)) else { continue }
+                page.signatures.append(sig)
+            }
+            page.ink.add(RawReader.strokes(in: text, page: ref.page).flatMap(\.dots))
         }
-        let handle = try FileHandle(forWritingTo: url)
-        defer { try? handle.close() }
-        try handle.seekToEnd()
-        try handle.write(contentsOf: data)
-        try handle.synchronize()
+        known[ref] = page
+        return page
     }
 }

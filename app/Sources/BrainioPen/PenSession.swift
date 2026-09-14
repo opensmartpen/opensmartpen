@@ -57,7 +57,7 @@ final class PenSession: NSObject {
     private struct Note { let section: UInt8; let owner: UInt32; let note: UInt32 }
     private var drainQueue: [Note] = []
     private var draining: Note?
-    private var drainedPages: Set<PageID> = []
+    private var drainedPages: Set<PageRef> = []
     private var drainedStrokes = 0
     /// Books in this drain, fixed when the list arrives so "2 of 3" does not renumber as it empties.
     private var drainTotal = 0
@@ -68,7 +68,7 @@ final class PenSession: NSObject {
         self.coordinator = coordinator
         self.notifier = notifier
         super.init()
-        palette = Palette.load(root: config.repoURL)
+        palette = Palette.load(root: config.dataURL)
         // The pen cannot be told the ink colour, but it can acknowledge the choice. This is the
         // answer to the objection that a mode set on paper is invisible once set — though only at
         // the moment of tapping: the A1 sleeps after five minutes and the LED goes with it, so the

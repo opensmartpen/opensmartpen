@@ -8,16 +8,16 @@ Raw page files (format: `docs/stroke-format.md`; where they live: ADR-002), deli
 
 ## Expected outputs, per page
 
-- `pages/.../p{page}.svg` — strokes as paths, width from force, page rectangle from geometry.
-- `pages/.../p{page}.png` — raster of the SVG at a resolution suited to vision models (roughly 150 dpi).
-- `pages/.../p{page}.md` — transcription with frontmatter: page id, first and last stroke time, stroke count, model, confidence or a flag for unreadable regions.
+- `books/<copy>/pages/page-NN.svg` — strokes as paths, width from force, page rectangle from geometry.
+- `books/<copy>/pages/page-NN.png` — raster of the SVG at a resolution suited to vision models (roughly 150 dpi).
+- `books/<copy>/pages/page-NN.md` — transcription with frontmatter: page id, first and last stroke time, stroke count, model, confidence or a flag for unreadable regions.
 - `geometry/s{section}-o{owner}-b{book}.json` — page rectangle and margins, discovered once per book (from NeoLAB's `.nproj` via the Web SDK's storage path, else measured from strokes assuming A4 or A5).
 
 Derived files are regenerated from raw whenever raw changes and are never hand-edited.
 
 ## Trigger
 
-The agent runs always-on. Options, in order of preference once DAM offers them: a git push webhook into the agent; otherwise a schedule that polls the repo every few minutes and processes pages whose raw file is newer than their derived files.
+The agent runs always-on, on a schedule that polls `~/Brainio/pen` every few minutes and processes pages whose captured file is newer than their readable files. Polling is the only option: nothing pushes the notes anywhere.
 
 ## Transcription approach
 

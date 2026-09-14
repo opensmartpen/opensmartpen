@@ -17,8 +17,14 @@ public enum PublishError: Error, CustomStringConvertible {
     }
 }
 
-/// Commits and pushes raw files from the notes repository. Everything runs `git` as a subprocess,
-/// so the user's normal credentials (ssh agent, credential helper) apply.
+/// Commits captured files so that there is a record of what changed.
+///
+/// Git is not where the data lives — that is `~/Brainio/pen`, and every reader goes to the files
+/// themselves (ADR-002). What git adds is a diff: which pages a drain touched, which settings were
+/// recorded, and a point to go back to. Nothing reads a page out of a commit.
+///
+/// Everything runs `git` as a subprocess, so the user's normal credentials (ssh agent, credential
+/// helper) apply.
 public final class GitPublisher {
     public let repo: URL
     public var push: Bool
@@ -62,13 +68,15 @@ public final class GitPublisher {
         _ = try run(["push", "-q", "-u", "origin", branch])
     }
 
-    /// Repo-relative raw files that are modified or untracked, i.e. written but never committed.
-    public func dirtyPaths(under prefix: String = "raw/") -> [String] {
-        guard let out = try? run(["status", "--porcelain", "--untracked-files=all", "--", prefix]).output else { return [] }
+    /// Files under these paths that are modified or untracked, i.e. written but never committed.
+    public func dirtyPaths(under prefixes: [String] = ["books/"]) -> [String] {
+        guard !prefixes.isEmpty,
+              let out = try? run(["status", "--porcelain", "--untracked-files=all", "--"] + prefixes).output
+        else { return [] }
         return out.split(separator: "\n").compactMap { line in
             guard line.count > 3 else { return nil }
             let path = String(line.dropFirst(3))
-            return path.hasPrefix(prefix) ? path : nil
+            return prefixes.contains(where: path.hasPrefix) ? path : nil
         }
     }
 

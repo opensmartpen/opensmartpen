@@ -14,25 +14,21 @@ public struct PageID: Hashable, Codable, CustomStringConvertible {
         self.page = page
     }
 
-    /// Repo-relative path of this page's raw JSONL file. See docs/stroke-format.md.
-    public var rawRelativePath: String {
-        "raw/s\(section)/o\(owner)/b\(book)/p\(page).jsonl"
-    }
-
     public var description: String { "s\(section)/o\(owner)/b\(book)/p\(page)" }
 
-    /// Identity of the notebook this page belongs to, without the page number.
-    public var bookKey: String { "s\(section)/o\(owner)/b\(book)" }
+    /// The surface identity of the sheet this page is, in the pen's own form and without the
+    /// page number. It names a *product*, not a copy — which is why it does not name a folder
+    /// on its own (ADR-002).
+    public var surface: String { "s\(section)/o\(owner)/b\(book)" }
 
-    /// Inverse of `rawRelativePath`; nil for paths that are not raw page files.
-    public init?(rawRelativePath: String) {
-        let parts = rawRelativePath.split(separator: "/").map(String.init)
-        guard parts.count == 5, parts[0] == "raw",
-              parts[1].hasPrefix("s"), parts[2].hasPrefix("o"), parts[3].hasPrefix("b"),
-              parts[4].hasPrefix("p"), parts[4].hasSuffix(".jsonl"),
-              let s = Int(parts[1].dropFirst()), let o = Int(parts[2].dropFirst()), let b = Int(parts[3].dropFirst()),
-              let p = Int(parts[4].dropFirst().dropLast(6)) else { return nil }
-        self.init(section: s, owner: o, book: b, page: p)
+    /// Rebuild a page from a surface identity the pen produced. Nil for a surface identity in
+    /// some other client's form, which has no Ncode page to speak of.
+    public init?(surface: String, page: Int) {
+        let parts = surface.split(separator: "/").map(String.init)
+        guard parts.count == 3, parts[0].hasPrefix("s"), parts[1].hasPrefix("o"), parts[2].hasPrefix("b"),
+              let s = Int(parts[0].dropFirst()), let o = Int(parts[1].dropFirst()),
+              let b = Int(parts[2].dropFirst()) else { return nil }
+        self.init(section: s, owner: o, book: b, page: page)
     }
 }
 
@@ -57,6 +53,17 @@ public struct DotSample: Equatable {
         self.tiltY = tiltY
         self.twist = twist
     }
+}
+
+/// The thing that produced an event: the pen, which senses paper, and the app, which senses
+/// clicks. Every event in the record says which one it came from (ADR-001), so that a third
+/// client can write to the same record and nothing else has to change.
+///
+/// Not to be confused with a stroke's `src`, which says how a stroke *reached* us. Both a live
+/// stroke and a drained one were made by the pen.
+public enum Client: String {
+    case pen
+    case app
 }
 
 public enum StrokeSource: String {
@@ -114,12 +121,27 @@ public enum JSONL {
             out += "[\(fmt(d.x, 2)),\(fmt(d.y, 2)),\(fmt(d.force, 3)),\(d.dt),\(opt(d.tiltX)),\(opt(d.tiltY)),\(opt(d.twist))]"
         }
         out += "]"
+        // Provenance, in one group: who made the mark, how it reached us, which pen, which firmware.
+        // Only the pen makes strokes — it is the only client that senses a surface — so the client
+        // is written rather than carried, and a stroke from anything else cannot be expressed.
+        out += ",\"client\":\"\(Client.pen.rawValue)\""
         out += ",\"src\":\"\(s.source.rawValue)\",\"pen\":\"\(escape(s.penMac))\",\"fw\":\"\(escape(s.firmware))\"}"
         return out
     }
 
-    public static func metaLine(captured: Int, client: String, sdk: String) -> String {
-        "{\"t\":\"meta\",\"captured\":\(captured),\"client\":\"\(escape(client))\",\"sdk\":\"\(escape(sdk))\"}"
+    /// The version of the record's own shape. ADR-001 commits to the sequence of values in a dot
+    /// — `x, y, force, dt, tiltX, tiltY, twist` — and anything that changes that sequence, or the
+    /// meaning of a field already written, must raise this number. A reader that meets a version
+    /// it does not know should stop rather than guess.
+    public static let formatVersion = 1
+
+    /// The header line of a raw file. Not an event, so it carries no `client`: it names the build
+    /// that created the file, not the thing that produced a mark.
+    public static func metaLine(captured: Int, app: String, sdk: String) -> String {
+        var out = "{\"t\":\"meta\",\"v\":\(formatVersion),\"captured\":\(captured)"
+        if !app.isEmpty { out += ",\"app\":\"\(escape(app))\"" }
+        if !sdk.isEmpty { out += ",\"sdk\":\"\(escape(sdk))\"" }
+        return out + "}"
     }
 
     static func fmt(_ v: Double, _ places: Int) -> String {

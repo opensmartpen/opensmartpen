@@ -1,14 +1,14 @@
 # Brainio Pen
 
-macOS menubar app that keeps a Neo smartpen's strokes flowing into a git repository with no attention from the user. It does not render or transcribe anything; that is the processing side's job (see `../docs/processing.md`).
+macOS menubar app that keeps a Neo smartpen's strokes flowing into `~/Brainio/pen` with no attention from the user. The notes sit outside the app, so deleting it and installing it again costs nothing. Nothing leaves the Mac: a git repository over the same directory is a record of what changed, not a backup — give it an `origin` and turn `gitPush` on if you later want the notes copied somewhere. It does not render or transcribe anything; that is the processing side's job (see `../docs/processing.md`).
 
 ## What it does
 
 - Scans for the pen whenever none is connected. The first pen ever seen is paired and remembered; after that only that pen is accepted.
 - On connect: authorises (sends the configured PIN once if the pen asks), sets the pen clock, subscribes to all notebooks, then drains offline memory one notebook at a time.
-- Live strokes are appended to `raw/s{section}/o{owner}/b{book}/p{page}.jsonl` in the notes repo as they finish.
-- A page is published when it has been quiet for `quietMinutes` (default 10): its file is committed and pushed. Only quiet pages are committed, so a half-written page never lands in git.
-- Offline strokes are published as soon as a notebook has been fully transferred. Only after the commit and push succeed is that notebook deleted from the pen.
+- Live strokes are appended to `books/<copy>/raw/p{page}.jsonl` as they finish. Each physical copy of a notebook is one folder (ADR-002).
+- A page is published when it has been quiet for `quietMinutes` (default 10): its file is committed. Only quiet pages are committed, so a half-written page never lands in git.
+- Offline strokes are published as soon as a notebook has been fully transferred. Only after the commit succeeds is that notebook deleted from the pen.
 - Failures are retried with backoff and surfaced as macOS notifications after three attempts. Battery, memory, PIN, duplicate connection and stalled transfers also notify. Normal operation is silent.
 
 ## The menubar panel
@@ -20,9 +20,9 @@ The width is cut to three pen tiles and the pin and no more — three is as many
 in use at once, and a panel sized for a fourth is too wide every day for a case that never arrives.
 
 - **Every waiting page, counted down.** Each pending page is listed with the time left in its quiet window, so the ten-minute wait is visible instead of invisible. The page being written right now has no countdown — its timer restarts on every stroke — and carries a live dot instead.
-- **Pages are named, not numbered in Ncode.** `notebooks` in the config maps a book to a name the person uses. Ncode page numbers are not the printed ones (the LAMY pad's first written sheet reported as page 4), so a page number is shown only for a notebook whose `firstPage` has been calibrated; otherwise just the name.
+- **Pages are named, not numbered in Ncode.** Each copy's `book.json` carries the name the person uses. Ncode page numbers are not the printed ones (the LAMY pad's first written sheet reported as page 4), so a page number is shown only for a notebook whose `first_page` has been calibrated; otherwise just the name.
 - **Battery is a gauge; pen memory is not.** Battery is a level — always relevant, fixed by charging. Pen memory is a backlog: normally zero, only filling when you write away from this Mac, and it empties itself on connect. It gets a line of prose under the battery when there is something to say, and a progress bar while a transfer is running.
-- **Failures lead with the reassurance.** When a push keeps failing the panel says how many pages are safe on disk before it says anything about git.
+- **Failures lead with the reassurance.** When a commit keeps failing the panel says how many pages are safe on disk before it says anything about git.
 - Colour only appears when it means something: violet for work in flight, amber for something to know, red for something to fix. The resting state has no colour at all.
 
 ## Build and run
@@ -85,9 +85,13 @@ notes repo.
 
 Without the script, the app still looks after itself: on first launch it **copies** a
 `~/.config/penbridge/` directory across, whole, so the paired pen, the PIN and the battery history
-survive. The old directory is left alone, so an install still on the old name keeps working, and
-`repoPath` comes across with everything else — `~/BrainioPen/notes` is only the default for a fresh
-install, never something imposed on notes that already exist.
+survive. The old directory is left alone, so an install still on the old name keeps working.
+
+`repoPath` comes across too, and is then read once for a different purpose: ADR-002 moved the notes
+to `~/Brainio/pen` in a layout of one folder per copy of a notebook, so whatever `repoPath` names is
+**copied** into it on first launch. That old directory is also left exactly as it was — it is a git
+repository holding the only copy of some strokes, and it is yours to delete once you have looked at
+the new one.
 
 The bundle id changed from `com.apoco.penbridge` to `com.brainio.pen`. macOS ties Bluetooth and
 notification permission to the bundle id, so both are asked for once more; until Bluetooth is
@@ -141,22 +145,26 @@ every build and it is not committed — derived, like everything else here.
 
 ## Pens and notebooks
 
-Both are named in the repo, not in the app, because the renderer needs them too.
+Both are recorded beside the notes, not in the app, because the renderer needs them too.
 
 - `pens/<slug>.json` — name, mode (writing / accent / highlight), default ink and width. A pen is
   adopted the first time it connects, so it has a name from the start rather than a MAC address.
-- `books/<slug>.json` — title, paper size, first page, and instances. A notebook gets a record the
-  moment a page arrives from it. Recognised products name themselves; anything else is named after
-  its paper.
+- `books/<copy>/book.json` — surface identity, title, paper size, first page, when this copy began
+  and which signal decided it. A notebook gets a record the moment a page arrives from it.
+  Recognised products name themselves; anything else is named after its paper.
 
-In both, the slug is the filename and is fixed when the record is created. The title and the name
-are free to change at any time. That split is deliberate: a slug also names the directory every
-rendered page lives in, so a rename that followed the display name would move data.
+A book folder is named by the surface identity the pen reported and a six-character id we
+generated: `books/s3-o27-b450-7f3a9c`. The id means nothing and never changes, so a title is free
+to change without a single file moving. `book.json` is the only authority; nothing reads meaning
+out of the folder name.
 
-Two notebooks of the same model report the same Ncode id, so a second copy is detected — writing
-that starts again at the front, or a long silence followed by a distant page — and Brainio Pen asks.
-It never decides: a wrong silent guess merges two notebooks into one set of files and goes
-unnoticed. Confirming records a boundary date, and the derived layer routes pages by it.
+Two notebooks of the same model report the same Ncode id, so a second copy has to be worked out.
+Brainio Pen decides for itself and never asks: writing is not interrupted to put a question. New
+strokes landing on ink already on the sheet decides it alone; ink appearing at the front of a book
+already written well past it, after a silence, decides it with that silence; a silence on its own
+decides nothing. When the signals disagree the answer is the new copy — a wrong split is a second
+book you can see and repair by moving pages, while a wrong merge interleaves two notebooks inside
+one captured file and could only be repaired by cutting it.
 
 ## Configuration
 
@@ -164,15 +172,15 @@ unnoticed. Confirming records a boundary date, and the derived layer routes page
 
 | Key | Default | Meaning |
 |---|---|---|
-| `repoPath` | `~/BrainioPen/notes` | Git repository receiving raw files. Created and `git init`ed if missing. Add an `origin` remote yourself; without one commits stay local and you are notified once. |
+| `dataPath` | `~/Brainio/pen` | Where the notes are kept. Created, and `git init`ed so changes can be seen as a diff. No remote is needed or added. Notes from an older `repoPath` are copied in once, and the old directory is left untouched. |
 | `quietMinutes` | `10` | Minutes without strokes before a page is published. |
 | `penMac`, `penPeripheralId` | none | Filled in automatically on first pairing. Delete both (or use the menu) to pair another pen. |
 | `penPassword` | none | PIN for a locked pen. Sent once per connection; never retried, because repeated wrong PINs factory-reset the pen. |
-| `deleteFromPenAfterPublish` | `true` | Free pen memory once a notebook is safely in git. |
-| `gitPush` | `true` | Push after each commit. |
+| `deleteFromPenAfterPublish` | `true` | Free pen memory once a notebook is safely committed. |
+| `gitPush` | `false` | Push after each commit. Off by default, so notes stay on this Mac. Turn it on only after adding an `origin` remote; with it on and no remote you are notified once and pushing stays off for that run. |
 | `lowBatteryPercent` | `20` | Notify at or below this level when not charging. |
 | `memoryWarnPercent` | `70` | Notify when pen memory usage reaches this level. |
-| `notebooks` | the two books we know | Names shown in the panel, keyed by `s{section}/o{owner}/b{book}`. Set a notebook's `firstPage` to the Ncode page number of the sheet you call page 1 and the panel starts showing page numbers that match the paper. |
+| `controlBooks` | `["s3/o1013/b1"]` | Printed control surfaces rather than paper to write on. Taps on them are kept as evidence and decoded as settings, but they are never pages. |
 | `sdkDebugLog` | `false` | Print the SDK's protocol log. |
 
 ## Layout

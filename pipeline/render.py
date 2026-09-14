@@ -5,12 +5,12 @@ Reads one page's append-only JSONL file (docs/stroke-format.md) and draws it at 
 physical size. Coordinates arrive in Ncode cells; one cell is 2.371 mm.
 
 Geometry: a page needs to know which paper it is printed on before it can be drawn to
-scale. NeoLAB publishes no layout file for our notebooks, so the paper is taken from
-geometry/<book>.json when present and otherwise guessed from the strokes themselves.
+scale. NeoLAB publishes no layout file for our notebooks, so the paper is taken from the
+copy's own book.json when it records a size, and otherwise guessed from the strokes.
 
 Usage:
-    render.py <raw.jsonl> [-o out.svg] [--png] [--repo DIR]
-    render.py --all [--repo DIR] [--png]
+    render.py <page.jsonl> [-o out.svg] [--png] [--root DIR]
+    render.py --all [--root DIR] [--png]
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import json
 import pathlib
 import sys
 
-from books import Books, Pens, page_dir, page_stem, parse_raw_path
+from books import Books, Pens, page_dir, page_stem, parse_raw_path, raw_files, surface_of
 
 MM_PER_CELL = 2.371
 
@@ -39,8 +39,8 @@ PAPERS = {
 }
 
 
-# Ncode books that are printed control surfaces rather than paper. Mirrors Config.controlBooks in
-# Brainio Pen; taps on them are stored in raw as evidence but are never pages, so they are not drawn.
+# Surface identities that are printed control surfaces rather than paper. Mirrors
+# Config.controlBooks in Brainio Pen; taps on them are kept as evidence but are never pages.
 CONTROL_BOOKS = {"s3/o1013/b1"}
 
 
@@ -75,23 +75,24 @@ def read_page(path: pathlib.Path) -> list[Stroke]:
     return strokes
 
 
-def load_palette(repo: pathlib.Path) -> dict:
-    """Ink hexes and line widths, from the repo rather than from code, so the panel and the
+def load_palette(root: pathlib.Path) -> dict:
+    """Ink hexes and line widths, kept beside the notes rather than in code, so the panel and the
     renderer cannot disagree about what `red` looks like."""
-    path = repo / "palette.json"
+    path = root / "palette.json"
     if not path.exists():
         return {"ink": {}, "width_mm": {}}
     return json.loads(path.read_text())
 
 
-def load_modes(repo: pathlib.Path) -> list[dict]:
+def load_modes(root: pathlib.Path) -> list[dict]:
     """Every ink and width change, oldest first *by its own timestamp*.
 
     The file is not in time order. A tap made away from the Mac waits in pen memory and is
     appended at the next drain, long after events that happened later. Each line therefore records
     only what changed, and the state at any moment is the replay of everything at or before it.
     """
-    path = repo / "raw" / "mode.jsonl"
+    # At the root, not inside a book: a setting has no surface of its own (ADR-002).
+    path = root / "mode.jsonl"
     if not path.exists():
         return []
     events = []
@@ -108,8 +109,8 @@ def load_modes(repo: pathlib.Path) -> list[dict]:
 DEFAULT_INK, DEFAULT_WIDTH = "black", "default"
 
 
-def load_timeline(repo: pathlib.Path) -> list[int]:
-    """Every stroke start time in the repo, sorted, taps included.
+def load_timeline(root: pathlib.Path) -> list[int]:
+    """Every stroke start time in the notes, sorted, taps included.
 
     The pen returns to its defaults after a long enough gap in writing, and that gap is measured
     between consecutive strokes anywhere — not within a page. Turning a page is not a reset, and
@@ -122,9 +123,7 @@ def load_timeline(repo: pathlib.Path) -> list[int]:
     person just asked for.
     """
     starts = []
-    for f in (repo / "raw").rglob("*.jsonl"):
-        if f.name == "mode.jsonl":
-            continue
+    for f in raw_files(root):
         for line in f.read_text().splitlines():
             if not line.strip():
                 continue
@@ -191,7 +190,7 @@ def guess_geometry(strokes: list[Stroke]) -> dict:
 
 # The pressure curve, and the multiplier at typical writing force. Both come from palette.json so
 # that the renderer, the live view and anything else drawing ink use one definition; PRESSURE is
-# only the fallback for a repo that has no palette yet.
+# only the fallback for notes that have no palette yet.
 PRESSURE = {"base": 0.65, "range": 0.7, "typical_force": 0.7}
 
 
@@ -326,81 +325,71 @@ def render_png(strokes: list[Stroke], png_path: pathlib.Path, nib_mm: float = NI
     return True
 
 
-def render_file(raw: pathlib.Path, repo: pathlib.Path, books: Books, out: pathlib.Path | None,
+def render_file(raw: pathlib.Path, root: pathlib.Path, books: Books, out: pathlib.Path | None,
                 png: bool, crop: bool, nib_mm: float = NIB_MM,
                 palette: dict | None = None, modes: list[dict] | None = None,
                 boundaries: list[int] | None = None, pens: Pens | None = None) -> None:
-    book_id, ncode_page = parse_raw_path(raw)
-    if book_id in CONTROL_BOOKS:
-        print(f"{book_id}/p{ncode_page}: control surface, not a page")
+    folder, ncode_page = parse_raw_path(raw)
+    book = books.for_folder(folder)
+    surface = book.surface if book else surface_of(folder)
+    if surface in CONTROL_BOOKS:
+        print(f"{folder}/p{ncode_page}: control surface, not a page")
         return
-    book = books.for_id(book_id)
     strokes = read_page(raw)
     if not strokes:
-        print(f"{book_id}/p{ncode_page}: no strokes")
+        print(f"{folder}/p{ncode_page}: no strokes")
         return
-    palette = palette if palette is not None else load_palette(repo)
-    modes = modes if modes is not None else load_modes(repo)
+    palette = palette if palette is not None else load_palette(root)
+    modes = modes if modes is not None else load_modes(root)
     if boundaries is None:
-        boundaries = reset_boundaries(load_timeline(repo), palette.get("reset_after_hours", 24))
-    complaints = apply_modes(strokes, modes, palette, nib_mm, boundaries, pens or Pens(repo))
+        boundaries = reset_boundaries(load_timeline(root), palette.get("reset_after_hours", 24))
+    complaints = apply_modes(strokes, modes, palette, nib_mm, boundaries, pens or Pens(root))
     if book and book.has_geometry:
         geom = {"paper": book.title, "width_mm": book.width_mm,
                 "height_mm": book.height_mm, "source": book.source}
     else:
         geom = guess_geometry(strokes)
 
-    # One raw file can hold two physical notebooks. A book code identifies a product, so a second
-    # pad of the same kind writes to the same addresses; the instance boundary is what separates
-    # them, and each copy gets its own directory rather than overwriting the last one's pages.
-    groups: dict[str, list[Stroke]] = {}
-    for st in strokes:
-        groups.setdefault(book.instance_at(st.start) if book else book_id, []).append(st)
-
+    # One captured file holds one copy of one page. Which copy a stroke belongs to was decided
+    # when it arrived, by the app, and it is the folder the file is in (ADR-002) — so there is
+    # nothing to split here, and no file is ever cut.
     stem = page_stem(book, ncode_page)
-    for slug, group in groups.items():
-        svg_path = out or (repo / "pages" / slug / f"{stem}.svg")
-        svg_path.parent.mkdir(parents=True, exist_ok=True)
-        svg_path.write_text(render_svg(group, geom, nib_mm=nib_mm, crop=crop))
-        where = f"{slug}/{stem}"
-        note = f"{where}: {len(group)} strokes -> {svg_path.name}  [{geom['paper']}]"
-        if png:
-            note += "  +png" if render_png(group, svg_path.with_suffix(".png"), nib_mm=nib_mm) else "  (png failed)"
-        print(note)
-        for c in complaints:
-            print(f"  {where}: {c}")
-        if out and len(groups) > 1:
-            others = ", ".join(sorted(set(groups) - {slug}))
-            print(f"  only this copy was rendered; -o names one file. Also in this page: {others}",
-                  file=sys.stderr)
-        if out:
-            break
+    svg_path = out or (page_dir(root, folder) / f"{stem}.svg")
+    svg_path.parent.mkdir(parents=True, exist_ok=True)
+    svg_path.write_text(render_svg(strokes, geom, nib_mm=nib_mm, crop=crop))
+    where = f"{folder}/{stem}"
+    note = f"{where}: {len(strokes)} strokes -> {svg_path.name}  [{geom['paper']}]"
+    if png:
+        note += "  +png" if render_png(strokes, svg_path.with_suffix(".png"), nib_mm=nib_mm) else "  (png failed)"
+    print(note)
+    for c in complaints:
+        print(f"  {where}: {c}")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("raw", nargs="?", help="a raw page .jsonl file")
-    ap.add_argument("--all", action="store_true", help="render every raw page in the repo")
-    ap.add_argument("--repo", default="~/BrainioPen/notes", help="notes repository")
+    ap.add_argument("raw", nargs="?", help="a captured page .jsonl file")
+    ap.add_argument("--all", action="store_true", help="render every captured page")
+    ap.add_argument("--root", default="~/Brainio/pen", help="where the notes are kept")
     ap.add_argument("-o", "--out", help="output .svg path (single file only)")
     ap.add_argument("--png", action="store_true", help="also write a PNG next to the SVG")
     ap.add_argument("--crop", action="store_true", help="trim to the written area instead of the whole sheet")
     ap.add_argument("--nib", type=float, default=NIB_MM, help=f"ink width in mm at middling pressure (default {NIB_MM})")
     a = ap.parse_args()
 
-    repo = pathlib.Path(a.repo).expanduser()
-    books = Books(repo)
-    palette, modes = load_palette(repo), load_modes(repo)
-    boundaries = reset_boundaries(load_timeline(repo), palette.get("reset_after_hours", 24))
-    pens = Pens(repo)
+    root = pathlib.Path(a.root).expanduser()
+    books = Books(root)
+    palette, modes = load_palette(root), load_modes(root)
+    boundaries = reset_boundaries(load_timeline(root), palette.get("reset_after_hours", 24))
+    pens = Pens(root)
     if a.all:
-        files = sorted(f for f in (repo / "raw").rglob("*.jsonl") if f.name != "mode.jsonl")
+        files = raw_files(root)
         if not files:
-            raise SystemExit(f"no raw pages under {repo / 'raw'}")
+            raise SystemExit(f"no captured pages under {root / 'books'}")
         for f in files:
-            render_file(f, repo, books, None, a.png, a.crop, a.nib, palette, modes, boundaries, pens)
+            render_file(f, root, books, None, a.png, a.crop, a.nib, palette, modes, boundaries, pens)
     elif a.raw:
-        render_file(pathlib.Path(a.raw).expanduser(), repo, books,
+        render_file(pathlib.Path(a.raw).expanduser(), root, books,
                     pathlib.Path(a.out).expanduser() if a.out else None, a.png, a.crop, a.nib,
                     palette, modes, boundaries, pens)
     else:

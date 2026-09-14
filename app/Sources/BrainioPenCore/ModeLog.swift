@@ -1,12 +1,5 @@
 import Foundation
 
-public enum ModeSource: String, Codable {
-    /// A tap on the paper controller.
-    case paper
-    /// A click in the Brainio Pen panel.
-    case panel
-}
-
 /// One change of ink colour or line width, at the moment it was made.
 ///
 /// Only the field that changed is recorded. Writing the full state instead would be simpler to
@@ -20,16 +13,18 @@ public struct ModeEvent: Equatable {
     public var at: Int
     public var ink: InkColor?
     public var width: LineWidth?
-    public var source: ModeSource
+    /// Which client chose this: the pen, for a tap on the paper controller, or the app, for a
+    /// click in the panel. The two are still told apart by `tap`, which only a paper tap has.
+    public var client: Client
     /// The control tap this came from, so the event can be traced back to its evidence in raw.
     public var tap: UUID?
 
     public init(at: Int, ink: InkColor? = nil, width: LineWidth? = nil,
-                source: ModeSource, tap: UUID? = nil) {
+                client: Client, tap: UUID? = nil) {
         self.at = at
         self.ink = ink
         self.width = width
-        self.source = source
+        self.client = client
         self.tap = tap
     }
 
@@ -37,7 +32,7 @@ public struct ModeEvent: Equatable {
         var out = "{\"t\":\"mode\",\"at\":\(at)"
         if let ink { out += ",\"ink\":\"\(ink.rawValue)\"" }
         if let width { out += ",\"width\":\"\(width.rawValue)\"" }
-        out += ",\"src\":\"\(source.rawValue)\""
+        out += ",\"client\":\"\(client.rawValue)\""
         if let tap { out += ",\"tap\":\"\(tap.uuidString.lowercased())\"" }
         return out + "}"
     }
@@ -47,13 +42,20 @@ public struct ModeEvent: Equatable {
         self.at = at
         ink = (o["ink"] as? String).flatMap(InkColor.init(rawValue:))
         width = (o["width"] as? String).flatMap(LineWidth.init(rawValue:))
-        source = (o["src"] as? String).flatMap(ModeSource.init(rawValue:)) ?? .paper
+        // `src` is what this field was called before the record gave every event kind the same
+        // name for the same thing. Files written then are still read: paper is the pen, panel is
+        // the app. Nothing rewrites them, because nothing rewrites the record.
+        client = (o["client"] as? String).flatMap(Client.init(rawValue:))
+            ?? ((o["src"] as? String) == "panel" ? .app : .pen)
         tap = (o["tap"] as? String).flatMap(UUID.init(uuidString:))
         if ink == nil && width == nil { return nil }
     }
 }
 
-/// The ink colour and line width chosen over time, appended to `raw/mode.jsonl`.
+/// The ink colour and line width chosen over time, appended to `mode.jsonl`.
+///
+/// It sits at the root rather than inside a book: a setting has no surface of its own, so there
+/// is no copy of a notebook it could belong to (ADR-002).
 ///
 /// Only deliberate human acts are written here: a tap on the paper controller and a click in the
 /// panel. Returning to the pen's defaults after a long gap is NOT an event — it is derived from
@@ -64,9 +66,11 @@ public struct ModeEvent: Equatable {
 /// this one process, so there is no locking to do. Rendering joins a stroke to the state by
 /// replaying every event at or before the stroke's own start time.
 public final class ModeLog {
-    public static let relativePath = "raw/mode.jsonl"
+    public static let relativePath = "mode.jsonl"
 
     private let url: URL
+    private let app: String
+    private let sdk: String
     private let fm = FileManager.default
     private(set) var events: [ModeEvent] = []
     /// Fired after a change is recorded, with the state that is now in force. The pen's LED
@@ -77,8 +81,13 @@ public final class ModeLog {
     /// silent black.
     public var offered: Set<InkColor> = Set(InkColor.allCases)
 
-    public init(root: URL) {
+    /// `app` and `sdk` go in the file's header line, which is written when the file is created.
+    /// A mode log that already exists keeps the header it has — or none, if it was made before
+    /// there were headers.
+    public init(root: URL, app: String = "", sdk: String = "") {
         url = root.appendingPathComponent(Self.relativePath)
+        self.app = app
+        self.sdk = sdk
         events = Self.read(url)
     }
 
@@ -103,7 +112,7 @@ public final class ModeLog {
     /// that is already selected costs nothing — it is still logged as evidence that the pen woke,
     /// but it is not written twice.
     @discardableResult
-    public func record(_ button: ControlButton, at ms: Int, source: ModeSource, tap: UUID? = nil) -> Bool {
+    public func record(_ button: ControlButton, at ms: Int, client: Client, tap: UUID? = nil) -> Bool {
         let now = state(at: ms)
         let event: ModeEvent
         switch button {
@@ -114,10 +123,10 @@ public final class ModeLog {
             // page in an ink nobody assigned a colour to.
             guard offered.contains(c) else { return false }
             guard c != now.ink else { return false }
-            event = ModeEvent(at: ms, ink: c, source: source, tap: tap)
+            event = ModeEvent(at: ms, ink: c, client: client, tap: tap)
         case let .width(w):
             guard w != now.width else { return false }
-            event = ModeEvent(at: ms, width: w, source: source, tap: tap)
+            event = ModeEvent(at: ms, width: w, client: client, tap: tap)
         }
         append(event)
         let after = state(at: ms)
@@ -128,15 +137,12 @@ public final class ModeLog {
     func append(_ event: ModeEvent) {
         events.append(event)
         do {
-            try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let line = Data((event.jsonLine + "\n").utf8)
-            if let h = try? FileHandle(forWritingTo: url) {
-                defer { try? h.close() }
-                try h.seekToEnd()
-                try h.write(contentsOf: line)
-            } else {
-                try line.write(to: url, options: .atomic)
+            var text = event.jsonLine + "\n"
+            if !fm.fileExists(atPath: url.path) {
+                text = JSONL.metaLine(captured: Int(Date().timeIntervalSince1970 * 1000),
+                                      app: app, sdk: sdk) + "\n" + text
             }
+            try AppendOnlyFile.append(text, to: url)
         } catch {
             Log.error("writing \(Self.relativePath) failed: \(error)")
         }

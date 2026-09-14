@@ -5,13 +5,13 @@ import Foundation
 public final class QuietTracker {
     /// A page waiting to be published, with the times the panel needs to count it down.
     public struct Entry: Equatable {
-        public let page: PageID
+        public let page: PageRef
         /// First unpublished stroke on this page.
         public let first: Date
         /// Most recent stroke. The page publishes `window` after this.
         public let last: Date
 
-        public init(page: PageID, first: Date, last: Date) {
+        public init(page: PageRef, first: Date, last: Date) {
             self.page = page
             self.first = first
             self.last = last
@@ -21,12 +21,12 @@ public final class QuietTracker {
         public func deadline(window: TimeInterval) -> Date { last.addingTimeInterval(window) }
     }
 
-    private var lastWrite: [PageID: Date] = [:]
-    private var firstWrite: [PageID: Date] = [:]
+    private var lastWrite: [PageRef: Date] = [:]
+    private var firstWrite: [PageRef: Date] = [:]
 
     public init() {}
 
-    public var pendingPages: [PageID] { Array(lastWrite.keys) }
+    public var pendingPages: [PageRef] { Array(lastWrite.keys) }
     public var isEmpty: Bool { lastWrite.isEmpty }
 
     /// Everything waiting, most recently written first — the order the panel lists them in.
@@ -36,7 +36,7 @@ public final class QuietTracker {
     }
 
     /// Record a live write. The page is quiet again once `window` has elapsed.
-    public func touch(_ pages: some Sequence<PageID>, at time: Date = Date()) {
+    public func touch(_ pages: some Sequence<PageRef>, at time: Date = Date()) {
         for p in pages {
             lastWrite[p] = time
             if firstWrite[p] == nil { firstWrite[p] = time }
@@ -45,23 +45,23 @@ public final class QuietTracker {
 
     /// Record strokes that were already old when they arrived (offline drain).
     /// They are quiet immediately unless the page is also being written live right now.
-    public func markQuiet(_ pages: some Sequence<PageID>) {
+    public func markQuiet(_ pages: some Sequence<PageRef>) {
         for p in pages where lastWrite[p] == nil {
             lastWrite[p] = .distantPast
             firstWrite[p] = .distantPast
         }
     }
 
-    public func quietPages(now: Date = Date(), window: TimeInterval) -> [PageID] {
+    public func quietPages(now: Date = Date(), window: TimeInterval) -> [PageRef] {
         lastWrite.filter { now.timeIntervalSince($0.value) >= window }.map(\.key)
     }
 
-    public func clear(_ pages: some Sequence<PageID>) {
+    public func clear(_ pages: some Sequence<PageRef>) {
         for p in pages {
             lastWrite.removeValue(forKey: p)
             firstWrite.removeValue(forKey: p)
         }
     }
 
-    public func lastWriteTime(_ page: PageID) -> Date? { lastWrite[page] }
+    public func lastWriteTime(_ page: PageRef) -> Date? { lastWrite[page] }
 }

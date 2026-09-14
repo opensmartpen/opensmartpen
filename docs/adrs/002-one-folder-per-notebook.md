@@ -37,12 +37,14 @@ A surface identity exists only because the pen read the pattern printed on a she
 
 **A stroke is filed under its surface identity.** Only the client that sensed the surface can give one. We take the client's own and use nothing else. The format does not depend on Ncode. A client that senses another kind of surface brings its own surface identity, and the same format holds its strokes.
 
+**The root is `~/Brainio/pen`.** The data stays outside the app, so you can delete the app and install it again. Brainio will have more products than the pen. Each one gets its own folder below `~/Brainio`, and none of them can disturb the others.
+
 **Each copy of a notebook is one folder.** We generate an id the first time we see a new copy. The folder holds everything about that copy: its record, its captured pages, and the readable files made from them.
 
 Inside it, captured and derived stay apart. Everything in `pages/` can be deleted and made again. Nothing in `raw/` can.
 
 ```
-~/Brainio/
+~/Brainio/pen/
   mode.jsonl                        every setting, in time order
   pens/pen.json
   books/
@@ -86,6 +88,7 @@ Inside it, captured and derived stay apart. Everything in `pages/` can be delete
 - **Name the folder by the surface identity alone** — two copies of one product then share a folder, and their pages overwrite each other.
 - **Decide the copy late, from a date in the record** — nothing ever moves, but every reader must apply the boundary. One notebook also cannot be held apart from the rest.
 - **Ask the person when a new copy appears** — the app must run without attention. A question at the wrong moment is worse than a guess we can repair.
+- **Put the pen's data at `~/Brainio`** — a second Brainio product would then have to share that folder, or move the first one.
 - **Put the title in the folder name** — a rename would then move every file and break every link into it.
 - **File a setting under the page of the tap that caused it** — a click in the app has no page, so many settings would have no home.
 

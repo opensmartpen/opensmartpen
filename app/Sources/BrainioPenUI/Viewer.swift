@@ -111,7 +111,9 @@ public final class Viewer: ObservableObject {
     private let repo: URL
     private var modeLog: ModeLog?
     private var palette = Palette()
-    private var bookKey: String?
+    /// The copy on screen. A copy, not a product: two pads of the same kind are two notebooks
+    /// here, because they are two notebooks on the desk (ADR-002).
+    private var folder: BookFolder?
     private var pending: [InkPoint] = []
     private var flushing = false
 
@@ -295,22 +297,22 @@ public final class Viewer: ObservableObject {
     // MARK: loading
 
     /// Point the viewer at a page, loading the notebook around it.
-    public func show(page ncode: PageID) {
-        let record = books.record(for: ncode)
-        if bookKey != ncode.bookKey {
-            bookKey = ncode.bookKey
+    public func show(page ref: PageRef) {
+        let record = books.record(for: ref)
+        if folder != ref.folder {
+            folder = ref.folder
             book = record
             palette = Palette.load(root: repo)
             strokes = [:]
-            pages = availablePages(for: ncode.bookKey)
+            pages = availablePages(in: ref.folder)
             if !chosenLayout {
                 layout = .default(for: record?.binding ?? .pad)
                 chosenLayout = false        // still the notebook's choice, not yours
             }
         }
-        let human = record?.humanPage(ncode.page) ?? ncode.page
+        let human = record?.humanPage(ref.page.page) ?? ref.page.page
         page = human
-        if !pages.contains(human) { pages = availablePages(for: ncode.bookKey) }
+        if !pages.contains(human) { pages = availablePages(in: ref.folder) }
         loadVisible()
     }
 
@@ -329,7 +331,7 @@ public final class Viewer: ObservableObject {
     }
 
     /// True when the pager's active mark belongs to the notebook on screen.
-    var activeIsHere: Bool { activeBook == nil || activeBook == bookKey }
+    var activeIsHere: Bool { activeBook == nil || activeBook == folder?.name }
 
     /// Keyboard, handled by the window: arrows page, H goes home to the live page, F changes how
     /// a bound notebook is shown.
@@ -352,25 +354,24 @@ public final class Viewer: ObservableObject {
         go(to: next)
     }
 
-    private func availablePages(for key: String) -> [Int] {
+    private func availablePages(in folder: BookFolder) -> [Int] {
         guard let record = book else { return [] }
         let found = books.recentPages(limit: 500)
-            .filter { $0.page.bookKey == key }
-            .map { record.humanPage($0.page.page) }
+            .filter { $0.page.folder == folder }
+            .map { record.humanPage($0.page.number) }
         return Array(Set(found)).sorted()
     }
 
-    private func ncode(for human: Int) -> PageID? {
-        guard let book, let first = bookKey else { return nil }
-        let parts = first.split(separator: "/").map { Int($0.dropFirst()) ?? 0 }
-        guard parts.count == 3 else { return nil }
-        return PageID(section: parts[0], owner: parts[1], book: parts[2],
-                      page: human + book.firstPage - 1)
+    private func ref(for human: Int) -> PageRef? {
+        guard let book, let folder,
+              let id = PageID(surface: folder.surface, page: human + book.firstPage - 1)
+        else { return nil }
+        return PageRef(folder: folder, page: id)
     }
 
     private func loadIfNeeded(_ human: Int) {
-        guard strokes[human] == nil, let id = ncode(for: human) else { return }
-        let raw = RawReader.strokes(at: books.rawFile(for: id))
+        guard strokes[human] == nil, let ref = ref(for: human) else { return }
+        let raw = RawReader.strokes(at: books.rawFile(for: ref), page: ref.page)
         strokes[human] = raw.map { drawn($0) }
     }
 
@@ -393,13 +394,16 @@ public final class Viewer: ObservableObject {
     /// One dot from the pen, ahead of stroke assembly: a stroke is only finished on pen-up, and
     /// waiting for that would make writing appear a word at a time.
     public func receive(page id: PageID, dot: DotSample, event: DotEvent) {
-        let human = books.record(for: id)?.humanPage(id.page) ?? id.page
-        activeBook = id.bookKey
+        // Live dots carry a surface identity, not a copy, so the copy is the one being written in
+        // now — which is the same decision the router has already taken for the stored strokes.
+        let record = books.record(for: id)
+        let human = record?.humanPage(id.page) ?? id.page
+        activeBook = record?.folder.name
         activePage = human
         // Only follow the pen if you asked to. Writing in another notebook while you are reading
         // this one should not pull the window out from under you.
         if following {
-            if id.bookKey != bookKey { show(page: id) }
+            if let live = record?.folder, live != folder { show(page: PageRef(folder: live, page: id)) }
             else if human != page {
                 page = human
                 loadIfNeeded(human)

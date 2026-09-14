@@ -30,7 +30,7 @@ public final class SettingsStore: ObservableObject {
     func reload() {
         pens = penRegistry.pens
         books = bookRegistry.books.sorted { $0.title < $1.title }
-        palette = Palette.load(root: config.repoURL)
+        palette = Palette.load(root: config.dataURL)
     }
 
     func save(_ pen: PenRecord) {
@@ -218,9 +218,10 @@ private struct BooksTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Hint("The title is yours to change at any time. The folder is fixed when a notebook "
-                     + "is first seen, because it is also where every rendered page of it lives.")
-                ForEach(store.books, id: \.slug) { book in
+                Hint("The title is yours to change at any time, and nothing moves when you do. "
+                     + "The folder is named by an id that means nothing, fixed when the notebook "
+                     + "was first seen.")
+                ForEach(store.books, id: \.folder) { book in
                     BookCard(book: book) { store.save($0) }
                 }
             }
@@ -243,7 +244,8 @@ private struct BookCard: View {
                     .onAppear { title = book.title }
             }
             Row("Folder") {
-                Text("pages/\(book.slug)/").font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary)
+                Text("books/\(book.folder.name)/").font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
                 Spacer()
                 Text("fixed").font(.system(size: 10)).foregroundStyle(.quaternary)
             }
@@ -275,9 +277,9 @@ private struct GeneralTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Row("Notes") {
-                Text(store.config.repoPath).font(.system(size: 11, design: .monospaced)).lineLimit(1)
+                Text(store.config.dataPath).font(.system(size: 11, design: .monospaced)).lineLimit(1)
                 Spacer()
-                Button("Reveal") { NSWorkspace.shared.open(store.config.repoURL) }
+                Button("Reveal") { NSWorkspace.shared.open(store.config.dataURL) }
             }
             Row("Wait before syncing") {
                 Stepper(value: $store.config.quietMinutes, in: 1...120, step: 1) {
@@ -293,6 +295,8 @@ private struct GeneralTab: View {
             }
             Toggle("Push to the remote after every commit", isOn: $store.config.gitPush)
                 .onChange(of: store.config.gitPush) { _ in store.saveConfig() }
+            Hint("Off, the notes repo stays on this Mac. Turn it on only when the repo has an "
+                 + "origin remote you want the notes copied to.")
             Toggle("Clear a notebook from the pen once it is synced",
                    isOn: $store.config.deleteFromPenAfterPublish)
                 .onChange(of: store.config.deleteFromPenAfterPublish) { _ in store.saveConfig() }

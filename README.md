@@ -1,6 +1,6 @@
 # Brainio Pen
 
-Digitise handwritten notes from a Neo smartpen (A1, Ncode paper) into a GitHub-backed store of raw strokes, SVG renders and Markdown transcriptions.
+Digitise handwritten notes from a Neo smartpen (A1, Ncode paper) into a store of captured strokes, SVG renders and Markdown transcriptions at `~/Brainio/pen`. Everything stays on this Mac; nothing is pushed to a remote.
 
 - `RESEARCH.md` — SDK, protocol, vendor app, field and DAM research (2026-09-10).
 - `docs/architecture.md` — system overview and entry point to the docs.
@@ -11,6 +11,6 @@ Digitise handwritten notes from a Neo smartpen (A1, Ncode paper) into a GitHub-b
 
 Components:
 
-- `app/` — the Brainio Pen macOS menubar app, on NeoLAB's NISDK3, syncing raw strokes to a git repo. Called PenBridge until 2026-09-12; see `app/README.md` for what the rename moved.
-- Processing (render, transcribe) runs in a DAM agent off the notes repo; see `docs/processing.md`. Not built yet.
+- `app/` — the Brainio Pen macOS menubar app, on NeoLAB's NISDK3, filing captured strokes under `~/Brainio/pen`. Called PenBridge until 2026-09-12; see `app/README.md` for what the rename moved.
+- Processing (render, transcribe) runs in a DAM agent off `~/Brainio/pen`; see `docs/processing.md`. Not built yet.
 - `docs/adrs/` — architecture decision records.

@@ -7,6 +7,9 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static let version = "0.2.0"
     static let sdkVersion = "NISDK3/1.1.5"
+    /// The build that writes a raw file, for its header line. Every raw file the app creates says
+    /// this, so a file can always be traced to what made it.
+    static let clientID = "brainio-pen-mac/\(version)"
 
     private var statusItem: NSStatusItem!
     private var panel: MenuBarPanel!
@@ -24,7 +27,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// So a new notebook is only looked up when the pen moves to a different one, rather than on
     /// every dot.
     private var lastSeenBook: String?
-    private var lastSeenPage: String?
     private var viewer: Viewer!
     private var viewerWindow: ViewerWindowController?
     private var pinnedPanel: PinnedPanelController?
@@ -46,57 +48,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             notifier.post(Notice(key: "config", title: "Brainio Pen config is invalid",
                                  body: "\(configURL.path): \(error.localizedDescription). Running with defaults."))
         }
-        Log.info("Brainio Pen \(Self.version) starting; repo \(config.repoURL.path); config \(configURL.path)")
+        Log.info("Brainio Pen \(Self.version) starting; notes \(config.dataURL.path); config \(configURL.path)")
 
-        let publisher = GitPublisher(repo: config.repoURL, push: config.gitPush)
+        // Notes written before ADR-002 are copied into the new layout once. The old repository is
+        // left where it is, so nothing is lost if the copy turns out to be wrong.
+        if let legacy = config.legacyRepoURL, legacy != config.dataURL {
+            DataMigration.adoptLegacyRepo(from: legacy, to: config.dataURL)
+        }
+
+        // Git is a record of what changed, not where the notes live. Every reader goes to the
+        // files themselves; a commit is there so a drain or a render can be seen as a diff.
+        let publisher = GitPublisher(repo: config.dataURL, push: config.gitPush)
         do {
             let hasRemote = try publisher.ensureRepository()
             if !hasRemote && config.gitPush {
                 publisher.push = false
-                notifier.post(Notice(key: "no-remote", title: "Notes repo has no remote",
-                                     body: "Commits are local only. Add an origin in \(config.repoURL.path) and restart Brainio Pen to push."))
+                notifier.post(Notice(key: "no-remote", title: "Notes history has no remote",
+                                     body: "Commits are local only. Add an origin in \(config.dataURL.path) and restart Brainio Pen to push."))
             }
         } catch {
             Log.error("repository setup failed: \(error)")
-            notifier.post(Notice(key: "repo", title: "Brainio Pen cannot use the notes repo",
-                                 body: "\(config.repoURL.path): \(error)"))
+            notifier.post(Notice(key: "repo", title: "Brainio Pen cannot keep a history of the notes",
+                                 body: "\(config.dataURL.path): \(error)"))
         }
 
-        let store = RawStore(root: config.repoURL, client: "brainio-pen-mac/\(Self.version)", sdk: Self.sdkVersion)
-        coordinator = SyncCoordinator(store: store, tracker: QuietTracker(), publisher: publisher,
-                                      notifier: notifier, quietWindow: config.quietMinutes * 60)
+        let store = RawStore(root: config.dataURL, app: Self.clientID, sdk: Self.sdkVersion)
+        // Notebook names, page numbering and the readable-file paths all come from
+        // books/<copy>/book.json, which the processing side also reads. One source, no drift.
+        books = BookRegistry(root: config.dataURL)
+        let router = PageRouter(books: books, store: store)
+        router.adoptExisting()
+        coordinator = SyncCoordinator(store: store, router: router, tracker: QuietTracker(),
+                                      publisher: publisher, notifier: notifier,
+                                      quietWindow: config.quietMinutes * 60)
         coordinator.controlBooks = Set(config.controlBooks)
-        coordinator.modeLog = ModeLog(root: config.repoURL)
+        coordinator.modeLog = ModeLog(root: config.dataURL, app: Self.clientID, sdk: Self.sdkVersion)
         coordinator.recoverPending()
 
         session = PenSession(config: config, configURL: configURL, coordinator: coordinator, notifier: notifier)
 
-        // Notebook names, page numbering and the rendered-page paths all come from books/*.json
-        // in the notes repo, which the processing side also reads. One source, no drift.
-        books = BookRegistry(repo: config.repoURL)
-        pens = PenRegistry(repo: config.repoURL)
+        pens = PenRegistry(repo: config.dataURL)
         penState = PenState(directory: configURL.deletingLastPathComponent())
         // The palette decides which of the strip's ten buttons mean anything. Narrowing the set is
         // an edit to one file in the repo, not a code change.
-        coordinator.modeLog?.offered = Set(Palette.load(root: config.repoURL).offered)
-        viewer = Viewer(books: books, repo: config.repoURL)
-        // Paper we capture from but never read back. The coordinator still stores every tap in
-        // raw and decodes it as a command; what stops here is everything that treats a book as a
-        // notebook — a record in books/, the new-copy question, and the live page in the viewer.
+        coordinator.modeLog?.offered = Set(Palette.load(root: config.dataURL).offered)
+        viewer = Viewer(books: books, repo: config.dataURL)
+        // Paper we capture from but never read back. The coordinator still stores every tap and
+        // decodes it as a command; what stops here is everything that treats a book as a
+        // notebook — a record of its own and the live page in the viewer.
         let controlBooks = Set(config.controlBooks)
         session.onDot = { [weak self] page, dot, event in
             guard let self else { return }
-            guard !controlBooks.contains(page.bookKey) else { return }
+            guard !controlBooks.contains(page.surface) else { return }
             // A notebook Brainio Pen has never met gets a record the moment a page arrives from it,
             // so its pages stop being anonymous and start being rendered. Silent on purpose:
             // writing is never interrupted to ask a question.
-            if lastSeenBook != page.bookKey {
-                lastSeenBook = page.bookKey
+            if lastSeenBook != page.surface {
+                lastSeenBook = page.surface
                 books.ensureRecord(for: page)
-            }
-            if lastSeenPage != page.description {
-                lastSeenPage = page.description
-                noteForNewNotebook(page)
             }
             viewer.receive(page: page, dot: dot, event: event)
         }
@@ -174,21 +183,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.toolTip = look.tooltip
     }
 
-    /// Two pads of the same model report the same Ncode id, so a fresh copy has to be noticed
-    /// rather than assumed. Detection only ever asks: a wrong silent guess appends a new notebook
-    /// to the old one's files and goes unnoticed for months.
-    private func noteForNewNotebook(_ page: PageID) {
-        let now = Int(Date().timeIntervalSince1970 * 1000)
-        guard let suspicion = books.instanceWatcher.note(book: page.bookKey, page: page.page, at: now)
-        else { return }
-        let title = books.label(for: page).title
-        Log.info("possible new notebook in \(page.bookKey): \(suspicion.reason.rawValue)")
-        model.ask(suspicion, title: title)
-        notifier.post(Notice(key: "new-notebook-\(page.bookKey)",
-                             title: "Is this a new \(title)?",
-                             body: "Confirm in Brainio Pen so its pages get their own folder."))
-    }
-
     /// A pen that connects for the first time gets a record, so it has a name from the very first
     /// moment rather than showing as a MAC address. The name is a guess — the SDK's device name,
     /// or simply "Pen" — and the point of writing it down is that it is now yours to change.
@@ -247,7 +241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// One window for reading, whether the ink arrived a second ago or last month. Pages are
     /// drawn from raw strokes rather than opened as a PNG, so there is a single view experience
     /// and a page is readable before the pipeline has ever touched it.
-    private func showViewer(_ page: PageID?) {
+    private func showViewer(_ page: PageRef?) {
         panel?.dismiss()
         if viewerWindow == nil {
             viewer.attach(modeLog: coordinator.modeLog)

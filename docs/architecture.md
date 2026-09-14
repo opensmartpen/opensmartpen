@@ -4,7 +4,7 @@ Early stage. This page is the entry point the skills expect; it will grow as com
 
 ## System context
 
-Pen (Neo smartpen A1, Ncode paper) → Bluetooth → **Brainio Pen** (macOS menubar app on NISDK3) → raw JSONL per page → **GitHub repo** → **pipeline** (render SVG/PNG, transcribe to Markdown) → derived files committed back. A DAM agent may later run the pipeline; see `RESEARCH.md` section 4 for what DAM offers.
+Pen (Neo smartpen A1, Ncode paper) → Bluetooth → **Brainio Pen** (macOS menubar app on NISDK3) → captured JSONL per page, under `~/Brainio/pen/books/<copy>/raw/` → **pipeline** (render SVG/PNG, transcribe to Markdown) → readable files beside them in `pages/`. A git repository over the same directory records what changed; nothing reads a page out of it. A DAM agent may later run the pipeline; see `RESEARCH.md` section 4 for what DAM offers.
 
 ## Pages
 

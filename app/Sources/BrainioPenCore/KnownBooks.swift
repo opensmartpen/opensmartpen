@@ -20,7 +20,7 @@ public enum KnownBooks {
         public let note: String?
     }
 
-    /// Keyed by `PageID.bookKey`, `s{section}/o{owner}/b{book}`.
+    /// Keyed by `PageID.surface`, `s{section}/o{owner}/b{book}`.
     public static let products: [String: Product] = [
         "s3/o27/b450": Product(
             title: "A4 pad", binding: .pad, widthMM: 210, heightMM: 297, firstPage: 1,
@@ -44,7 +44,7 @@ public enum KnownBooks {
         case pad, bound
     }
 
-    public static func product(forBookKey key: String) -> Product? { products[key] }
+    public static func product(forSurface key: String) -> Product? { products[key] }
 
     /// What to call a notebook we do not recognise. Named for what it is rather than for its
     /// product code: the paper size is something a person can see, and a book we have never met

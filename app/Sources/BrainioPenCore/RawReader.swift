@@ -7,11 +7,15 @@ import Foundation
 /// a record shape it does not recognise is skipped, never thrown. A view that shows most of a page
 /// beats one that shows an error.
 public enum RawReader {
-    public static func strokes(at url: URL) -> [Stroke] {
+    /// The page is passed in rather than read out of the path. A captured file is named as its
+    /// client named the page, and which copy of the notebook it is in is the folder's business,
+    /// not the reader's (ADR-002).
+    public static func strokes(at url: URL, page: PageID) -> [Stroke] {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
-        guard let page = PageID(rawRelativePath: url.pathComponents.suffix(5).joined(separator: "/"))
-        else { return [] }
+        return strokes(in: text, page: page)
+    }
 
+    public static func strokes(in text: String, page: PageID) -> [Stroke] {
         var out: [Stroke] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             guard let stroke = stroke(from: String(line), page: page) else { continue }

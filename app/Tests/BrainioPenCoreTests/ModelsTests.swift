@@ -5,8 +5,13 @@ import XCTest
 final class ModelsTests: XCTestCase {
     let page = PageID(section: 3, owner: 27, book: 1234, page: 12)
 
-    func testRawPath() {
-        XCTAssertEqual(page.rawRelativePath, "raw/s3/o27/b1234/p12.jsonl")
+    func testAPageNamesItsProductButNotItsCopy() {
+        // A page knows which product it is a sheet of. Which *copy* holds it is the folder's
+        // business, so the path is not derivable from the page alone (ADR-002).
+        XCTAssertEqual(page.surface, "s3/o27/b1234")
+        XCTAssertEqual(page.description, "s3/o27/b1234/p12")
+        XCTAssertEqual(PageID(surface: "s3/o27/b1234", page: 12), page)
+        XCTAssertNil(PageID(surface: "a canvas", page: 1), "another client brings another form")
     }
 
     func testStrokeLineIsValidJSONWithExpectedShape() throws {
@@ -21,6 +26,7 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(obj["start"] as? Int, 1000)
         XCTAssertEqual(obj["end"] as? Int, 1020)
         XCTAssertEqual(obj["src"] as? String, "live")
+        XCTAssertEqual(obj["client"] as? String, "pen", "every event says which client produced it")
         XCTAssertEqual(obj["pen"] as? String, "AA:BB")
         let dots = try XCTUnwrap(obj["dots"] as? [[Any]])
         XCTAssertEqual(dots.count, 2)
@@ -40,9 +46,12 @@ final class ModelsTests: XCTestCase {
     }
 
     func testMetaLine() throws {
-        let line = JSONL.metaLine(captured: 5, client: "brainio-pen-mac/0.1", sdk: "NISDK3/1.1.5")
+        let line = JSONL.metaLine(captured: 5, app: "brainio-pen-mac/0.1", sdk: "NISDK3/1.1.5")
         let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
         XCTAssertEqual(obj["t"] as? String, "meta")
         XCTAssertEqual(obj["captured"] as? Int, 5)
+        XCTAssertEqual(obj["v"] as? Int, JSONL.formatVersion)
+        XCTAssertEqual(obj["app"] as? String, "brainio-pen-mac/0.1")
+        XCTAssertNil(obj["client"], "the header names the build that wrote the file, not a client")
     }
 }

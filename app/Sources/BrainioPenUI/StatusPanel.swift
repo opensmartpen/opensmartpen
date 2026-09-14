@@ -67,7 +67,6 @@ public struct StatusPanel: View {
                 // mark on that notebook in the list.
                 if case let .failing(_, _, error) = model.status { section { failure(error) } }
                 if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
-                if let question = model.instanceQuestion { section { newNotebook(question) } }
                 if !model.recent.isEmpty { section(inset: 5) { recent } }
                 footer
             }
@@ -207,25 +206,6 @@ public struct StatusPanel: View {
                 Button("Retry", action: model.publishNow)
                     .buttonStyle(InkButtonStyle(filled: true))
                 Button("Log", action: model.openLog)
-                    .buttonStyle(InkButtonStyle(filled: false))
-            }
-        }
-    }
-
-    /// The one question the panel ever asks. It has to be asked, because two notebooks of the same
-    /// model are indistinguishable to the pen and guessing wrong merges them silently.
-    private func newNotebook(_ question: PanelModel.InstanceQuestion) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Is this a new \(question.title)?")
-                .font(.system(size: 12, weight: .medium))
-                .fixedSize(horizontal: false, vertical: true)
-            Text(question.why)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            HStack(spacing: 7) {
-                Button("Yes, it's new", action: model.confirmNewNotebook)
-                    .buttonStyle(InkButtonStyle(filled: true))
-                Button("Same one", action: model.dismissNewNotebook)
                     .buttonStyle(InkButtonStyle(filled: false))
             }
         }

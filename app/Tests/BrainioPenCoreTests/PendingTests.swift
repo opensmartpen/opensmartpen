@@ -4,8 +4,9 @@ import XCTest
 /// The panel counts each waiting page down to its publish time, so the tracker has to report
 /// when a page was first and last written, not just that it is dirty.
 final class PendingTests: XCTestCase {
-    private let p1 = PageID(section: 3, owner: 27, book: 450, page: 1)
-    private let p2 = PageID(section: 3, owner: 27, book: 450, page: 2)
+    private let pad = BookFolder(surface: "s3/o27/b450", id: "7f3a9c")
+    private var p1: PageRef { PageRef(folder: pad, page: PageID(section: 3, owner: 27, book: 450, page: 1)) }
+    private var p2: PageRef { PageRef(folder: pad, page: PageID(section: 3, owner: 27, book: 450, page: 2)) }
     private let t0 = Date(timeIntervalSince1970: 1_757_530_000)
 
     func testFirstWriteIsKeptWhileLastWriteMoves() {

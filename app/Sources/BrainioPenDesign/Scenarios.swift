@@ -8,7 +8,6 @@ private typealias PendingRow = PanelModel.PendingRow
 private typealias RecentBook = PanelModel.RecentBook
 private typealias Battery = PanelModel.Battery
 private typealias Publish = PanelModel.Publish
-private typealias InstanceQuestion = PanelModel.InstanceQuestion
 
 /// The states the panel can be in, as fixtures.
 ///
@@ -33,7 +32,7 @@ public enum Scenario: String, CaseIterable {
         case .asleep: return "No pen"
         case .bluetoothOff: return "Bluetooth off"
         case .firstRun: return "First run"
-        case .newNotebook: return "New notebook?"
+        case .newNotebook: return "A second pad"
         case .threePens: return "Three pens"
         }
     }
@@ -48,7 +47,7 @@ public enum Scenario: String, CaseIterable {
         case .asleep: return "the usual state"
         case .bluetoothOff: return "the one real blocker"
         case .firstRun: return "never paired"
-        case .newNotebook: return "the one question we ask"
+        case .newNotebook: return "two copies, decided silently"
         case .threePens: return "what the width is cut for"
         }
     }
@@ -91,9 +90,13 @@ public enum Scenario: String, CaseIterable {
             s.recent = []
             s.status = .asleep
         case .newNotebook:
+            // A fresh pad is not announced, it simply appears: a second row with the same title
+            // and a folder of its own. Nothing is asked, and no notice is posted (ADR-002).
             s.status = .connected
-            s.instanceQuestion = InstanceQuestion(bookKey: "s3/o27/b450", title: "Ncode A4 pad",
-                                                  at: 0, reason: .sequenceRestart)
+            s.recent.insert(Self.book("s3-o27-b450-0c41ab", "Ncode A4 pad",
+                                      PageID(section: 3, owner: 27, book: 450, page: 1),
+                                      latest: true, binding: .pad), at: 0)
+            for i in s.recent.indices where i > 0 { s.recent[i].latest = false }
         case .threePens:
             // The width the panel is cut to. Three tiles and the pin are what decides it, so the
             // case has to be visible — a measurement nobody can look at goes wrong unnoticed.
@@ -125,14 +128,20 @@ public enum Scenario: String, CaseIterable {
         s.battery = Battery(percent: 16, charging: false, low: true)
         s.lastPublish = Publish(date: now.addingTimeInterval(-260), commit: "4e35b96", pages: 2)
         s.recent = [
-            RecentBook(id: "b1", title: "LAMY digital paper",
-                       page: PageID(section: 3, owner: 1012, book: 3017, page: 6),
-                       latest: true, binding: .bound),
-            RecentBook(id: "b2", title: "Ncode A4 pad",
-                       page: PageID(section: 3, owner: 27, book: 450, page: 3),
-                       binding: .pad),
+            Self.book("s3-o1012-b3017-2b81e4", "LAMY digital paper",
+                      PageID(section: 3, owner: 1012, book: 3017, page: 6),
+                      latest: true, binding: .bound),
+            Self.book("s3-o27-b450-7f3a9c", "Ncode A4 pad",
+                      PageID(section: 3, owner: 27, book: 450, page: 3), binding: .pad),
         ]
         return s
+    }
+
+    private static func book(_ folder: String, _ title: String, _ page: PageID,
+                            latest: Bool = false, binding: KnownBooks.Binding) -> RecentBook {
+        RecentBook(id: folder, title: title,
+                   page: PageRef(folder: BookFolder(name: folder)!, page: page),
+                   latest: latest, binding: binding)
     }
 
     private static func label(_ title: String, _ page: Int) -> PageLabel {

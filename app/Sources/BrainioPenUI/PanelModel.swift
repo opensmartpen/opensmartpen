@@ -185,60 +185,13 @@ public final class PanelModel: ObservableObject {
     /// The pen's own name, and the notebook records, so the panel can say what things are called.
     @Published private(set) var penDisplayName = "Pen"
 
-    /// A notebook we think might be a fresh physical copy. Two pads of the same model report the
-    /// same Ncode id, so this cannot be decided silently — a wrong guess merges two notebooks into
-    /// one set of files and nobody notices.
-    @Published private(set) var instanceQuestion: InstanceQuestion?
-
-    public struct InstanceQuestion: Equatable {
-        public let bookKey: String
-        public let title: String
-        public let at: Int
-        public let reason: InstanceSuspicion.Reason
-
-        public init(bookKey: String, title: String, at: Int, reason: InstanceSuspicion.Reason) {
-            self.bookKey = bookKey
-            self.title = title
-            self.at = at
-            self.reason = reason
-        }
-
-        var why: String {
-            switch reason {
-            case .sequenceRestart: return "Writing started again at the front."
-            case .longGap: return "Nothing written in it for a month."
-            }
-        }
-    }
-
-    public func ask(_ suspicion: InstanceSuspicion, title: String) {
-        instanceQuestion = InstanceQuestion(bookKey: suspicion.book, title: title,
-                                            at: suspicion.at, reason: suspicion.reason)
-    }
-
-    /// Yes, this is a new copy. Everything written from this moment goes to a fresh directory and
-    /// everything before it stays exactly where it is.
-    func confirmNewNotebook() {
-        guard let q = instanceQuestion, let live,
-              let book = live.books.books.first(where: { $0.id == q.bookKey }) else { return }
-        live.books.startInstance(of: book, at: q.at)
-        instanceQuestion = nil
-        refreshRecent()
-    }
-
-    func dismissNewNotebook() {
-        guard let q = instanceQuestion else { return }
-        live?.books.resolveInstanceQuestion(q.bookKey)
-        instanceQuestion = nil
-    }
-
     /// A notebook, not a page. What you reach for is the book; which page it falls open at is the
     /// viewer's job, and it always falls open at the last one you wrote.
     public struct RecentBook: Identifiable, Equatable {
         public let id: String
         public let title: String
         /// Where it will open: the most recently written page in it.
-        public let page: PageID
+        public let page: PageRef
         /// The most recently written of all the notebooks. Marked, because "the one you are in"
         /// is what you are looking for when you open the panel.
         public var latest: Bool = false
@@ -246,7 +199,7 @@ public final class PanelModel: ObservableObject {
         /// different here.
         public let binding: KnownBooks.Binding
 
-        public init(id: String, title: String, page: PageID, latest: Bool = false,
+        public init(id: String, title: String, page: PageRef, latest: Bool = false,
                     binding: KnownBooks.Binding) {
             self.id = id
             self.title = title
@@ -312,7 +265,7 @@ public final class PanelModel: ObservableObject {
         // second would be wasteful and once a launch would make an edit invisible.
         if now.timeIntervalSince(lastPaletteLoad) > 20 {
             lastPaletteLoad = now
-            palette = Palette.load(root: config.repoURL)
+            palette = Palette.load(root: config.dataURL)
         }
         if let mode = coordinator.modeLog?.current {
             ink = mode.ink
@@ -349,7 +302,7 @@ public final class PanelModel: ObservableObject {
         // The notebook with the newest stroke in it, which is the one the mark belongs on. When
         // it changes, the repo scan behind the list is out of date — a notebook you have just
         // started is not in it at all — so the list is rebuilt and the pen re-opened.
-        if let newest = coordinator.tracker.pending.max(by: { $0.last < $1.last })?.page.bookKey,
+        if let newest = coordinator.tracker.pending.max(by: { $0.last < $1.last })?.page.folder.name,
            newest != activeBook {
             activeBook = newest
             refreshRecent()
@@ -443,13 +396,15 @@ public final class PanelModel: ObservableObject {
     /// when the panel is opened.
     public func refreshRecent() {
         guard let books = live?.books else { return }
-        // Newest first, one row per notebook: the same book appearing four times because you wrote
-        // four pages in it says nothing you did not already know.
+        // Newest first, one row per copy of a notebook: the same book appearing four times
+        // because you wrote four pages in it says nothing you did not already know. A second copy
+        // of one product is a second row, which is how a person learns the app decided there was
+        // one (ADR-002).
         var seen = Set<String>()
         recent = books.recentPages(limit: 60).compactMap { entry in
-            guard seen.insert(entry.page.bookKey).inserted else { return nil }
+            guard seen.insert(entry.page.folder.name).inserted else { return nil }
             let label = books.label(for: entry.page)
-            return RecentBook(id: entry.page.bookKey,
+            return RecentBook(id: entry.page.folder.name,
                               title: label.title,
                               page: entry.page,
                               binding: books.record(for: entry.page)?.binding ?? .pad)
@@ -466,7 +421,7 @@ public final class PanelModel: ObservableObject {
     }
 
     /// Set by the app delegate, which owns the window.
-    public var onOpenPage: ((PageID) -> Void)?
+    public var onOpenPage: ((PageRef) -> Void)?
 
     /// Never a PNG in Preview: one viewer, whether the ink arrived a second ago or last month.
     func open(_ book: RecentBook) { onOpenPage?(book.page) }
@@ -493,7 +448,7 @@ public final class PanelModel: ObservableObject {
     }
 
     func openNotes() {
-        guard let repo = live?.config.repoURL else { return }
+        guard let repo = live?.config.dataURL else { return }
         NSWorkspace.shared.open(repo)
     }
 
@@ -509,7 +464,7 @@ public final class PanelModel: ObservableObject {
             .appendingPathComponent("Library/Logs/BrainioPen/brainio-pen.log")
         if FileManager.default.fileExists(atPath: log.path) {
             NSWorkspace.shared.open(log)
-        } else if let repo = live?.config.repoURL {
+        } else if let repo = live?.config.dataURL {
             NSWorkspace.shared.open(repo)
         }
     }
@@ -518,13 +473,13 @@ public final class PanelModel: ObservableObject {
     /// one file, one writer, and the renderer cannot tell which of the two a change came from.
     func choose(ink: InkColor) {
         guard let log = live?.coordinator.modeLog else { return }
-        log.record(.ink(ink), at: Int(Date().timeIntervalSince1970 * 1000), source: .panel)
+        log.record(.ink(ink), at: Int(Date().timeIntervalSince1970 * 1000), client: .app)
         refresh()
     }
 
     func choose(width: LineWidth) {
         guard let log = live?.coordinator.modeLog else { return }
-        log.record(.width(width), at: Int(Date().timeIntervalSince1970 * 1000), source: .panel)
+        log.record(.width(width), at: Int(Date().timeIntervalSince1970 * 1000), client: .app)
         refresh()
     }
 
@@ -562,7 +517,6 @@ public final class PanelModel: ObservableObject {
         public var ink: InkColor = .black
         public var width: LineWidth = .default
         public var palette = Palette()
-        public var instanceQuestion: InstanceQuestion?
 
         public init() {}
     }
@@ -585,7 +539,6 @@ public final class PanelModel: ObservableObject {
         ink = snapshot.ink
         width = snapshot.width
         palette = snapshot.palette
-        instanceQuestion = snapshot.instanceQuestion
         markActiveBook()
     }
 }

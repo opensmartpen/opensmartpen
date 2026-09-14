@@ -3,8 +3,15 @@ import Foundation
 /// User configuration, stored as JSON at ~/.config/brainio-pen/config.json.
 /// Every field has a default so the app runs with no setup; the file is written on first launch.
 public struct Config: Codable, Equatable {
-    /// Git repository that receives the raw stroke files.
-    public var repoPath: String = "~/BrainioPen/notes"
+    /// Where everything the pen captures is kept, and the readable files made from it.
+    ///
+    /// Outside the app on purpose, so the app can be deleted and installed again without taking
+    /// the notes with it. `pen` rather than the bare `~/Brainio`, because there will be more
+    /// Brainio products and none of them should be able to disturb this one (ADR-002).
+    public var dataPath: String = "~/Brainio/pen"
+    /// Where the notes were before ADR-002 moved them. Read from an older config file so the
+    /// move can find them once; never written.
+    public var legacyRepoPath: String?
     /// Minutes without strokes before a page is published.
     public var quietMinutes: Double = 10
     /// Bluetooth MAC of the paired pen. Nil until the first pen is paired automatically.
@@ -13,10 +20,11 @@ public struct Config: Codable, Equatable {
     public var penPeripheralId: String?
     /// PIN for a password-protected pen. Nil means no PIN.
     public var penPassword: String?
-    /// Delete a notebook from pen memory once its strokes are committed and pushed.
+    /// Delete a notebook from pen memory once its strokes are committed.
     public var deleteFromPenAfterPublish: Bool = true
-    /// Push after every commit. Turn off to work fully offline.
-    public var gitPush: Bool = true
+    /// Push after every commit. Off by default: the repository is a record of what changed, not
+    /// the place the notes live. Add an `origin` remote and turn this on to send them somewhere.
+    public var gitPush: Bool = false
     /// Pen power settings, applied on every connect when set. Nil leaves the pen's own value alone.
     /// `penAutoPowerOn` wakes the pen when the tip is pressed or the cap comes off, which is what
     /// stops strokes being lost to a sleeping pen. `penAutoPowerOffMinutes` is the inactivity timeout.
@@ -43,7 +51,8 @@ public struct Config: Codable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = Config()
-        repoPath = try c.decodeIfPresent(String.self, forKey: .repoPath) ?? d.repoPath
+        dataPath = try c.decodeIfPresent(String.self, forKey: .dataPath) ?? d.dataPath
+        legacyRepoPath = try c.decodeIfPresent(String.self, forKey: .repoPath)
         quietMinutes = try c.decodeIfPresent(Double.self, forKey: .quietMinutes) ?? d.quietMinutes
         penMac = try c.decodeIfPresent(String.self, forKey: .penMac)
         penPeripheralId = try c.decodeIfPresent(String.self, forKey: .penPeripheralId)
@@ -59,8 +68,45 @@ public struct Config: Codable, Equatable {
         sdkDebugLog = try c.decodeIfPresent(Bool.self, forKey: .sdkDebugLog) ?? d.sdkDebugLog
     }
 
-    public var repoURL: URL {
-        URL(fileURLWithPath: (repoPath as NSString).expandingTildeInPath)
+    public var dataURL: URL {
+        URL(fileURLWithPath: (dataPath as NSString).expandingTildeInPath)
+    }
+
+    /// Where the notes were before ADR-002. An older config names it; a config written after the
+    /// PenBridge rename but before ADR-002 may not, so the old default is checked as well — the
+    /// notes are there either way, and finding them is what matters.
+    public var legacyRepoURL: URL? {
+        if let named = legacyRepoPath {
+            return URL(fileURLWithPath: (named as NSString).expandingTildeInPath)
+        }
+        let old = URL(fileURLWithPath: ("~/BrainioPen/notes" as NSString).expandingTildeInPath)
+        return FileManager.default.fileExists(atPath: old.path) ? old : nil
+    }
+
+    /// `repoPath` is decoded but never encoded, so adopting an old config does not carry the old
+    /// location forward once the move is done.
+    private enum CodingKeys: String, CodingKey {
+        case dataPath, repoPath, quietMinutes, penMac, penPeripheralId, penPassword
+        case deleteFromPenAfterPublish, gitPush, penAutoPowerOn, penAutoPowerOffMinutes
+        case penCapPowerOff, controlBooks, lowBatteryPercent, memoryWarnPercent, sdkDebugLog
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(dataPath, forKey: .dataPath)
+        try c.encode(quietMinutes, forKey: .quietMinutes)
+        try c.encodeIfPresent(penMac, forKey: .penMac)
+        try c.encodeIfPresent(penPeripheralId, forKey: .penPeripheralId)
+        try c.encodeIfPresent(penPassword, forKey: .penPassword)
+        try c.encode(deleteFromPenAfterPublish, forKey: .deleteFromPenAfterPublish)
+        try c.encode(gitPush, forKey: .gitPush)
+        try c.encodeIfPresent(penAutoPowerOn, forKey: .penAutoPowerOn)
+        try c.encodeIfPresent(penAutoPowerOffMinutes, forKey: .penAutoPowerOffMinutes)
+        try c.encodeIfPresent(penCapPowerOff, forKey: .penCapPowerOff)
+        try c.encode(controlBooks, forKey: .controlBooks)
+        try c.encode(lowBatteryPercent, forKey: .lowBatteryPercent)
+        try c.encode(memoryWarnPercent, forKey: .memoryWarnPercent)
+        try c.encode(sdkDebugLog, forKey: .sdkDebugLog)
     }
 
     private static var configBase: URL {

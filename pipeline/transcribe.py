@@ -7,11 +7,11 @@ image is the evidence: it stays next to the text so anything doubtful can be che
 by eye rather than believed.
 
 Only pages whose rendering is newer than their transcription are redone, so this is
-cheap to run repeatedly over a whole repository.
+cheap to run repeatedly over every notebook.
 
 Usage:
     transcribe.py <page.png> [--force]
-    transcribe.py --all [--repo DIR] [--force]
+    transcribe.py --all [--root DIR] [--force]
 """
 
 from __future__ import annotations
@@ -117,17 +117,18 @@ def strip_fences(text: str) -> str:
     return m.group(1).strip() if m else text.strip()
 
 
-def page_meta(png: pathlib.Path, repo: pathlib.Path, books: Books) -> dict:
-    """Stroke counts and times, read back from the raw file this page was rendered from."""
-    slug = png.parent.name
-    book = books.for_slug(slug)
+def page_meta(png: pathlib.Path, root: pathlib.Path, books: Books) -> dict:
+    """Stroke counts and times, read back from the captured file this page was rendered from."""
+    # pages/ sits inside the copy's own folder, so the folder is two levels up from the PNG.
+    folder = png.parent.parent.name
+    book = books.for_folder(folder)
     m = re.match(r"page-(\d+)$", png.stem)
     if not (book and m):
-        return {"page": f"{slug}/{png.stem}"}
+        return {"page": f"{folder}/{png.stem}"}
     ncode = book.ncode_page(int(m.group(1)))
     meta = {"notebook": book.title, "page": png.stem.replace("page-", "").lstrip("0") or "1",
-            "ncode": f"{book.id}/p{ncode}"}
-    raw = raw_path(repo, book.id, ncode)
+            "ncode": f"{book.surface}/p{ncode}", "copy": folder}
+    raw = raw_path(root, folder, ncode)
     if not raw.exists():
         return meta
     strokes = [json.loads(l) for l in raw.read_text().splitlines() if '"stroke"' in l]
@@ -153,7 +154,7 @@ def frontmatter(meta: dict, model: str, image: pathlib.Path) -> str:
     return "\n".join(lines)
 
 
-def transcribe(png: pathlib.Path, repo: pathlib.Path, books: Books, force: bool) -> None:
+def transcribe(png: pathlib.Path, root: pathlib.Path, books: Books, force: bool) -> None:
     md = png.with_suffix(".md")
     where = f"{png.parent.name}/{png.stem}"
     if md.exists() and not force and md.stat().st_mtime >= png.stat().st_mtime:
@@ -166,7 +167,7 @@ def transcribe(png: pathlib.Path, repo: pathlib.Path, books: Books, force: bool)
         print(f"{where}: FAILED {e}", file=sys.stderr)
         return
     text, carried = carry_states(text, states)
-    md.write_text(frontmatter(page_meta(png, repo, books), model, png) + "\n\n" + text + "\n")
+    md.write_text(frontmatter(page_meta(png, root, books), model, png) + "\n\n" + text + "\n")
     commands = sum(1 for l in text.splitlines() if COMMAND_RE.match(l))
     note = f"{where}: {len(text)} chars -> {md.name}"
     if commands:
@@ -178,21 +179,21 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("png", nargs="?", help="a rendered page .png")
     ap.add_argument("--all", action="store_true", help="transcribe every rendered page")
-    ap.add_argument("--repo", default="~/BrainioPen/notes", help="notes repository")
+    ap.add_argument("--root", default="~/Brainio/pen", help="where the notes are kept")
     ap.add_argument("--force", action="store_true", help="redo even if the transcription is current")
     a = ap.parse_args()
 
-    repo = pathlib.Path(a.repo).expanduser()
-    books = Books(repo)
+    root = pathlib.Path(a.root).expanduser()
+    books = Books(root)
     if a.all:
-        pngs = sorted((repo / "pages").rglob("*.png"))
+        pngs = sorted(root.glob("books/*/pages/*.png"))
         if not pngs:
-            raise SystemExit(f"no rendered pages under {repo / 'pages'}; run render.py --png first")
+            raise SystemExit(f"no rendered pages under {root / 'books'}; run render.py --png first")
         for p in pngs:
-            transcribe(p, repo, books, a.force)
+            transcribe(p, root, books, a.force)
     elif a.png:
         p = pathlib.Path(a.png).expanduser()
-        transcribe(p, repo, books, a.force)
+        transcribe(p, root, books, a.force)
     else:
         ap.error("give a png or --all")
 

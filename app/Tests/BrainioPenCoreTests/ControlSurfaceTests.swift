@@ -56,15 +56,15 @@ final class ControlSurfaceTests: XCTestCase {
 
     func testOnlyTheFieldThatChangedIsRecorded() throws {
         let log = ModeLog(root: root)
-        log.record(.ink(.red), at: 1_000, source: .paper)
-        log.record(.width(.thick), at: 2_000, source: .paper)
+        log.record(.ink(.red), at: 1_000, client: .pen)
+        log.record(.width(.thick), at: 2_000, client: .pen)
 
         let lines = try String(contentsOf: root.appendingPathComponent(ModeLog.relativePath), encoding: .utf8)
             .split(separator: "\n")
-        XCTAssertEqual(lines.count, 2)
-        XCTAssertTrue(lines[0].contains("\"ink\":\"red\""))
-        XCTAssertFalse(lines[0].contains("width"), "an ink change must not claim a width")
-        XCTAssertTrue(lines[1].contains("\"width\":\"thick\""))
+        XCTAssertEqual(lines.count, 3, "a header line, then one line per change")
+        XCTAssertTrue(lines[1].contains("\"ink\":\"red\""))
+        XCTAssertFalse(lines[1].contains("width"), "an ink change must not claim a width")
+        XCTAssertTrue(lines[2].contains("\"width\":\"thick\""))
         // Replay still gives the full state.
         XCTAssertEqual(log.state(at: 3_000).ink, .red)
         XCTAssertEqual(log.state(at: 3_000).width, .thick)
@@ -75,8 +75,8 @@ final class ControlSurfaceTests: XCTestCase {
     /// time still puts the strokes of that morning in the colour chosen that morning.
     func testATapThatArrivesLateStillAppliesToItsOwnMoment() {
         let log = ModeLog(root: root)
-        log.record(.ink(.blue), at: 18_000, source: .panel)   // this evening, at the desk
-        log.record(.width(.thick), at: 9_000, source: .paper) // this morning, drained late
+        log.record(.ink(.blue), at: 18_000, client: .app)   // this evening, at the desk
+        log.record(.width(.thick), at: 9_000, client: .pen) // this morning, drained late
 
         XCTAssertEqual(log.state(at: 9_500).width, .thick, "the morning's strokes were thick")
         XCTAssertEqual(log.state(at: 9_500).ink, .black, "and blue had not been chosen yet")
@@ -86,8 +86,8 @@ final class ControlSurfaceTests: XCTestCase {
 
     func testRetappingTheSelectedButtonWritesNothing() {
         let log = ModeLog(root: root)
-        XCTAssertTrue(log.record(.ink(.red), at: 1_000, source: .paper))
-        XCTAssertFalse(log.record(.ink(.red), at: 2_000, source: .paper))
+        XCTAssertTrue(log.record(.ink(.red), at: 1_000, client: .pen))
+        XCTAssertFalse(log.record(.ink(.red), at: 2_000, client: .pen))
         XCTAssertEqual(log.events.count, 1)
     }
 
@@ -97,16 +97,58 @@ final class ControlSurfaceTests: XCTestCase {
     func testAnInkTheRepoDoesNotOfferSelectsNothing() {
         let log = ModeLog(root: root)
         log.offered = [.black, .red, .blue, .green, .yellow]
-        XCTAssertFalse(log.record(.ink(.white), at: 1_000, source: .paper))
-        XCTAssertFalse(log.record(.ink(.purple), at: 1_500, source: .paper))
+        XCTAssertFalse(log.record(.ink(.white), at: 1_000, client: .pen))
+        XCTAssertFalse(log.record(.ink(.purple), at: 1_500, client: .pen))
         XCTAssertEqual(log.state(at: 2_000).ink, .black)
 
-        XCTAssertTrue(log.record(.ink(.yellow), at: 2_500, source: .paper))
+        XCTAssertTrue(log.record(.ink(.yellow), at: 2_500, client: .pen))
         XCTAssertEqual(log.state(at: 3_000).ink, .yellow)
     }
 
+    /// The field was called `src` while only the strip wrote to the log. A file written then is
+    /// still read, because the record is never rewritten to suit a newer reader.
+    func testAModeLineWrittenBeforeTheClientFieldIsStillRead() throws {
+        let url = root.appendingPathComponent(ModeLog.relativePath)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        {"t":"mode","at":1000,"ink":"red","src":"paper","tap":"0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0"}
+        {"t":"mode","at":2000,"width":"thick","src":"panel"}
+        """.write(to: url, atomically: true, encoding: .utf8)
+
+        let log = ModeLog(root: root)
+        XCTAssertEqual(log.events.map(\.client), [.pen, .app])
+        XCTAssertEqual(log.state(at: 3_000).ink, .red)
+        XCTAssertEqual(log.state(at: 3_000).width, .thick)
+    }
+
+    func testTheLogStartsWithAHeaderThatNamesTheFormatVersion() throws {
+        let log = ModeLog(root: root, app: "brainio-pen-mac/9.9", sdk: "NISDK3/1.1.5")
+        log.record(.ink(.red), at: 1_000, client: .pen)
+        log.record(.ink(.blue), at: 2_000, client: .app)
+
+        let lines = try String(contentsOf: root.appendingPathComponent(ModeLog.relativePath), encoding: .utf8)
+            .split(separator: "\n")
+        XCTAssertEqual(lines.count, 3, "the header is written once, not before every event")
+        let meta = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lines[0].utf8)) as? [String: Any])
+        XCTAssertEqual(meta["t"] as? String, "meta")
+        XCTAssertEqual(meta["v"] as? Int, JSONL.formatVersion)
+        XCTAssertEqual(ModeLog(root: root).events.count, 2, "a header is not read back as an event")
+    }
+
+    func testTheClientIsRecordedForBothWriters() throws {
+        let log = ModeLog(root: root)
+        log.record(.ink(.red), at: 1_000, client: .pen, tap: UUID())
+        log.record(.width(.thick), at: 2_000, client: .app)
+
+        let lines = try String(contentsOf: root.appendingPathComponent(ModeLog.relativePath), encoding: .utf8)
+            .split(separator: "\n")
+        XCTAssertTrue(lines[1].contains("\"client\":\"pen\""))
+        XCTAssertTrue(lines[2].contains("\"client\":\"app\""))
+        XCTAssertFalse(lines.contains { $0.contains("\"src\"") }, "src means one thing only: how a stroke reached us")
+    }
+
     func testStateSurvivesReopeningTheFile() {
-        ModeLog(root: root).record(.ink(.green), at: 1_000, source: .paper)
+        ModeLog(root: root).record(.ink(.green), at: 1_000, client: .pen)
         XCTAssertEqual(ModeLog(root: root).state(at: 2_000).ink, .green)
     }
 
@@ -166,9 +208,9 @@ final class ControlSurfaceTests: XCTestCase {
         let log = ModeLog(root: root)
         var seen: [(InkColor, LineWidth)] = []
         log.onChange = { seen.append(($0, $1)) }
-        log.record(.width(.thick), at: 1_000, source: .paper)
-        log.record(.ink(.red), at: 2_000, source: .panel)
-        log.record(.ink(.red), at: 3_000, source: .panel)
+        log.record(.width(.thick), at: 1_000, client: .pen)
+        log.record(.ink(.red), at: 2_000, client: .app)
+        log.record(.ink(.red), at: 3_000, client: .app)
 
         XCTAssertEqual(seen.count, 2, "a re-tap changes nothing, so it announces nothing")
         XCTAssertEqual(seen.last?.0, .red)
@@ -177,25 +219,32 @@ final class ControlSurfaceTests: XCTestCase {
 
     // MARK: the coordinator
 
-    func makeCoordinator() throws -> SyncCoordinator {
+    func makeCoordinator() throws -> (SyncCoordinator, BookRegistry, RawStore) {
         let publisher = GitPublisher(repo: root, push: false)
         _ = try publisher.ensureRepository()
-        let c = SyncCoordinator(store: RawStore(root: root, client: "c", sdk: "s"),
+        let store = RawStore(root: root, app: "c", sdk: "s")
+        let books = BookRegistry(root: root)
+        let c = SyncCoordinator(store: store, router: PageRouter(books: books, store: store),
                                 tracker: QuietTracker(), publisher: publisher,
                                 notifier: SilentNotifier(), quietWindow: 600)
         c.controlBooks = ["s3/o1013/b1"]
         c.modeLog = ModeLog(root: root)
-        return c
+        return (c, books, store)
+    }
+
+    /// The copy a page is in right now. Folder ids are generated, so a test asks rather than spells.
+    func ref(_ page: PageID, _ books: BookRegistry) throws -> PageRef {
+        PageRef(folder: try XCTUnwrap(books.current(for: page.surface)).folder, page: page)
     }
 
     /// A tap is evidence and is kept in raw, but it is not a page: it must never start a countdown
     /// or appear in the pending list as an unclickable notebook.
     func testATapIsStoredButNeverPending() throws {
-        let c = try makeCoordinator()
+        let (c, books, store) = try makeCoordinator()
         c.ingestLive([tap(20.02, 43.88)])
 
-        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(control.rawRelativePath).path),
-                      "the tap itself belongs in raw")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.fileURL(for: try ref(control, books)).path),
+                      "the tap itself belongs in the record")
         XCTAssertTrue(c.pendingPages.isEmpty, "but it is not a page waiting to be published")
         XCTAssertEqual(c.modeLog?.state(at: 2_000).ink, .red)
     }
@@ -203,12 +252,12 @@ final class ControlSurfaceTests: XCTestCase {
     /// The same exclusion has to hold after a restart. Recovery reads the working tree, where the
     /// tap is uncommitted by design, so without the check it comes straight back into the list.
     func testRecoveryDoesNotResurrectAControlPage() throws {
-        let c = try makeCoordinator()
+        let (c, books, _) = try makeCoordinator()
         c.ingestLive([tap(20.02, 43.88)])
         c.ingestLive([stroke(note, start: 5_000)])
 
-        let recovered = try makeCoordinator().recoverPending()
-        XCTAssertEqual(recovered, [note], "the note comes back, the tap does not")
+        let recovered = try makeCoordinator().0.recoverPending()
+        XCTAssertEqual(recovered, [try ref(note, books)], "the note comes back, the tap does not")
     }
 
 }
