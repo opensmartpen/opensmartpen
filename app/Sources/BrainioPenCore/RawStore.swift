@@ -89,6 +89,15 @@ public final class RawStore {
         known.contains { $0 == sig && abs($0.start - sig.start) <= duplicateWindowMs }
     }
 
+    /// The newest stroke already in this page's file, by its own time. Nil for a page with none.
+    ///
+    /// Read from the file rather than remembered, because a drain delivers strokes long after
+    /// newer ones have arrived: anything the app remembers about "the last stroke" is out of
+    /// order the moment a notebook comes back from pen memory.
+    public func lastStrokeTime(in ref: PageRef) -> Int? {
+        load(ref).signatures.map(\.start).max()
+    }
+
     /// Ncode pages this copy already holds, for a watcher adopting what is on disk at launch.
     public func pages(in folder: BookFolder) -> [Int] {
         let dir = root.appendingPathComponent(folder.relativePath).appendingPathComponent("raw")

@@ -57,8 +57,13 @@ public final class PageRouter {
                 // read every re-delivery as a second notebook written over the first.
                 let fresh = store.unseen(list, in: ref)
                 if !fresh.isEmpty {
-                    let evidence = CopyEvidence(surface: surface, page: page,
-                                                at: fresh.map(\.start).min() ?? 0,
+                    let at = fresh.map(\.start).min() ?? 0
+                    // Measured from the page's own newest stroke, not from anything remembered:
+                    // a drain arrives long after newer writing, so a remembered "last stroke" is
+                    // out of order exactly when a notebook comes back from pen memory.
+                    let silence = store.lastStrokeTime(in: ref).map { at - $0 } ?? 0
+                    let evidence = CopyEvidence(surface: surface, page: page, at: at,
+                                                silence: max(0, silence), strokes: fresh.count,
                                                 inkOverlap: store.inkOverlap(fresh, with: ref))
                     if let signal = books.copyWatcher.decide(evidence),
                        let copy = books.startNewCopy(of: surface, at: evidence.at, because: signal) {

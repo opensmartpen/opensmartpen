@@ -9,8 +9,16 @@ final class CopyWatcherTests: XCTestCase {
     private let book = "s3/o27/b450"
     private let day = 86_400_000
 
-    private func page(_ n: Int, at ms: Int, overlap: Double = 0) -> CopyEvidence {
-        CopyEvidence(surface: book, page: n, at: ms, inkOverlap: overlap)
+    /// By default: one stroke, no silence, no overlap — an ordinary moment of writing.
+    private func page(_ n: Int, at ms: Int, overlap: Double = 0,
+                      silence: Int = 0, strokes: Int = 1) -> CopyEvidence {
+        CopyEvidence(surface: book, page: n, at: ms, silence: silence,
+                     strokes: strokes, inkOverlap: overlap)
+    }
+
+    /// A page's worth of writing on a page put down a week ago.
+    private func pageful(_ n: Int, at ms: Int, overlap: Double) -> CopyEvidence {
+        page(n, at: ms, overlap: overlap, silence: 7 * day, strokes: 40)
     }
 
     func testOrdinaryWritingDecidesNothing() {
@@ -20,19 +28,44 @@ final class CopyWatcherTests: XCTestCase {
         XCTAssertNil(w.decide(page(3, at: 2 * day)))
     }
 
-    func testInkOnInkDecidesOnItsOwn() {
+    func testAPagefulOfWritingOverOldInkDecides() {
         let w = CopyWatcher()
         _ = w.decide(page(1, at: 0))
-        // Same sheet, same moment, but the new strokes land where the old ones are. One sheet
+        // A sheet put down a week ago, then written full again in the same places. One sheet
         // cannot hold the same writing twice.
-        XCTAssertEqual(w.decide(page(1, at: 60_000, overlap: 0.6)), .inkOverlap)
+        XCTAssertEqual(w.decide(pageful(1, at: 7 * day, overlap: 0.6)), .inkOverlap)
     }
 
     func testALittleOverlapIsAnnotationNotANewNotebook() {
         let w = CopyWatcher()
         _ = w.decide(page(1, at: 0))
-        XCTAssertNil(w.decide(page(1, at: 60_000, overlap: 0.05)),
+        XCTAssertNil(w.decide(pageful(1, at: 7 * day, overlap: 0.05)),
                      "adding a line between existing ones touches some of the same ink")
+    }
+
+    /// The bug that made one pad into five. Letters in a word sit closer together than one Ncode
+    /// cell, so every stroke of ordinary handwriting lands on the ink of the stroke before it.
+    func testOrdinaryHandwritingNeverDecides() {
+        let w = CopyWatcher()
+        _ = w.decide(page(1, at: 0))
+        for i in 1...200 {
+            XCTAssertNil(w.decide(page(1, at: i * 800, overlap: 0.9)),
+                         "stroke \(i) landed on its own page and is still the same page")
+        }
+    }
+
+    /// One stroke is never a notebook, however exactly it lands on an old one.
+    func testOneStrokeAfterASilenceDoesNotDecide() {
+        let w = CopyWatcher()
+        _ = w.decide(page(1, at: 0))
+        XCTAssertNil(w.decide(page(1, at: 30 * day, overlap: 1.0, silence: 30 * day, strokes: 1)))
+    }
+
+    /// Picking a page up after a week and carrying on in the space that is left is not a new pad.
+    func testResumingAPageAfterASilenceWithoutOverlapDoesNotDecide() {
+        let w = CopyWatcher()
+        _ = w.decide(page(1, at: 0))
+        XCTAssertNil(w.decide(pageful(1, at: 7 * day, overlap: 0.1)))
     }
 
     func testStartingAgainAtTheFrontAfterASilenceDecides() {

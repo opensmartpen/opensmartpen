@@ -25,18 +25,30 @@ final class RouterTests: XCTestCase {
         try? FileManager.default.removeItem(at: root)
     }
 
-    /// A line of writing across a page, offset so two calls with different `at` do not look alike.
-    private func strokes(page: Int, at ms: Int, x: Double = 10) -> [Stroke] {
+    /// Lines of writing across a page, offset so two calls with different `at` do not look alike.
+    private func strokes(page: Int, at ms: Int, x: Double = 10, count: Int = 1) -> [Stroke] {
         let id = PageID(section: 3, owner: 27, book: 450, page: page)
-        return [Stroke(page: id, start: ms, end: ms + 100,
-                       dots: (0..<20).map { DotSample(x: x + Double($0), y: 20, force: 0.5, dt: 12) },
-                       source: .live, penMac: "M", firmware: "F")]
+        return (0..<count).map { n in
+            Stroke(page: id, start: ms + n * 900, end: ms + n * 900 + 100,
+                   dots: (0..<20).map { DotSample(x: x + Double($0), y: 20 + Double(n), force: 0.5, dt: 12) },
+                   source: .live, penMac: "M", firmware: "F")
+        }
     }
 
-    private func write(page: Int, at ms: Int, x: Double = 10) throws {
-        for group in router.route(strokes(page: page, at: ms, x: x)) {
+    private func write(page: Int, at ms: Int, x: Double = 10, count: Int = 1) throws {
+        for group in router.route(strokes(page: page, at: ms, x: x, count: count)) {
             try store.append(group.strokes, to: group.folder)
         }
+    }
+
+    /// The failure that made one A4 pad into five on a real Mac, twice. Handwriting is strokes
+    /// landing on other strokes: letters in a word sit closer together than one Ncode cell.
+    func testWritingOnOnePageAllAfternoonIsOnePad() throws {
+        for n in 0..<200 {
+            // Every stroke in the same place, arriving one at a time, as live writing does.
+            try write(page: 1, at: 1_000 + n * 800, x: 10)
+        }
+        XCTAssertEqual(books.copies(of: pad).count, 1)
     }
 
     func testTheFirstStrokeOpensTheOnlyCopy() throws {
@@ -52,9 +64,9 @@ final class RouterTests: XCTestCase {
     }
 
     func testWritingOverTheSamePageOpensASecondCopy() throws {
-        try write(page: 1, at: 0)
-        // The same sheet, written on again in the same place. One sheet cannot hold that twice.
-        try write(page: 1, at: 2 * day)
+        try write(page: 1, at: 0, count: 40)
+        // The same sheet, put down for two days, then written full again in the same places.
+        try write(page: 1, at: 2 * day, count: 40)
 
         XCTAssertEqual(books.copies(of: pad).count, 2)
         let copies = books.copies(of: pad)
@@ -64,21 +76,21 @@ final class RouterTests: XCTestCase {
     }
 
     func testTheTwoCopiesOfOnePageAreSeparateFiles() throws {
-        try write(page: 1, at: 0)
-        try write(page: 1, at: 2 * day)
+        try write(page: 1, at: 0, count: 40)
+        try write(page: 1, at: 2 * day, count: 40)
         let copies = books.copies(of: pad)
         let first = try String(contentsOf: store.fileURL(for: PageRef(folder: copies[0].folder,
             page: PageID(section: 3, owner: 27, book: 450, page: 1))), encoding: .utf8)
         let second = try String(contentsOf: store.fileURL(for: PageRef(folder: copies[1].folder,
             page: PageID(section: 3, owner: 27, book: 450, page: 1))), encoding: .utf8)
-        XCTAssertEqual(first.split(separator: "\n").count, 2, "meta + one stroke")
-        XCTAssertEqual(second.split(separator: "\n").count, 2, "and not three in one file")
+        XCTAssertEqual(first.split(separator: "\n").count, 41, "meta + one pad's writing")
+        XCTAssertEqual(second.split(separator: "\n").count, 41, "and not both pads in one file")
     }
 
     func testAnnotatingBesideOldInkStaysInTheSameCopy() throws {
-        try write(page: 1, at: 0, x: 10)
-        // A line added well clear of the first one — the ordinary case of coming back to a page.
-        try write(page: 1, at: 2 * day, x: 60)
+        try write(page: 1, at: 0, count: 40)
+        // Writing added well clear of it — the ordinary case of coming back to a page.
+        try write(page: 1, at: 2 * day, x: 200, count: 40)
         XCTAssertEqual(books.copies(of: pad).count, 1)
     }
 
@@ -90,8 +102,8 @@ final class RouterTests: XCTestCase {
     }
 
     func testStrokesLandInTheCopyThatWasDecidedForThem() throws {
-        try write(page: 1, at: 0)
-        try write(page: 1, at: 2 * day)
+        try write(page: 1, at: 0, count: 40)
+        try write(page: 1, at: 2 * day, count: 40)
         let copies = books.copies(of: pad)
         // Everything written after the boundary goes to the new copy, and nothing behind it moves.
         try write(page: 2, at: 3 * day)

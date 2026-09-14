@@ -57,20 +57,28 @@ public struct InkGrid: Equatable {
     }
 }
 
-/// What the watcher is being asked about: strokes arriving on one page of one product.
+/// What the watcher is being asked about: writing arriving on one page of one product, which
+/// that page does not already hold.
 public struct CopyEvidence {
     public let surface: String
     /// Ncode page, as the pen reported it.
     public let page: Int
     /// Epoch milliseconds of the first arriving stroke.
     public let at: Int
+    /// How long this page lay untouched before this writing, in milliseconds. Measured from the
+    /// newest stroke already in its file, so a drain cannot make it look like a fresh page.
+    public let silence: Int
+    /// How many strokes are arriving that the page does not already hold.
+    public let strokes: Int
     /// The share of arriving dots that land on ink already in that page's file, 0 to 1.
     public let inkOverlap: Double
 
-    public init(surface: String, page: Int, at: Int, inkOverlap: Double) {
+    public init(surface: String, page: Int, at: Int, silence: Int, strokes: Int, inkOverlap: Double) {
         self.surface = surface
         self.page = page
         self.at = at
+        self.silence = silence
+        self.strokes = strokes
         self.inkOverlap = inkOverlap
     }
 }
@@ -82,9 +90,18 @@ public struct CopyEvidence {
 /// interleaves two notebooks inside one captured file and can only be repaired by cutting a file
 /// we do not cut.
 public final class CopyWatcher {
-    /// How much of the arriving ink must land on ink already there. Well above what annotating
-    /// between existing lines produces, and well below what writing the same sheet twice does.
-    public static let overlapShare = 0.25
+    /// How much of the arriving ink must land on ink already there.
+    ///
+    /// Half, not a quarter. Letters in a word sit closer together than one Ncode cell, so ordinary
+    /// writing lands on its own ink constantly — this number cannot tell writing from a second
+    /// notebook on its own, and the gates below are what make it mean anything.
+    public static let overlapShare = 0.5
+    /// A page must have lain untouched this long before overlap on it means anything. Writing is
+    /// strokes landing on other strokes; that is what writing *is*, and a sitting is not evidence.
+    public static let overlapSilenceHours = 12.0
+    /// And enough new writing to be a page rather than a mark. One stroke is never a notebook,
+    /// however exactly it lands on an old one.
+    public static let overlapStrokes = 10
     /// A sequence restart counts only after a silence. A notebook finished this morning and
     /// started again this afternoon is one notebook.
     public static let restartSilenceDays = 1.0
@@ -110,8 +127,12 @@ public final class CopyWatcher {
             return nil
         }
 
-        // Ink on ink decides alone. Nothing else has to agree, and nothing else can overrule it.
-        if e.inkOverlap >= Self.overlapShare {
+        // Ink on ink, but only once the page has been put down and picked up again, and only for
+        // a page's worth of writing. Asked of every arriving stroke it says "yes" to ordinary
+        // handwriting, which made one pad into five on a real Mac inside a day.
+        if e.inkOverlap >= Self.overlapShare,
+           e.strokes >= Self.overlapStrokes,
+           Double(e.silence) >= Self.overlapSilenceHours * 3_600_000 {
             seen[e.surface] = Seen(lowest: e.page, highWater: e.page, at: e.at)
             return .inkOverlap
         }
