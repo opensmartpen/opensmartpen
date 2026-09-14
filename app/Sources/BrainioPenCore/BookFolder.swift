@@ -36,7 +36,7 @@ public struct BookFolder: Hashable, CustomStringConvertible {
     /// stays page 4 however a person counts it (ADR-002).
     public func rawPath(page: Int) -> String { "\(relativePath)/raw/p\(page).jsonl" }
 
-    /// A readable file is named as a person counts pages, so the same sheet can be `page-01`.
+    /// A readable file carries the same page name as the captured one it was made from.
     public func pagePath(stem: String, ext: String) -> String { "\(relativePath)/pages/\(stem).\(ext)" }
 
     /// Parse a directory name back. Nil when the trailing id is not one of ours, so a folder

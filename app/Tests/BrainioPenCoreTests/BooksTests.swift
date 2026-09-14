@@ -35,8 +35,8 @@ final class BooksTests: XCTestCase {
         XCTAssertEqual(pad.name, "s3-o27-b450-7f3a9c")
         XCTAssertEqual(pad.relativePath, "books/s3-o27-b450-7f3a9c")
         XCTAssertEqual(pad.rawPath(page: 4), "books/s3-o27-b450-7f3a9c/raw/p4.jsonl")
-        XCTAssertEqual(pad.pagePath(stem: "page-01", ext: "svg"),
-                       "books/s3-o27-b450-7f3a9c/pages/page-01.svg")
+        XCTAssertEqual(pad.pagePath(stem: "p1", ext: "svg"),
+                       "books/s3-o27-b450-7f3a9c/pages/p1.svg")
     }
 
     func testAFolderNameParsesBackToTheSurfaceIdentity() {
@@ -62,7 +62,7 @@ final class BooksTests: XCTestCase {
 
     func testAPageFilePathRoundTrips() {
         XCTAssertEqual(PageRef(rawRelativePath: padPage.rawRelativePath), padPage)
-        XCTAssertNil(PageRef(rawRelativePath: "books/s3-o27-b450-7f3a9c/pages/page-01.svg"))
+        XCTAssertNil(PageRef(rawRelativePath: "books/s3-o27-b450-7f3a9c/pages/p1.svg"))
         XCTAssertNil(PageRef(rawRelativePath: "books/s3-o27-b450-7f3a9c/book.json"))
         XCTAssertNil(PageRef(rawRelativePath: "mode.jsonl"))
     }
@@ -82,7 +82,10 @@ final class BooksTests: XCTestCase {
         let books = BookRegistry(root: root)
         let page = PageRef(folder: offset, page: PageID(section: 3, owner: 99, book: 1, page: 15))
         XCTAssertEqual(books.label(for: page).detail, "page 12")
-        XCTAssertEqual(books.record(for: page)?.pageStem(4), "page-01")
+        XCTAssertEqual(books.record(for: page)?.pageStem(4), "p4",
+                       "a readable file carries the page name the client used")
+        XCTAssertEqual(books.record(for: page)?.humanPage(4), 1,
+                       "and the number a person counts to is still there to read")
     }
 
     func testUnknownBookIsNeverNamedAfterItsProductCode() {
@@ -205,15 +208,15 @@ final class BooksTests: XCTestCase {
         let books = BookRegistry(root: root)
         XCTAssertNil(books.derivedFile(for: padPage), "nothing rendered yet")
 
-        try Data().write(to: dir.appendingPathComponent("page-03.svg"))
-        XCTAssertEqual(books.derivedFile(for: padPage)?.lastPathComponent, "page-03.svg")
-        try Data().write(to: dir.appendingPathComponent("page-03.png"))
-        XCTAssertEqual(books.derivedFile(for: padPage)?.lastPathComponent, "page-03.png")
+        try Data().write(to: dir.appendingPathComponent("p3.svg"))
+        XCTAssertEqual(books.derivedFile(for: padPage)?.lastPathComponent, "p3.svg")
+        try Data().write(to: dir.appendingPathComponent("p3.png"))
+        XCTAssertEqual(books.derivedFile(for: padPage)?.lastPathComponent, "p3.png")
     }
 
     func testCapturedAndReadableFilesStayApart() {
         XCTAssertTrue(padPage.rawRelativePath.contains("/raw/"))
-        XCTAssertTrue(pad.pagePath(stem: "page-03", ext: "svg").contains("/pages/"))
+        XCTAssertTrue(pad.pagePath(stem: "p3", ext: "svg").contains("/pages/"))
     }
 
     func testRecentPagesAreNewestFirst() throws {

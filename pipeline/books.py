@@ -16,8 +16,8 @@ reported and an id the app generated (ADR-002):
           book.json          {"surface": "s3/o27/b450", "title": "Ncode A4 pad",
                               "width_mm": 210.0, "height_mm": 297.0, "first_page": 1,
                               "started_at": 0, "decided_by": null}
-          raw/     p1.jsonl   as the client named the page
-          pages/   page-01.svg page-01.md   as a person counts it
+          raw/     p1.jsonl           as the client named the page
+          pages/   p1.svg p1.md        the same page, made readable
 
 The id is opaque. Nothing may read meaning out of it; `book.json` is the only authority on
 what a copy is called and where its page numbers start. That is what lets a title change
@@ -64,7 +64,7 @@ class Book:
         return human_page + self.first_page - 1
 
     def page_stem(self, ncode_page: int) -> str:
-        return f"page-{self.human_page(ncode_page):02d}"
+        return f"p{ncode_page}"
 
 
 class Books:

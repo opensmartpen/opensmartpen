@@ -122,11 +122,13 @@ def page_meta(png: pathlib.Path, root: pathlib.Path, books: Books) -> dict:
     # pages/ sits inside the copy's own folder, so the folder is two levels up from the PNG.
     folder = png.parent.parent.name
     book = books.for_folder(folder)
-    m = re.match(r"page-(\d+)$", png.stem)
+    # A readable file carries the page name the client used, so the stem *is* the Ncode page.
+    m = re.match(r"p(\d+)$", png.stem)
     if not (book and m):
         return {"page": f"{folder}/{png.stem}"}
-    ncode = book.ncode_page(int(m.group(1)))
-    meta = {"notebook": book.title, "page": png.stem.replace("page-", "").lstrip("0") or "1",
+    ncode = int(m.group(1))
+    # The number a person counts to still goes in the frontmatter — it just no longer names a file.
+    meta = {"notebook": book.title, "page": str(book.human_page(ncode)),
             "ncode": f"{book.surface}/p{ncode}", "copy": folder}
     raw = raw_path(root, folder, ncode)
     if not raw.exists():

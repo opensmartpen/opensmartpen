@@ -8,9 +8,9 @@ Raw page files (format: `docs/stroke-format.md`; where they live: ADR-002), deli
 
 ## Expected outputs, per page
 
-- `books/<copy>/pages/page-NN.svg` — strokes as paths, width from force, page rectangle from geometry.
-- `books/<copy>/pages/page-NN.png` — raster of the SVG at a resolution suited to vision models (roughly 150 dpi).
-- `books/<copy>/pages/page-NN.md` — transcription with frontmatter: page id, first and last stroke time, stroke count, model, confidence or a flag for unreadable regions.
+- `books/<copy>/pages/p{page}.svg` — strokes as paths, width from force, page rectangle from geometry.
+- `books/<copy>/pages/p{page}.png` — raster of the SVG at a resolution suited to vision models (roughly 150 dpi).
+- `books/<copy>/pages/p{page}.md` — transcription with frontmatter: page id, first and last stroke time, stroke count, model, confidence or a flag for unreadable regions.
 - `geometry/s{section}-o{owner}-b{book}.json` — page rectangle and margins, discovered once per book (from NeoLAB's `.nproj` via the Web SDK's storage path, else measured from strokes assuming A4 or A5).
 
 Derived files are regenerated from raw whenever raw changes and are never hand-edited.

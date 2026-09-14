@@ -218,7 +218,8 @@ final class MigrationTests: XCTestCase {
         XCTAssertEqual(record.widthMM, 210)
         XCTAssertTrue(exists(record.folder.rawPath(page: 1)))
         XCTAssertTrue(exists(record.folder.rawPath(page: 2)))
-        XCTAssertTrue(exists(record.folder.pagePath(stem: "page-01", ext: "svg")))
+        XCTAssertTrue(exists(record.folder.pagePath(stem: "page-01", ext: "svg")),
+                      "readable files come across under whatever the old layout called them")
         XCTAssertTrue(exists("mode.jsonl"), "a setting has no surface, so it sits at the root")
         XCTAssertTrue(exists("palette.json"))
         XCTAssertTrue(exists("pens/pen.json"))

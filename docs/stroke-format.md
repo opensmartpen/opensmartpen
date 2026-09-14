@@ -70,14 +70,16 @@ A copy's own `book.json` records its paper size when we know it, so rendering is
 
 ## Derived files
 
-Beside the captured files, inside the same copy, and named as a *person* counts pages rather than
-as the pen numbers them:
+Beside the captured files, inside the same copy, carrying the same page name:
 
 ```
-books/s3-o27-b450-7f3a9c/pages/page-12.svg   # rendered strokes, pressure → width
-books/s3-o27-b450-7f3a9c/pages/page-12.png   # raster for vision models
-books/s3-o27-b450-7f3a9c/pages/page-12.md    # transcription + frontmatter
+books/s3-o27-b450-7f3a9c/pages/p12.svg   # rendered strokes, pressure → width
+books/s3-o27-b450-7f3a9c/pages/p12.png   # raster for vision models
+books/s3-o27-b450-7f3a9c/pages/p12.md    # transcription + frontmatter
 ```
+
+The number a person counts to lives in `book.json` and in the transcription's frontmatter. It does
+not name a file, so `raw/p12.jsonl` and `pages/p12.svg` pair by eye.
 
 Everything in `pages/` can be deleted and made again. Nothing in `raw/` can. Derived files are
 regenerated from the record and are never edited by hand.

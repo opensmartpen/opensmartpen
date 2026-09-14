@@ -51,12 +51,12 @@ Inside it, captured and derived stay apart. Everything in `pages/` can be delete
     s3-o27-b450-7f3a9c/
       book.json                     surface identity, title, paper size, when this copy began
       raw/     p1.jsonl  p2.jsonl        as the client named them
-      pages/   page-01.svg  page-01.md   as a person counts them
-               page-02.svg  page-02.md
+      pages/   p1.svg  p1.md              the same pages, made readable
+               p2.svg  p2.md
     s3-o1012-b3017-2b81e4/
       book.json
       raw/     p4.jsonl
-      pages/   page-04.svg  page-04.md
+      pages/   p4.svg  p4.md
 ```
 
 **The name of a folder is the surface identity, then the id.** The two are joined by a dash, and any `/` in the surface identity becomes a dash. The pen's `s3/o27/b450` therefore gives `s3-o27-b450-7f3a9c`.
@@ -65,7 +65,9 @@ Inside it, captured and derived stay apart. Everything in `pages/` can be delete
 
 **The id is opaque and permanent.** Nothing may read meaning out of it. The surface identity in the name is there for a person to read. `book.json` is the only authority.
 
-**A file keeps the name its own reader uses.** In `raw/` a page is named as the client named it, so `p4.jsonl` is Ncode page 4. In `pages/` it is named as a person counts it, so the same sheet can be `page-01`. `book.json` holds which sheet its owner calls page 1.
+**One sheet has one name.** A page is named as the client named it, and that name carries through: `raw/p4.jsonl` becomes `pages/p4.svg`. You can pair a captured file with its readable one by eye, and no rule stands between them.
+
+The number a person counts to is not thrown away. `book.json` holds which sheet its owner calls page 1, and everything a person reads uses it — the panel, and the front matter of a transcription. It just does not name a file.
 
 **We decide a new copy ourselves, and we never ask.** Two signals beat time alone. A sequence restart: ink appears at the front and marches forward. Ink overlap: new strokes cross old ones, so it cannot be the same sheet.
 
@@ -90,6 +92,7 @@ Inside it, captured and derived stay apart. Everything in `pages/` can be delete
 - **Ask the person when a new copy appears** — the app must run without attention. A question at the wrong moment is worse than a guess we can repair.
 - **Put the pen's data at `~/Brainio`** — a second Brainio product would then have to share that folder, or move the first one.
 - **Put the title in the folder name** — a rename would then move every file and break every link into it.
+- **Number a readable file as a person counts pages** — `raw/p4.jsonl` then becomes `pages/page-01.svg`, and every tool needs the book record before it can pair the two. The offset is still there for a person to read; it does not have to name a file as well.
 - **File a setting under the page of the tap that caused it** — a click in the app has no page, so many settings would have no home.
 
 ## Consequences
@@ -100,4 +103,5 @@ Inside it, captured and derived stay apart. Everything in `pages/` can be delete
 - **Harder:** the app must guess whether a copy is new. Two notebooks of the same product, in use at the same time, is the case it will get wrong.
 - **Harder:** the surface identity alone no longer finds a page. Something must read the book records to learn which folder holds it.
 - **Harder:** a repair moves files, so a tool must exist to do it. Until it does, a wrong guess is fixed by hand.
+- **Harder:** a readable file carries the pen's page number, which is not the number printed on the sheet. The LAMY notebook starts at `p4.svg` and has no `p1`.
 - **Committed-to:** the generated id as opaque and permanent, a page as movable between book folders, and one file for every setting.

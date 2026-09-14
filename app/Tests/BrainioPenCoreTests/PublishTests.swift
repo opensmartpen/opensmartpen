@@ -180,14 +180,14 @@ final class PublishTests: XCTestCase {
         let folder = try ref(a, flow.books).folder
         let pages = root.appendingPathComponent("\(folder.relativePath)/pages")
         try FileManager.default.createDirectory(at: pages, withIntermediateDirectories: true)
-        try Data("<svg/>".utf8).write(to: pages.appendingPathComponent("page-01.svg"))
+        try Data("<svg/>".utf8).write(to: pages.appendingPathComponent("p1.svg"))
 
         let done = expectation(description: "published")
         flow.coordinator.publishAll { _ in done.fulfill() }
         wait(for: [done], timeout: 30)
         let tracked = try p.run(["ls-files"]).output
         XCTAssertTrue(tracked.contains("raw/p1.jsonl"))
-        XCTAssertFalse(tracked.contains("page-01.svg"))
+        XCTAssertFalse(tracked.contains("p1.svg"))
     }
 
     func testControlSurfaceTapsAreNotFiledAsNotes() throws {

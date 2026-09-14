@@ -16,7 +16,7 @@ Terms used in this project, kept precise. Update inline when a term is resolved.
 - **Setting** — an event that changes how we draw or read the marks, such as a new ink colour. Replayed every time a readable file is made.
 - **Command** — an event that asks for work, such as "share this page". Done one time only; remaking the page must not send it again.
 - **Raw** — the append-only record of every captured event. Source of truth. Never edited, only appended to. A copy's `raw/` holds its per-page stroke files; `mode.jsonl` sits at the root, because a setting has no surface to file it under.
-- **Derived** — anything regenerated from raw: SVG, PNG, Markdown transcription, note index. Lives in a copy's `pages/`, named as a person counts pages rather than as the pen numbers them. Never edited by hand; deleting all of it costs nothing.
+- **Derived** — anything regenerated from raw: SVG, PNG, Markdown transcription, note index. Lives in a copy's `pages/`, under the same page name as the captured file it was made from. Never edited by hand; deleting all of it costs nothing.
 - **Live** — dots received over Bluetooth while the pen is connected.
 - **Offline** — strokes stored in pen memory while disconnected and drained on reconnect. Same data, different `src`.
 - **Quiet page** — a page with no new strokes for the debounce window (default 10 minutes). Only quiet pages are published for processing.
