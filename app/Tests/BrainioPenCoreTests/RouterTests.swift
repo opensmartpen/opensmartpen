@@ -115,6 +115,42 @@ final class RouterTests: XCTestCase {
         XCTAssertEqual(books2.copies(of: pad).count, 1, "carrying on where you stopped is one notebook")
     }
 
+    /// The pen sends the stroke in progress at connection time both from its memory and live, and
+    /// a whole notebook again when a drain is retried. A re-delivered stroke lands on its own ink
+    /// exactly, so judging it as new writing reads every drain as a second pad written over the
+    /// first — which is what happened on a real Mac: one A4 pad became five.
+    func testARedeliveredStrokeIsNotASecondNotebook() throws {
+        let first = strokes(page: 1, at: 0)
+        for group in router.route(first) { try store.append(group.strokes, to: group.folder) }
+
+        // The same strokes again, a few milliseconds off, as an offline drain delivers them.
+        var again = first
+        again[0].id = UUID()
+        again[0].start -= 23
+        again[0].source = .offline
+        for group in router.route(again) { try store.append(group.strokes, to: group.folder) }
+
+        XCTAssertEqual(books.copies(of: pad).count, 1, "the same writing arriving twice is one notebook")
+        let file = store.fileURL(for: PageRef(folder: try XCTUnwrap(books.current(for: pad)).folder,
+                                              page: PageID(section: 3, owner: 27, book: 450, page: 1)))
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8).split(separator: "\n").count, 2,
+                       "meta + one stroke: the duplicate is dropped, not filed in a copy of its own")
+    }
+
+    /// A whole page re-delivered — every stroke of it — is the case that actually bit.
+    func testAWholePageRedeliveredIsNotASecondNotebook() throws {
+        var batch: [Stroke] = []
+        for page in 1...3 { batch += strokes(page: page, at: page * 1000) }
+        for group in router.route(batch) { try store.append(group.strokes, to: group.folder) }
+
+        for _ in 1...4 {
+            var drain = batch
+            for i in drain.indices { drain[i].id = UUID(); drain[i].source = .offline }
+            for group in router.route(drain) { try store.append(group.strokes, to: group.folder) }
+        }
+        XCTAssertEqual(books.copies(of: pad).count, 1, "four retried drains are still one pad")
+    }
+
     func testTwoProductsAreRoutedApartInOneBatch() throws {
         let lamy = PageID(section: 3, owner: 1012, book: 3017, page: 4)
         let mixed = strokes(page: 1, at: 0) + [

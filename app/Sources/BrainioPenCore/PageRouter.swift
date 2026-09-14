@@ -51,13 +51,22 @@ public final class PageRouter {
             for (page, list) in byPage {
                 guard let id = PageID(surface: surface, page: page) else { continue }
                 let ref = PageRef(folder: folder, page: id)
-                let evidence = CopyEvidence(surface: surface, page: page,
-                                            at: list.map(\.start).min() ?? 0,
-                                            inkOverlap: store.inkOverlap(list, with: ref))
-                if let signal = books.copyWatcher.decide(evidence),
-                   let fresh = books.startNewCopy(of: surface, at: evidence.at, because: signal) {
-                    folder = fresh.folder
+
+                // Only what this page does not already hold may decide anything. A stroke the pen
+                // has sent before lands on its own ink exactly, so judging the whole batch would
+                // read every re-delivery as a second notebook written over the first.
+                let fresh = store.unseen(list, in: ref)
+                if !fresh.isEmpty {
+                    let evidence = CopyEvidence(surface: surface, page: page,
+                                                at: fresh.map(\.start).min() ?? 0,
+                                                inkOverlap: store.inkOverlap(fresh, with: ref))
+                    if let signal = books.copyWatcher.decide(evidence),
+                       let copy = books.startNewCopy(of: surface, at: evidence.at, because: signal) {
+                        folder = copy.folder
+                    }
                 }
+                // The duplicates travel on to the store anyway, which drops them there. Filtering
+                // them out here would make this the second place that decides what a duplicate is.
                 out[folder, default: []].append(contentsOf: list)
             }
         }

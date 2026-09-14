@@ -64,12 +64,29 @@ public final class RawStore {
         root.appendingPathComponent(ref.rawRelativePath)
     }
 
+    /// The strokes here that this page does not already hold.
+    ///
+    /// Asked before anything is decided from them. The pen re-delivers strokes it has already
+    /// sent — the same writing arriving live and again from memory — and a re-delivered stroke
+    /// lands on its own ink exactly. Judged as new writing it would look like a second notebook
+    /// written over the first, every single drain.
+    public func unseen(_ strokes: [Stroke], in ref: PageRef) -> [Stroke] {
+        let page = load(ref)
+        return strokes.filter { !isDuplicate(Signature($0), of: page.signatures) }
+    }
+
     /// The share of these strokes' dots that land on ink already in this page's file, 0 to 1.
     /// Reading the file, not a guess: the question is whether one sheet is holding two notebooks.
+    ///
+    /// Pass only strokes this page does not already hold — see `unseen`.
     public func inkOverlap(_ strokes: [Stroke], with ref: PageRef) -> Double {
         let page = load(ref)
         guard !page.ink.isEmpty else { return 0 }
         return page.ink.share(of: strokes.flatMap(\.dots))
+    }
+
+    private func isDuplicate(_ sig: Signature, of known: [Signature]) -> Bool {
+        known.contains { $0 == sig && abs($0.start - sig.start) <= duplicateWindowMs }
     }
 
     /// Ncode pages this copy already holds, for a watcher adopting what is on disk at launch.
@@ -95,7 +112,7 @@ public final class RawStore {
             let exists = fm.fileExists(atPath: url.path)
             for s in list.sorted(by: { $0.start < $1.start }) {
                 let sig = Signature(s)
-                if page.signatures.contains(where: { $0 == sig && abs($0.start - sig.start) <= duplicateWindowMs }) {
+                if isDuplicate(sig, of: page.signatures) {
                     Log.info("dropped duplicate \(s.source.rawValue) stroke at \(s.start) on \(ref)")
                     continue
                 }
