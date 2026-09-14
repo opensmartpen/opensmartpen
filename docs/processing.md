@@ -1,10 +1,10 @@
 # Processing (the DAM side)
 
-Not built yet. This page records what the processing agent is expected to do with the raw files Brainio Pen publishes, so the two halves stay aligned. See ADR-002.
+Not built yet. This page records what the processing agent is expected to do with the raw files Brainio Pen publishes, so the two halves stay aligned. ADR-005 ends at the raw file; how those files reach this side is undecided, so the input described below is the shape we are working towards, not a settled contract.
 
 ## Input
 
-A git repository containing `raw/s{section}/o{owner}/b{book}/p{page}.jsonl` files (format: `docs/stroke-format.md`). Every commit touches only pages that were quiet for ten minutes or were drained from pen memory, so each commit is a batch of finished pages. Commit messages list the pages: `notes: N pages (reason)` followed by one `- s3/o27/b1234/p12` line per page.
+Raw page files (format: `docs/stroke-format.md`; where they live: ADR-002), delivered in batches. Every batch holds only pages that had gone quiet or were drained from pen memory, so each one is a set of finished pages (ADR-004).
 
 ## Expected outputs, per page
 

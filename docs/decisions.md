@@ -1,24 +1,14 @@
 # Decisions
 
-Running log. Newest at the bottom. Each entry: what was decided, why, what it rules out.
+Running log. Newest at the bottom. Measurements, incidents, dead ends, open questions and ideas.
+
+A decision leaves this log the moment an accepted ADR holds it — the ADR keeps the reasoning, and `docs/adrs/index.md` is the list. Drafts do not count.
 
 ## 2026-09-10 — Hardware
 
 - Pen: **Neo smartpen A1** (NWP-F151), Bluetooth 5.0, 160 A4 pages offline memory, C1 gel refill 0.5 mm.
 - Paper: NeoLAB **Ncode A4** bundle (NC-P0081E) and **LAMY digital paper** (NC-P0198E). Measured 2026-09-11: A4 pad is s3/o27/b450, LAMY paper is s3/o1012/b3017 (not owner 27; LAMY has its own owner code).
 - Consequence: page geometry for these two books must come from NeoLAB's `.nproj` data or be measured from strokes. See `docs/stroke-format.md`.
-
-## 2026-09-10 — Client is macOS, not iOS
-
-- Near-time is enough: a page should be digitised within ~10 minutes of the last stroke. No live streaming to a phone.
-- Build a **macOS app** on iOS-SDK3.0 (`NISDK3`, Swift, targets macOS 10.13+). It connects when the pen is in range, drains offline memory, and receives live dots when the pen is used at the desk.
-- Rules out: iOS app, background Bluetooth on a phone, App Store distribution (also sidesteps the GPL distribution question for now).
-
-## 2026-09-10 — Storage and processing
-
-- **Source of truth is the raw dot stream**, one append-only JSONL file per physical page. SVG and PNG are derived. Markdown transcription is derived.
-- **GitHub-backed.** The Mac app commits raw pages; the processing side commits derived files. DAM integration is deferred; the agent will be always-on when it comes, so wake semantics do not matter.
-- Debounce lives in the client: a page is "quiet" after N minutes without strokes (default 10), then it is published for processing.
 
 ## 2026-09-10 — Transcription
 
@@ -28,15 +18,9 @@ Running log. Newest at the bottom. Each entry: what was decided, why, what it ru
 
 - Open. The pen's unit is the page. Grouping pages into notes is a derived index; keep a log of how other products do it in `docs/landscape-log.md` and decide once real data exists.
 
-## 2026-09-10 — Responsibilities (late evening clarification)
-
-- Brainio Pen only keeps raw files current in git. Fully autonomous: auto-connect, auto-drain, commit and push, delete from pen after push. Notifies the person only on problems.
-- All rendering and transcription happens in DAM, off the git repo. Recorded as ADR-002; ADR-001 records the raw-log-as-source-of-truth decision.
-
 ## 2026-09-11 — First contact with the A1
 
 - End to end worked on the first attempt: pair, authorise, drain (12 offline strokes), delete from pen, live strokes, reconnect in 2 s after a restart.
-- Found and fixed: pending pages lived only in memory, so a restart stranded a written-but-uncommitted page. Brainio Pen now adopts every uncommitted raw file on startup, dated by its modification time.
 - Pen colour for live strokes arrives as 0xFFFFFF ("unset"); stored as black.
 - Notes repo stays local for now (`~/PenBridge/notes`, no remote); the user does not want it on GitHub yet.
 - Later: pen auto power-off is 5 min and auto power-on is off. Keep the defaults for now; add config options to set both from Brainio Pen.
@@ -112,7 +96,7 @@ Not built: there is nothing to test it against until a second notebook of the sa
 - **Mode changes are an event log, not a current value.** `raw/mode.jsonl`, one line per change, timestamped with the tap's own time. A current value cannot work: a tap made away from the Mac waits in pen memory and arrives at the next drain, so a whole morning's pages would render in whatever colour was selected by the evening.
 - **Each line records only what changed.** Full state per event was the first design and it is wrong for the same reason: events are appended in arrival order, not time order, so a line written at 18:05 cannot know about a tap made at 09:20 that has not drained yet, and would claim a width that was never in force. A change is true whenever it is written down. Readers replay in timestamp order.
 - **Returning to the defaults is derived, never written.** After a long enough silence, writing resumes at the pen's defaults. The boundary is computed from the gap between consecutive strokes across the whole repo — not per page, since turning a page is not a reset — so nothing has to be recorded and no third writer exists. Two corrections found while building it: the boundary must censor the event replay rather than gate a single stroke, or the next stroke finds last week's colour and un-resets itself; and taps count as writing for the gap, or tapping red after a week away puts the boundary *after* the tap and silently discards the choice.
-- **The pen's own power-off is evidence, never input.** Brainio Pen logs it, and it is what identified the reset boundary (two power cycles, two resets to black, no timer needed). It must not be joined on: we only hear it while connected, so a pen that sleeps in a bag reports nothing, and a derived file that depends on what was observed rather than on what was written is no longer reproducible. ADR-002. The gap is worse at describing the pen and better as a rule.
+- **The pen's own power-off is evidence, never input.** Brainio Pen logs it, and it is what identified the reset boundary (two power cycles, two resets to black, no timer needed). It must not be joined on: we only hear it while connected, so a pen that sleeps in a bag reports nothing, and a derived file that depends on what was observed rather than on what was written is no longer reproducible (ADR-001). The gap is worse at describing the pen and better as a rule.
 - **The control book is the first case where derived is a deliberate subset of raw.** The tap is stored — the pen saw it, so raw says so — but it never enters the tracker, so it starts no publish countdown and never appears in the panel as an unclickable notebook; and `pages/` gets nothing, since asking a vision model to read six dots is not a page. It rides the next publish rather than triggering one. Until now derived was simply a regeneration of raw; this is the first place the two diverge on purpose.
 - **Hex values and widths live in `palette.json` in the notes repo**, not in code, so the panel and the renderer cannot disagree about what `red` looks like. Ten ink names; black, red, blue and green measured from the Neo export, five estimated at the user's request (the printed swatch is markedly duller than the ink it selects, so the strip cannot be used to measure them), and white left null.
 - **White is a dead button.** Tapping it is logged and stored, and selects nothing, because what it means is undecided. A button that does nothing is easier to explain than one that silently renders a page in an ink nobody measured.
@@ -128,7 +112,6 @@ Not built: there is nothing to test it against until a second notebook of the sa
 - **The capture app's directory is `app/`, not `BrainioPen/`.** Inside a repo already called `brainio-pen`, a `BrainioPen/BrainioPen/Sources/BrainioPen` path says the name three times and locates nothing. `app/` names the component by its role, which is what `pipeline/` and `docs/` already do.
 - **Identifiers are `BrainioPen`; anything a person reads says "Brainio Pen".** Targets and the log directory are one word; notification titles, tooltips, window titles, the Info.plist display name and the bundle's own filename take the space. The binary and the slugs are `brainio-pen`.
 - **Changing the bundle id costs both TCC grants.** macOS keys Bluetooth and notification permission to the bundle identifier, so the first launch under `com.brainio.pen` asks for both again, and the pen does not connect until Bluetooth is granted. Saved window positions reset with it. Unavoidable, and the reason the installer prints it.
-- **Two agents must never run at once.** `install-launchagent.sh` boots out `com.apoco.penbridge` and deletes `~/Applications/PenBridge.app` before installing the new one: two capture agents would both own the pen and both commit to the notes repo, which is worse than neither running.
 - **The config directory is copied on first launch, not moved.** `~/.config/penbridge/` → `~/.config/brainio-pen/`, taken whole because `pen-state.json` sits beside `config.json` and half of it is not worth having. Copying leaves an install still on the old name working, so the rename destroys nothing and can be undone by deleting the new directory.
 - **Moving the notes is an explicit act, never a side effect.** The app on its own leaves them alone: `repoPath` travels across with the rest of the config, so an existing repo keeps being written to wherever it already is, and `~/BrainioPen/notes` is only the default for a fresh install. `migrate-from-penbridge.sh --apply` does move `~/PenBridge/notes` → `~/BrainioPen/notes` and rewrites `repoPath` to match, but only when asked, only after stopping the agent that writes there, and it refuses outright if both paths exist rather than merging two note histories. Run on this Mac 2026-09-12: 7 raw pages and the full history moved, `git fsck` clean.
 - **Raw files written from now on carry `"client":"brainio-pen-mac/<version>"`.** Older files keep saying `penbridge-mac`, which is correct — that is what wrote them — and nothing reads the field to make a decision.
@@ -148,3 +131,25 @@ Not built: there is nothing to test it against until a second notebook of the sa
 - **The dot on the app icon sits on the cover's corner, not where the panel puts it.** In the panel it is a badge hung clear of a 15-point row-mark so it cannot be read as part of the book; copied faithfully to 1024 it reads as a dot floating loose in the plate. Centred on the corner and nudged 0.6 units out, it belongs to the notebook — dead centre and it eats the head of the elastic, which turns the whole thing into a pin stuck in a page.
 - **`actool` must compile somewhere of its own.** Pointed straight at `Resources/`, it writes its own `AppIcon.icns` containing only the handful of sizes it thinks are needed, on top of the ten-size one `iconutil` produces. That is how the icon silently became 256 px. The catalog is compiled into a staging directory, only `Assets.car` is taken, and the `.icns` is written last.
 - **Open: notification banners show a blank icon.** The bundle carries a ten-size `AppIcon.icns`, a compiled `Assets.car`, and both `CFBundleIconFile` and `CFBundleIconName`; `NSWorkspace` and Finder resolve the icon correctly. The banner is still a grey placeholder, identically whether the app is started by launchd or from the Finder, and after a full `lsregister -u`, delete, reinstall, `lsregister -f` and `killall usernoted` — so it is neither a stale LaunchServices record nor a notification-daemon cache. The remaining suspect is the ad-hoc signature: no Team ID, nothing for the daemon to attribute the app to. A Developer ID would settle it, and there is nothing further worth trying without one.
+
+## 2026-09-12 — the git boundary withdrawn, and what that cost
+
+- **A withdrawn decision leaves no record behind.** The app-owns-the-pen record's git boundary was removed rather than deprecated, because nothing had been built on it that survived. The consequence to watch: `docs/processing.md` still describes an input shape, and no ADR now backs it.
+- **An accepted body was edited in place, against the ADR rule.** Both records were two days old, single-author and uncommitted to anyone else; supersession would have spent two records on deleting clauses from decisions that had not themselves changed. Recorded here so the exception is visible rather than silent.
+
+## 2026-09-14 — Idea: cluster writing by time, and a post-processing agent
+
+- **Open, worth experimenting with.** A page is not one sitting. You write in a notebook during a meeting, come back in the afternoon and write more on the same sheet, and the two have nothing to do with each other. Grouping by page is grouping by paper, which is a property of the notebook rather than of the thinking.
+- **Cluster by the gap between strokes.** Every stroke already carries an absolute start time, so the clustering is derived and can be redone at any moment with a different threshold — the same property that lets an instance boundary be applied late. Show the clusters in the preview, and let each one be exported on its own.
+- **The mechanism already exists for another purpose.** `reset_boundaries` in `pipeline/render.py` computes gaps between consecutive strokes across the whole repo, to decide when ink returns to the pen's defaults. That is the same computation at a different threshold, on the same timeline.
+- **This is a candidate definition of a note.** The glossary calls a note "a user-meaningful grouping of pages (by book, time gap, or marker), derived and not yet defined". Time-gap clustering answers it, with one difference worth keeping: a cluster can be *part* of a page, not only a run of pages. So a note is a set of strokes, not a set of sheets.
+- **The route is a post-processing agent, not more code in the app.** The pages get read by a model anyway for transcription. The same pass can propose the cluster boundaries and pull out the commands written on the page.
+- **It extracts commands and runs nothing.** Deliberately: the risky half of a command is the doing, and an agent that only proposes has no blast radius. It is also the cheapest way to learn what people actually write before deciding how a command fires — see the open question about which commands may run unattended.
+- **What the experiment answers:** whether a gap threshold matches how sittings actually feel, whether one threshold works or it has to adapt, and what a person really writes when they mean to instruct.
+
+## 2026-09-14 — How these records are kept
+
+- **An ADR states what it decides *and* what it does not.** ADR-001 kept acquiring claims that were never its business — a path scheme, a per-page rule, a geometry source. It now carries a `Boundaries` section naming the record that owns each. Worth copying into the other records.
+- **Third in-place edit of an accepted body, still against the rule.** Same reasoning as 2026-09-12. Three rounds on one record is the evidence that ADR-001 was accepted before it had been read properly — the review now under way exists to stop that happening to 002, 003 and 004.
+- **A decision leaves this log once an accepted ADR holds it.** The ADR keeps the reasoning; this log keeps only what no ADR records — measurements, incidents, dead ends, open questions and ideas. Drafts do not count: a proposed record is not decided, so its material stays here until it is accepted.
+- **Open: where page geometry comes from.** No record claims it. `.nproj` is unparsed and its Firebase source turned out to be your own bucket, not NeoLAB's, so measurement is the only path that runs today. `BookRecord` already holds `widthMM`/`heightMM`, so the gap is authority, not storage: what wins when a measured size, an `.nproj` and a typed-in size disagree.

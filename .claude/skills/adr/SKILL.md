@@ -21,12 +21,15 @@ A good ADR is short. Aim for under ~100 lines of body content. If a record is gr
 
 ## Writing rules
 
+- **Write the body in ASD-STE100** (simplified technical English). Short sentences, 20 words or fewer. One idea per sentence, active voice, one word for one thing. Replace jargon with plain words: *verbatim* → "without changes", *regenerable* → "we can make them again", *append-only* → "we add only to the end of a file". Avoid noun stacks: *page geometry* → "page dimensions". An ADR is read by somebody who has to act on it, not admired.
+- **No project history.** `Context` states the constraint that forces the decision — what the hardware does, what a platform refuses, what a measurement showed. It never says "the first design was X" or "we originally planned Y". A reader needs the fact, not the path taken to it. A rejected earlier approach belongs in `Alternatives Considered`, named as an option, not as a past.
 - **Lead with the thesis.** The first one or two sentences of `Decision` must state what was decided. A reader who stops there should already have the answer.
 - **Name the decision, not the mechanism.** Don't name anything that could plausibly be renamed during implementation without changing the decision. Type names, function signatures, library version pins, env var names, struct fields, internal file paths — out. Interface-level names that the decision is *about* (a destination directory contract, a protocol identifier) are fine.
 - **Consequences are non-optional, and balanced.** Every ADR ends with `Easier / Harder / Committed-to`. Both pros and cons must appear — a Consequences section with only upsides is a sales pitch, not a decision record. Drop labels that don't apply; add a fourth only when it captures something the three don't. This is the part future readers come back for.
 - **Consequences must be objective.** Each bullet is backed by concrete evidence: a measurement, a prior incident, a constraint from a contract or platform, a count, a deadline. Subjective claims ("feels cleaner", "more elegant", "easier to reason about") don't belong — if you can't point at the evidence, the consequence isn't real enough to record.
 - **One-line alternatives.** Each rejected option is `**Name** — reason`. If the reasoning needs a paragraph, the `Decision` section is under-stating something; fix that instead.
-- **No code blocks except trivial inline.** Flow diagrams, schemas, and pseudo-code belong in design docs and the code, not the ADR.
+- **No code blocks except trivial inline, and at most one diagram.** Schemas, data samples and pseudo-code belong in design docs and the code, never in the ADR. One small ASCII diagram is allowed, and only when it shows a shape the prose cannot — how the parts relate, or where something flows. If the diagram needs a legend, or a second diagram, it is a design doc and does not belong here.
+- **State what the record does not decide.** Every ADR carries an `## Areas not covered` section listing the subjects it forms no opinion on. Name the *subject* ("where we put the captured files, and which names they have"), never another record. Cross-links between ADRs go stale, because records get renamed, superseded and dropped; `docs/adrs/index.md` is the list that stays correct. A record that keeps acquiring claims outside its subject makes other records contradict it — ADR-001 took a path scheme, a per-page rule and a geometry source before this rule existed.
 - **No re-statement.** If `Consequences` repeats what `Decision` already said, cut it. Each section earns its words.
 
 ## Drafting protocol
@@ -48,15 +51,21 @@ id: NNN                    # zero-padded, matches the filename; omit for DRAFT-
 title: Title
 status: accepted           # accepted | proposed | deprecated
 supersedes: NNN            # id this record replaces (optional)
-subsystem: gateway         # the architecture page this decision concerns
 tags: [envoy, secrets]     # optional free list
 summary: One line stating what was decided.
 ---
 ```
 
 - `supersedes` is a forward link only. The superseded record's status is *derived* by the generator — never hand-stamp the old file.
-- `subsystem` is page-granularity: name the architecture page the decision is about. It drives recompile scoping later.
 - `summary` is the one-liner the index shows; write it so a reader can decide whether to open the full record.
+
+## The running log is not the ADR log
+
+`docs/decisions.md` and `docs/adrs/` split by genre. The log keeps measurements, incidents, dead ends, open questions and ideas — things that are not decisions. An ADR keeps one decision.
+
+When an accepted ADR takes a decision, **delete that entry from the log.** Do not leave a pointer behind: the same argument in two places is free to drift apart. Cut whole sections when they graduate whole, single bullets otherwise, and keep anything no ADR records even inside a graduated section.
+
+A proposed `DRAFT-` record does not count. Its material stays in the log until the record is accepted.
 
 ## Creating an ADR
 
