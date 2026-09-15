@@ -43,6 +43,88 @@ public final class SettingsStore: ObservableObject {
         reload()
     }
 
+    /// The API key, held here only while the window is open. It is written to its own file beside
+    /// the config, never into the config itself, so the config stays safe to paste.
+    @Published var damApiKey = DamKey.read() ?? ""
+    /// What the last check said, for the person who has just typed a host in.
+    @Published var damStatus: String?
+    @Published var damAgents: [DamAgent] = []
+
+    func saveDamKey() {
+        do {
+            try DamKey.write(damApiKey)
+            onConfigChange?(config)
+        } catch {
+            Log.error("writing the DAM key failed: \(error)")
+            damStatus = error.localizedDescription
+        }
+    }
+
+    /// Ask the server who we are talking to. Proves the host and the key in one call, and gives the
+    /// person a list to pick an agent from instead of an id to copy.
+    @MainActor
+    func checkDam() async {
+        damStatus = "checking…"
+        guard let host = config.damHost, !host.isEmpty, !damApiKey.isEmpty else {
+            damStatus = "a host and a key are needed"
+            return
+        }
+        do {
+            // Any agent id will do for a listing: it is owner-wide and not bound to one.
+            let client = try DamClient(account: DamAccount(host: host,
+                                                           agentId: config.damAgentId ?? "none",
+                                                           apiKey: damApiKey))
+            damAgents = try await client.agents()
+            damStatus = damAgents.isEmpty ? "the key can see no agents" : "\(damAgents.count) agent(s)"
+        } catch {
+            damAgents = []
+            damStatus = error.localizedDescription
+        }
+    }
+
+    /// Add an agent to the roster and ask it what it is for, in one go. The question is one turn
+    /// against that agent, so it also proves the key reaches it.
+    @MainActor
+    func addToRoster(_ agent: DamAgent) async {
+        if !config.damRoster.contains(where: { $0.id == agent.id }) {
+            config.damRoster.append(DamAgentProfile(id: agent.id, name: agent.name))
+            saveConfig()
+        }
+        await ask(agent.id)
+    }
+
+    @MainActor
+    func removeFromRoster(_ id: String) {
+        config.damRoster.removeAll { $0.id == id }
+        saveConfig()
+    }
+
+    /// Ask one agent, in its own words, what it does and what it can reach.
+    @MainActor
+    func ask(_ id: String) async {
+        guard let host = config.damHost, !host.isEmpty, !damApiKey.isEmpty else {
+            damStatus = "a host and a key are needed"
+            return
+        }
+        asking.insert(id)
+        defer { asking.remove(id) }
+        do {
+            let runner = try DamRunner(account: DamAccount(host: host, agentId: id, apiKey: damApiKey))
+            let answer = AgentProfileAnswer(try await runner.run(prompt: AgentProfileAnswer.question,
+                                                                 timeout: 180).text)
+            guard let i = config.damRoster.firstIndex(where: { $0.id == id }) else { return }
+            config.damRoster[i].summary = answer.summary
+            config.damRoster[i].systems = answer.systems
+            config.damRoster[i].askedAt = Date()
+            saveConfig()
+        } catch {
+            damStatus = "\(id): \(error.localizedDescription)"
+        }
+    }
+
+    /// Agents being asked right now.
+    @Published var asking: Set<String> = []
+
     func saveConfig() {
         do {
             try config.save(to: configURL)
@@ -61,6 +143,7 @@ struct SettingsView: View {
             PensTab(store: store).tabItem { Text("Pens") }
             BooksTab(store: store).tabItem { Text("Notebooks") }
             GeneralTab(store: store).tabItem { Text("General") }
+            ReadingTab(store: store).tabItem { Text("Reading") }
         }
         .padding(16)
         .frame(width: 460, height: 420)
@@ -305,6 +388,167 @@ private struct GeneralTab: View {
                  + "the renderer cannot disagree about what red looks like.")
         }
         .padding(.top, 4)
+    }
+}
+
+// MARK: - reading
+
+/// Where a page goes to be read, and how long it must have been still first.
+///
+/// Off until a host, a key and an agent are all filled in. The key goes to its own file; the host,
+/// the agents and which of them reads pages go to the config.
+private struct ReadingTab: View {
+    @ObservedObject var store: SettingsStore
+    @State private var checking = false
+
+    private var roster: [DamAgentProfile] { store.config.damRoster }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Row("DAM") {
+                TextField("https://dam.example.com", text: Binding(
+                    get: { store.config.damHost ?? "" },
+                    set: { store.config.damHost = $0.isEmpty ? nil : $0 }
+                ), onCommit: { store.saveConfig() })
+                .textFieldStyle(.roundedBorder)
+            }
+            Row("Key") {
+                SecureField("pk_…", text: $store.damApiKey, onCommit: { store.saveDamKey() })
+                    .textFieldStyle(.roundedBorder)
+                Button(checking ? "Checking…" : "Check") {
+                    checking = true
+                    Task {
+                        store.saveDamKey()
+                        await store.checkDam()
+                        checking = false
+                    }
+                }
+                .disabled(checking)
+            }
+
+            if !roster.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(roster) { agent in
+                        AgentRow(store: store, agent: agent,
+                                 reads: store.config.damAgentId == agent.id)
+                        if agent.id != roster.last?.id { Divider().opacity(0.4) }
+                    }
+                }
+                .padding(.vertical, 2)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+            }
+
+            // What the key can see and the roster has not taken yet.
+            let spare = store.damAgents.filter { known in !roster.contains { $0.id == known.id } }
+            HStack(spacing: 8) {
+                if spare.isEmpty && store.damAgents.isEmpty {
+                    // No listing yet: an id can still be typed, which is how the very first agent
+                    // gets in when the key can list nothing.
+                    TextField("agent-…", text: Binding(
+                        get: { store.config.damAgentId ?? "" },
+                        set: { store.config.damAgentId = $0.isEmpty ? nil : $0 }
+                    ), onCommit: { store.saveConfig() })
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                } else {
+                    Menu("Add an agent") {
+                        ForEach(spare) { agent in
+                            Button(agent.name) {
+                                Task {
+                                    await store.addToRoster(agent)
+                                    if store.config.damAgentId == nil {
+                                        store.config.damAgentId = agent.id
+                                        store.saveConfig()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(width: 140)
+                    .disabled(spare.isEmpty)
+                }
+                Spacer()
+            }
+
+            if let status = store.damStatus {
+                Hint(status)
+            }
+            Row("Wait before reading") {
+                Stepper(value: $store.config.damQuietMinutes, in: 1...60, step: 1) {
+                    Text("\(Int(store.config.damQuietMinutes)) min").font(.system(size: 11)).monospacedDigit()
+                }
+                .onChange(of: store.config.damQuietMinutes) { _ in store.saveConfig() }
+            }
+            Spacer()
+            Hint("A page that has been still for this long is drawn, sent to the reader and read "
+                 + "back as Markdown beside the strokes. The reader also proposes which agent "
+                 + "should carry out each line the page asks for — so give the reading to an agent "
+                 + "with nothing confidential behind it: it is the one looking at whatever the "
+                 + "paper happens to say. The key needs the agents:operate scope for every agent "
+                 + "here; it is kept in dam-key beside the config file, readable only by you.")
+        }
+        .padding(.top, 4)
+    }
+}
+
+/// One agent on the roster: what it says it does, what it can reach, and whether it is the one
+/// that reads pages.
+private struct AgentRow: View {
+    @ObservedObject var store: SettingsStore
+    let agent: DamAgentProfile
+    let reads: Bool
+
+    private var asking: Bool { store.asking.contains(agent.id) }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            // One reader at a time, chosen here. A radio rather than a menu, because the point of
+            // the choice is that everything else on this list is not it.
+            Button {
+                store.config.damAgentId = agent.id
+                store.saveConfig()
+            } label: {
+                Image(systemName: reads ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(reads ? Ink.accent : Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Read pages with this agent")
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(agent.name).font(.system(size: 12, weight: .medium))
+                    if reads {
+                        Text("reads pages")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Ink.accent)
+                    }
+                }
+                Text(asking ? "asking what it does…" : (agent.summary ?? "never asked"))
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(agent.summary == nil && !asking ? .tertiary : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !agent.systems.isEmpty {
+                    Text(agent.systems.joined(separator: " · "))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Spacer(minLength: 4)
+            Button("Ask") { Task { await store.ask(agent.id) } }
+                .font(.system(size: 10.5))
+                .disabled(asking)
+            Button {
+                store.removeFromRoster(agent.id)
+            } label: {
+                Image(systemName: "minus.circle").font(.system(size: 11))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Take it off the list")
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
     }
 }
 

@@ -51,7 +51,10 @@ let package = Package(
         ),
         .testTarget(
             name: "BrainioPenCoreTests",
-            dependencies: ["BrainioPenCore"],
+            // The UI layer too, for one thing only: the page image. It is the one piece of drawing
+            // whose output nobody looks at — it goes to a model — so it is the one that has to be
+            // checked by a test rather than by eye.
+            dependencies: ["BrainioPenCore", "BrainioPenUI"],
             path: "Tests/BrainioPenCoreTests"
         ),
     ]

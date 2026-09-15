@@ -169,7 +169,19 @@ public final class PanelModel: ObservableObject {
     @Published private(set) var pagesOnPen: Int?
     @Published private(set) var lastPublish: Publish?
     @Published private(set) var isPublishing = false
+    /// Pages whose reading is older than the strokes on them. Nought when no agent is configured,
+    /// which is how the panel knows to say nothing about reading at all.
+    @Published private(set) var unread = 0
+    @Published private(set) var isReading = false
     @Published private(set) var recent: [RecentBook] = []
+    /// What is still to be done, newest page first, with the last thing done after it if there is
+    /// room. Five at most: the panel is a glance, not a task list, and a sixth row would push the
+    /// footer off a short screen.
+    @Published public private(set) var actions: [ActionItem] = []
+
+    /// Where the actions come from. Set by the app delegate; absent in the design window, which
+    /// sets `actions` straight from a snapshot.
+    public var actionsStore: ActionsStore?
     /// When the pen was last connected. The only honest thing the panel can say about writing it
     /// cannot see: an absent pen may hold pages, and nothing on this Mac can count them.
     @Published private(set) var lastSeen: Date?
@@ -209,6 +221,10 @@ public final class PanelModel: ObservableObject {
         }
     }
 
+    /// One line the writer addressed to an assistant, as the panel shows it. Taken whole from the
+    /// actions store, which is the one place the files are read.
+    public typealias ActionItem = ActionsStore.Item
+
     public struct Battery: Equatable {
         public let percent: Int
         public let charging: Bool
@@ -220,6 +236,9 @@ public final class PanelModel: ObservableObject {
             self.low = low
         }
     }
+
+    /// How many action rows the panel will draw, done and not done together.
+    private static let actionsShown = 5
 
     /// A page written within this many seconds counts as being written right now.
     private static let liveWindow: TimeInterval = 45
@@ -234,6 +253,10 @@ public final class PanelModel: ObservableObject {
         let pens: PenRegistry
         let penState: PenState
     }
+
+    /// Set by the app delegate, and set again whenever the settings change. Nil while no agent is
+    /// configured.
+    public weak var processor: PageProcessor?
 
     private let live: Live?
     private var lastPaletteLoad = Date.distantPast
@@ -272,6 +295,10 @@ public final class PanelModel: ObservableObject {
             width = mode.width
         }
         isPublishing = coordinator.isPublishing
+        // Asked of the files, like everything else about what is owed (ADR-004). Cheap: it is a
+        // directory listing and one date comparison per page.
+        unread = processor?.outstanding.count ?? 0
+        isReading = processor?.isReading ?? false
 
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
         // and the macOS Bluetooth menu sets the convention: a battery for what is connected,
@@ -411,6 +438,31 @@ public final class PanelModel: ObservableObject {
         }
         recent = Array(recent.prefix(4))
         markActiveBook()
+        refreshActions()
+    }
+
+    /// The first few actions, from the store. Rebuilt with the notebook list and for the same
+    /// reason: it is a directory walk, which is too much for the one-second tick.
+    ///
+    /// Everything outstanding comes first, and the last thing carried out follows it only if there
+    /// is space left — the point of the list is what is still owed. What was called off is not
+    /// here at all: a glance is for what is owed and what has just been settled, and something you
+    /// decided against is neither.
+    private func refreshActions() {
+        guard let actionsStore else { return }
+        actionsStore.reload()
+        var outstanding: [ActionItem] = []
+        var lastDone: ActionItem?
+        for item in actionsStore.items {
+            switch item.status {
+            case .dismissed: continue
+            case .done: if lastDone == nil { lastDone = item }
+            case .new, .wip: outstanding.append(item)
+            }
+        }
+        var rows = Array(outstanding.prefix(Self.actionsShown))
+        if rows.count < Self.actionsShown, let lastDone { rows.append(lastDone) }
+        actions = rows
     }
 
     /// One mark, on the notebook being written in. Falls back to the newest in the list, which is
@@ -426,7 +478,42 @@ public final class PanelModel: ObservableObject {
     /// Never a PNG in Preview: one viewer, whether the ink arrived a second ago or last month.
     func open(_ book: RecentBook) { onOpenPage?(book.page) }
 
-    /// Set by the app delegate, which owns the window.
+    /// Clicking the row opens the actions window on it — the conversation, the answer, the box to
+    /// say the next thing. The page it was written on is one item down the row's own menu: the
+    /// handwriting is the question, and by the time you are clicking a row you are usually after
+    /// the answer.
+    func open(_ action: ActionItem) { onOpenAction?(action.id) }
+
+    /// The same four answers the window offers, from the menubar: done, do it, call it off, undo.
+    /// The panel is where you see what is outstanding, so it is where you are when you decide.
+    func setDone(_ item: ActionItem, _ done: Bool) {
+        actionsStore?.setDone(item, done)
+        refreshActions()
+    }
+
+    func setDismissed(_ item: ActionItem, _ dismissed: Bool) {
+        actionsStore?.setDismissed(item, dismissed)
+        refreshActions()
+    }
+
+    func run(_ item: ActionItem) {
+        actionsStore?.run(item)
+        refreshActions()
+    }
+
+    var busyActions: Set<String> { actionsStore?.busy ?? [] }
+
+    /// True when there is an agent to hand an action to. With none configured the menu offers only
+    /// what a person can do alone.
+    var canRun: Bool { actionsStore?.canRun ?? false }
+
+    /// Set by the app delegate, which owns the actions window.
+    public var onOpenAction: ((String) -> Void)?
+
+    /// The window, with nothing opened in it.
+    func showAllActions() { onOpenAction?("") }
+
+        /// Set by the app delegate, which owns the window.
     public var onShowLive: (() -> Void)?
 
     func showLive() { onShowLive?() }
@@ -445,6 +532,14 @@ public final class PanelModel: ObservableObject {
 
     public func publishNow() {
         live?.coordinator.publishAll()
+    }
+
+    /// Read every page that is owed a reading, oldest first, without waiting for any of them to go
+    /// still. They go one at a time — an agent runs one turn at a time — so the count in the menu
+    /// falls as they are done.
+    func readNow() {
+        processor?.readNow()
+        refresh()
     }
 
     func openNotes() {
@@ -513,6 +608,7 @@ public final class PanelModel: ObservableObject {
         public var lastPublish: Publish?
         public var isPublishing = false
         public var recent: [RecentBook] = []
+        public var actions: [ActionItem] = []
         public var lastSeen: Date?
         public var ink: InkColor = .black
         public var width: LineWidth = .default
@@ -535,6 +631,7 @@ public final class PanelModel: ObservableObject {
         lastPublish = snapshot.lastPublish
         isPublishing = snapshot.isPublishing
         recent = snapshot.recent
+        actions = snapshot.actions
         lastSeen = snapshot.lastSeen
         ink = snapshot.ink
         width = snapshot.width

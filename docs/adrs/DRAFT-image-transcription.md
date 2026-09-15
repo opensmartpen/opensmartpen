@@ -20,9 +20,10 @@ and the characteristic failure is not a refusal but a fluent, confident, wrong r
 
 ## Decision
 
-A page becomes text by rendering it and asking Claude to read the image, through the local CLI so
-there is no API key to manage, and **the image stays beside the text** as the evidence that can be
-checked by eye.
+A page becomes text by rendering it and asking Claude to read the image, and **the image stays
+beside the text** as the evidence that can be checked by eye. Where that reading happens is not
+decided here: `DRAFT-a-page-is-read-by-an-agent` moved it from the local CLI to a DAM agent, and
+this record keeps only what is asked of the reading itself.
 
 - The image is rasterised from the strokes directly, never converted from the vector page. macOS
   Quick Look silently dropped strokes from a vector page and three different models then
@@ -32,8 +33,11 @@ checked by eye.
   marooned in an A4 of white space transcribes badly.
 - The transcription carries frontmatter naming the page, the stroke count, when it was written, the
   model and the source image, and a standing instruction to check the image before relying on it.
-- The model reproduces and does not improve: original language, no corrections to spelling, grammar
-  or arithmetic, and an explicit mark for a word it cannot read rather than a guess.
+- The model reproduces rather than improves: the original language, and the structure the writer
+  used. It reads a hard word from its context where the context makes it plain, and marks one it
+  genuinely cannot make out. The stricter earlier rule — never guess, never correct anything — was
+  dropped on 2026-09-15: it filled the readings with bracketed notes about individual letters, which
+  is a transcript of the model's doubts rather than of the page.
 - **A line the writer opens with `>>` is an instruction addressed to an assistant**, transcribed as
   an unchecked task. Its progress is carried across re-transcription by matching the normalised
   text, because the Markdown is regenerated whenever raw changes while the paper cannot be
@@ -43,7 +47,7 @@ checked by eye.
 ## Alternatives Considered
 
 - **Stroke-based recognition as the baseline** — on-device and incapable of hallucinating, but unproven here; it can run first and let Claude clean up if it wins a comparison.
-- **An API key instead of the CLI** — one more secret to hold when the existing login already works.
+- **An API key instead of the CLI** — one more secret to hold when the existing login already works. Taken in the end, in `DRAFT-a-page-is-read-by-an-agent`: a CLI on this Mac is not an agent, and the key is bound to one agent and kept in the Keychain.
 - **Convert the vector page to an image** — this is exactly how strokes went missing.
 - **Treat the transcription as the record** — ADR-001 puts truth in raw; the text is derived and disposable, which is what makes re-running it safe.
 - **Keep command state in a separate file** — a second store to reconcile with a derived file that is rewritten on every render.

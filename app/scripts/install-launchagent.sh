@@ -10,6 +10,14 @@ cd "$(dirname "$0")/.."
 SRC="${1:-dist/Brainio Pen.app}"
 [ -d "$SRC" ] || { echo "$SRC not found; run scripts/make-app.sh" >&2; exit 1; }
 
+# This script copies a bundle; it does not build one. A bundle older than the code it was built
+# from installs an app that does not have the change you are installing it for, and says
+# "installed" while doing it — which has happened.
+if [ -n "$(find Sources -type f -newer "$SRC/Contents/MacOS/brainio-pen" -print -quit 2>/dev/null)" ]; then
+  echo "$SRC is older than Sources; run scripts/make-app.sh first" >&2
+  exit 1
+fi
+
 DEST="$HOME/Applications/Brainio Pen.app"
 LABEL="com.brainio.pen"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"

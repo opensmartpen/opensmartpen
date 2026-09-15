@@ -38,6 +38,26 @@ public struct Config: Codable, Equatable {
     /// are logged and discarded instead of being filed as pages.
     public var controlBooks: [String] = ["s3/o1013/b1"]
 
+    /// The DAM agent that reads a page once it has gone quiet, as `https://dam.example.com` and an
+    /// `agent-…` id. Both nil leaves reading off, and the app behaves exactly as it did before.
+    /// The API key is not here: it is in `dam-key` beside this file (`DamKey`).
+    public var damHost: String?
+    public var damAgentId: String?
+    /// Every agent an action may be handed to, with what each says it does.
+    ///
+    /// `damAgentId` is the one that reads pages, and it is deliberately the one with nothing
+    /// confidential behind it: reading means looking at whatever somebody wrote on paper, and a
+    /// page is an untrusted document. The others are the ones with the connections, and a page
+    /// cannot reach them — it can only have an agent proposed for it, which a person can change.
+    public var damRoster: [DamAgentProfile] = []
+    /// Minutes without strokes before a page is sent to DAM to be read.
+    ///
+    /// Much shorter than `quietMinutes`, and for a different reason. A commit is a record and can
+    /// wait; a reading is what a person looks at, so it should be there when they put the pen down.
+    /// A page written on again is simply sent again — the text is derived, and regenerating it
+    /// costs nothing but a turn.
+    public var damQuietMinutes: Double = 1
+
     /// Notify when battery falls to or below this percentage.
     public var lowBatteryPercent: Int = 20
     /// Notify when pen memory usage reaches this percentage.
@@ -62,10 +82,21 @@ public struct Config: Codable, Equatable {
         penAutoPowerOffMinutes = try c.decodeIfPresent(Int.self, forKey: .penAutoPowerOffMinutes)
         penCapPowerOff = try c.decodeIfPresent(Bool.self, forKey: .penCapPowerOff)
         controlBooks = try c.decodeIfPresent([String].self, forKey: .controlBooks) ?? d.controlBooks
+        damHost = try c.decodeIfPresent(String.self, forKey: .damHost)
+        damAgentId = try c.decodeIfPresent(String.self, forKey: .damAgentId)
+        damRoster = try c.decodeIfPresent([DamAgentProfile].self, forKey: .damRoster) ?? []
+        damQuietMinutes = try c.decodeIfPresent(Double.self, forKey: .damQuietMinutes) ?? d.damQuietMinutes
         gitPush = try c.decodeIfPresent(Bool.self, forKey: .gitPush) ?? d.gitPush
         lowBatteryPercent = try c.decodeIfPresent(Int.self, forKey: .lowBatteryPercent) ?? d.lowBatteryPercent
         memoryWarnPercent = try c.decodeIfPresent(Int.self, forKey: .memoryWarnPercent) ?? d.memoryWarnPercent
         sdkDebugLog = try c.decodeIfPresent(Bool.self, forKey: .sdkDebugLog) ?? d.sdkDebugLog
+    }
+
+    /// The DAM agent to hand pages to, or nil when reading is not set up. Asking for the key here
+    /// rather than storing it keeps one answer to "is this configured": all three parts, or none.
+    public func damAccount(key: String? = DamKey.read()) -> DamAccount? {
+        guard let damHost, let damAgentId, let key, !key.isEmpty else { return nil }
+        return DamAccount(host: damHost, agentId: damAgentId, apiKey: key)
     }
 
     public var dataURL: URL {
@@ -89,6 +120,7 @@ public struct Config: Codable, Equatable {
         case dataPath, repoPath, quietMinutes, penMac, penPeripheralId, penPassword
         case deleteFromPenAfterPublish, gitPush, penAutoPowerOn, penAutoPowerOffMinutes
         case penCapPowerOff, controlBooks, lowBatteryPercent, memoryWarnPercent, sdkDebugLog
+        case damHost, damAgentId, damRoster, damQuietMinutes
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -104,6 +136,10 @@ public struct Config: Codable, Equatable {
         try c.encodeIfPresent(penAutoPowerOffMinutes, forKey: .penAutoPowerOffMinutes)
         try c.encodeIfPresent(penCapPowerOff, forKey: .penCapPowerOff)
         try c.encode(controlBooks, forKey: .controlBooks)
+        try c.encodeIfPresent(damHost, forKey: .damHost)
+        try c.encodeIfPresent(damAgentId, forKey: .damAgentId)
+        if !damRoster.isEmpty { try c.encode(damRoster, forKey: .damRoster) }
+        try c.encode(damQuietMinutes, forKey: .damQuietMinutes)
         try c.encode(lowBatteryPercent, forKey: .lowBatteryPercent)
         try c.encode(memoryWarnPercent, forKey: .memoryWarnPercent)
         try c.encode(sdkDebugLog, forKey: .sdkDebugLog)

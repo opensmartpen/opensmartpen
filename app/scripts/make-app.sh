@@ -10,7 +10,15 @@ APP="$OUT/Brainio Pen.app"
 BUNDLE_ID="com.brainio.pen"
 VERSION="$(grep -o 'static let version = "[^"]*"' Sources/BrainioPen/AppDelegate.swift | cut -d'"' -f2)"
 
-swift build -c release --product brainio-pen 2>&1 | grep -E "error|Build complete" || true
+# The build's own exit status decides, not whether a binary is lying around: a failed build with
+# yesterday's binary still in .build/release used to package yesterday's app and say "built".
+set -o pipefail
+swift build -c release --product brainio-pen 2>&1 | grep -E "error|Build complete" || {
+  status=$?
+  # grep exits 1 when the build printed neither; only a build failure is fatal.
+  [ "${PIPESTATUS[0]}" -eq 0 ] || { echo "build failed" >&2; exit 1; }
+  [ "$status" -le 1 ] || exit "$status"
+}
 BIN=".build/release/brainio-pen"
 [ -x "$BIN" ] || { echo "build failed: $BIN missing" >&2; exit 1; }
 

@@ -105,9 +105,24 @@ final class PenSession: NSObject {
 
     // MARK: scanning and connecting
 
+    /// Whether this launch has already put the permission question to macOS.
+    private var askedForBluetooth = false
+
     private func scanIfNeeded() {
         guard pen == nil, connecting == nil else { return }
         guard PenFinder.shared.bluetoothOn else {
+            // macOS asks for Bluetooth when an app uses Bluetooth, and not before. Waiting for a
+            // grant we never request is therefore a deadlock, and a silent one: the radio is on,
+            // the app says it is waiting for Bluetooth, and no dialog ever appears because nothing
+            // ever scanned. So while the answer is "not asked yet", scan once and let the question
+            // be put. It is asked once per launch, not once per tick, because a person who has
+            // said no should not be asked again every five seconds.
+            if CBCentralManager.authorization == .notDetermined, !askedForBluetooth {
+                askedForBluetooth = true
+                Log.info("no Bluetooth grant yet; scanning once so macOS asks for one")
+                PenFinder.shared.scan(0)
+                return
+            }
             // CoreBluetooth reports `.unknown` for a moment after launch, before it settles on
             // powered-on. Complaining on the first tick would therefore announce that the radio is
             // switched off every single start, about a radio that is fine — which is the same kind

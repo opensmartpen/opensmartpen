@@ -6,6 +6,7 @@ private typealias Snapshot = PanelModel.Snapshot
 private typealias PenRow = PanelModel.PenRow
 private typealias PendingRow = PanelModel.PendingRow
 private typealias RecentBook = PanelModel.RecentBook
+private typealias ActionItem = PanelModel.ActionItem
 private typealias Battery = PanelModel.Battery
 private typealias Publish = PanelModel.Publish
 
@@ -134,7 +135,20 @@ public enum Scenario: String, CaseIterable {
             Self.book("s3-o27-b450-7f3a9c", "Ncode A4 pad",
                       PageID(section: 3, owner: 27, book: 450, page: 3), binding: .pad),
         ]
+        s.actions = [
+            Self.action("1", "Find out who is Ondrej Siroky from Apoco", done: false),
+            Self.action("2", "Send the pricing to Brainio", done: false),
+            Self.action("3", "Call the landlord back", done: true),
+        ]
         return s
+    }
+
+    private static func action(_ id: String, _ text: String, done: Bool) -> ActionItem {
+        ActionItem(id: id,
+                   page: PageRef(folder: BookFolder(name: "s3-o1012-b3017-2b81e4")!,
+                                 page: PageID(section: 3, owner: 1012, book: 3017, page: 6)),
+                   book: "LAMY digital paper", pageNumber: 6, written: Date(),
+                   action: PageAction(text: text, done: done), status: done ? .done : .new)
     }
 
     private static func book(_ folder: String, _ title: String, _ page: PageID,

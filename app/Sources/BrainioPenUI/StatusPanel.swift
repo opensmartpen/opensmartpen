@@ -68,6 +68,7 @@ public struct StatusPanel: View {
                 if case let .failing(_, _, error) = model.status { section { failure(error) } }
                 if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
                 if !model.recent.isEmpty { section(inset: 5) { recent } }
+                if !model.actions.isEmpty { section(inset: 5) { actions } }
                 footer
             }
             // Over the panel rather than in a row of its own. It acts on the window, not on
@@ -107,6 +108,35 @@ public struct StatusPanel: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(model.recent) { book in
                 RecentRow(book: book) { model.open(book) }
+            }
+        }
+    }
+
+    // MARK: actions — the lines written for an assistant, click to open the page
+
+    private var actions: some View {
+        // A heading here where the notebooks have none: a notebook row looks like a notebook, and
+        // a line of handwriting copied out of a page looks like nothing in particular until it is
+        // named.
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Text("Actions")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+                // The rest of them, and the conversations, in the window down the side.
+                Button { model.showAllActions() } label: {
+                    Text("All")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Every action, in a window of its own")
+            }
+            .padding(.horizontal, 9)
+            .padding(.bottom, 2)
+            ForEach(model.actions) { action in
+                ActionLine(action: action, model: model) { model.open(action) }
             }
         }
     }
@@ -245,6 +275,17 @@ public struct StatusPanel: View {
                 // become key, so the keystrokes it advertised often did nothing — and a
                 // shortcut that fails half the time is worse than no shortcut at all. The
                 // handler stays; only the promise is gone.
+                // Only when there is something to send. A page goes on its own a minute after it
+                // is put down, so this is for the person who does not want to wait — and it is a
+                // count, because the number of pages still owed a reading is the thing you want
+                // to know before you ask for them.
+                if model.isReading {
+                    MenuItem(title: model.unread > 0
+                        ? "Reading… (\(model.unread) left)" : "Reading…") {}
+                } else if model.unread > 0 {
+                    MenuItem(title: "Read \(model.unread) page\(model.unread == 1 ? "" : "s") now",
+                             action: model.readNow)
+                }
                 MenuItem(title: "Settings…", action: model.openConfig)
                 MenuItem(title: "Quit") { NSApp.terminate(nil) }
             }
@@ -338,6 +379,84 @@ private struct RecentRow: View {
         .background(RoundedRectangle(cornerRadius: 5)
             .fill(hovering ? Color.primary.opacity(0.07) : Color.clear))
         .onHover { hovering = $0 }
+    }
+}
+
+/// One line addressed to an assistant. It shows and does not act: clicking opens the page it was
+/// written on, because carrying it out is not built yet and a row that pretends otherwise is worse
+/// than one that does not.
+private struct ActionLine: View {
+    let action: PanelModel.ActionItem
+    @ObservedObject var model: PanelModel
+    let open: () -> Void
+    @State private var hovering = false
+
+    private var busy: Bool { model.busyActions.contains(action.action.key) }
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Button(action: open) {
+                HStack(spacing: 9) {
+                    mark
+                    Text(action.text)
+                        .font(.system(size: 12))
+                        .strikethrough(action.action.state != .open, color: .secondary)
+                        .foregroundStyle(action.action.state == .open ? Color.primary : Color.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(action.text)
+            // Three dots rather than a row of little buttons: the panel is 252 points wide, and a
+            // line of handwriting needs every one of them it can get.
+            Menu {
+                if model.canRun, action.action.state == .open {
+                    Button("Ask the agent to do it") { model.run(action) }
+                }
+                if action.action.done {
+                    Button("Not done after all") { model.setDone(action, false) }
+                } else if !action.action.dismissed {
+                    Button("I have done this") { model.setDone(action, true) }
+                }
+                if action.action.dismissed {
+                    Button("Put it back") { model.setDismissed(action, false) }
+                } else {
+                    Button("Not going to happen") { model.setDismissed(action, true) }
+                }
+                Divider()
+                // Where the rest of it lives: the whole page, what the agent said back, and the
+                // box for the part the paper left out.
+                Button("Open the page") { open() }
+            } label: {
+                if busy {
+                    ProgressView().controlSize(.small).scaleEffect(0.6)
+                } else {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 11))
+                        .foregroundStyle(hovering ? Color.secondary : Color.clear)
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 16)
+            .disabled(busy)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 5)
+            .fill(hovering ? Color.primary.opacity(0.07) : Color.clear))
+        .onHover { hovering = $0 }
+    }
+
+    @ViewBuilder private var mark: some View {
+        switch action.action.state {
+        case .open: Image(systemName: "square").font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 15)
+        case .done: Image(systemName: "checkmark.square.fill").font(.system(size: 12)).foregroundStyle(Ink.accent).frame(width: 15)
+        case .dismissed: Image(systemName: "xmark.square").font(.system(size: 12)).foregroundStyle(.tertiary).frame(width: 15)
+        }
     }
 }
 

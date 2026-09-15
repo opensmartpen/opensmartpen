@@ -124,6 +124,10 @@ public final class Viewer: ObservableObject {
 
     public func attach(modeLog: ModeLog?) { self.modeLog = modeLog }
 
+    /// Set by the app delegate, which owns the actions window. The viewer shows the paper; what
+    /// the paper asks for is a column of its own down the side of the screen.
+    public var onShowActions: (() -> Void)?
+
     var geometry: PageGeometry { book?.geometry ?? .a4 }
 
     /// One line width, in cells, through the shared curve.
@@ -553,6 +557,14 @@ struct ViewerView: View {
                 .font(.system(size: 11.5, weight: .medium))
                 .lineLimit(1)
 
+            // What this page asks for lives in the actions window, not in a strip beside the
+            // paper. This is the way in from the page you are reading.
+            Button { viewer.onShowActions?() } label: {
+                Image(systemName: "checklist").font(Self.glyph)
+            }
+            .buttonStyle(.borderless)
+            .help("Actions")
+
             Spacer(minLength: 8)
 
             Button { viewer.step(-1) } label: { Image(systemName: "chevron.left").font(Self.glyph) }
@@ -632,6 +644,10 @@ struct ViewerView: View {
 
 /// One page number in the pager. Violet marks the page the pen touched last, which is the one you
 /// are usually trying to get back to.
+/// The lines on this page addressed to an assistant, and what has become of them.
+///
+/// It shows and does not act: nothing here carries anything out yet. A tick means the app has a
+/// record of it being done, which is a thing that happened in the world and does not come back off.
 private struct PageChip: View {
     let number: Int
     let current: Bool

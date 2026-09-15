@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var config = Config()
     private let configURL = Config.defaultLocation
     private var coordinator: SyncCoordinator!
+    /// Hands quiet pages to a DAM agent to be read. Nil until one is configured.
+    private var processor: PageProcessor?
     private var session: PenSession!
     private var notifier: DedupingNotifier!
     private var model: PanelModel!
@@ -29,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastSeenBook: String?
     private var viewer: Viewer!
     private var viewerWindow: ViewerWindowController?
+    private var actions: ActionsStore!
+    private var actionsWindow: ActionsWindowController?
     private var pinnedPanel: PinnedPanelController?
     private var tickTimer: Timer?
     /// Runs only while the panel is open; drives the per-page countdowns.
@@ -85,6 +89,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.modeLog = ModeLog(root: config.dataURL, app: Self.clientID, sdk: Self.sdkVersion)
         coordinator.recoverPending()
 
+        makeProcessor()
+
         session = PenSession(config: config, configURL: configURL, coordinator: coordinator, notifier: notifier)
 
         pens = PenRegistry(repo: config.dataURL)
@@ -93,6 +99,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // an edit to one file in the repo, not a code change.
         coordinator.modeLog?.offered = Set(Palette.load(root: config.dataURL).offered)
         viewer = Viewer(books: books, repo: config.dataURL)
+        // One list of what the pages ask for, read by the window that shows all of it and by the
+        // menubar panel that shows the first few.
+        actions = ActionsStore(books: books, root: config.dataURL)
+        actions.processor = processor
+        actions.roster = config.damRoster
+        actions.onOpenPage = { [weak self] page in self?.showViewer(page) }
         // Paper we capture from but never read back. The coordinator still stores every tap and
         // decodes it as a command; what stops here is everything that treats a book as a
         // notebook — a record of its own and the live page in the viewer.
@@ -111,13 +123,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model = PanelModel(session: session, coordinator: coordinator, config: config,
                            books: books, pens: pens, penState: penState)
+        model.processor = processor
+        model.actionsStore = actions
         model.onShowLive = { [weak self] in self?.showViewer(nil) }
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.onOpenPage = { [weak self] page in self?.showViewer(page) }
+        model.onOpenAction = { [weak self] id in self?.showActions(expanding: id.isEmpty ? nil : id) }
+        viewer.onShowActions = { [weak self] in self?.showActions() }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         session.onChange = { [weak self] in self?.stateChanged() }
 
+        // Nothing on screen: it is what makes ⌘C and ⌘V work in the settings fields. An app with
+        // no menu bar has no editing keys either, which is not obvious until somebody tries to
+        // paste a key into one.
+        AppMenu.install()
         buildStatusItem()
         model.refresh()
         refreshStatusButton()
@@ -125,6 +145,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         session.start()
         tickTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.coordinator.tick()
+            // Reading a page is a separate errand from committing one, and a much shorter wait, so
+            // it is asked on every tick rather than only when a commit happens.
+            self?.processor?.tick()
             self?.stateChanged()
         }
     }
@@ -195,6 +218,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              body: "Give it a name in Brainio Pen settings."))
     }
 
+    /// Wire up page reading, or leave it off.
+    ///
+    /// All three of host, agent and key are needed, and the key is in a file of its own, so a
+    /// config carried to another Mac starts with reading off rather than with a broken connection.
+    /// Nothing else changes when it is off: pages are captured and committed exactly as before.
+    ///
+    /// Read straight through, on the main thread. While the key was in the Keychain this ran on a
+    /// background queue, because that read could stop and wait for a person to answer a dialog —
+    /// and one launch did, for forty minutes. Reading a file cannot.
+    private func makeProcessor() {
+        processor = nil
+        guard let account = config.damAccount() else {
+            Log.info("no DAM agent configured; pages are captured but not read")
+            return
+        }
+        do {
+            // One key, several agents. The reader is the account above; anything routed elsewhere
+            // gets its own connection out of the same key.
+            let fleet = try DamAgents(reader: account)
+            let imager = PageImager(books: books, root: config.dataURL, modeLog: coordinator.modeLog)
+            let processor = PageProcessor(books: books, root: config.dataURL, imaging: imager,
+                                          fleet: fleet, notifier: notifier,
+                                          quietWindow: config.damQuietMinutes * 60)
+            processor.controlBooks = Set(config.controlBooks)
+            // Everything but the reader itself: the reader has no connections, which is why it is
+            // the reader, so proposing it as the one to carry something out says nothing.
+            processor.roster = config.damRoster.filter { $0.id != account.agentId }
+            processor.onChange = { [weak self] in self?.stateChanged() }
+            self.processor = processor
+            // The panel offers to send a page at once, and the viewer hands single actions over,
+            // so both need the same object the timer ticks.
+            model?.processor = processor
+            actions?.processor = processor
+            actions?.roster = config.damRoster
+            Log.info("pages go to \(account.agentId) at \(account.host) after \(Int(config.damQuietMinutes)) min of quiet")
+        } catch {
+            Log.error("the DAM agent could not be set up: \(error)")
+            notifier.post(Notice(key: "dam-setup", title: "Brainio Pen cannot reach the reading agent",
+                                 body: error.localizedDescription))
+        }
+    }
+
     /// Everything with a name or a number in it. The panel carries almost no words, which only
     /// works because this exists.
     private func showSettings() {
@@ -205,6 +270,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 config = updated
                 coordinator.quietWindow = updated.quietMinutes * 60
+                // The agent, the key or the window may all have changed; rebuilding is cheaper to
+                // reason about than patching each field.
+                makeProcessor()
                 stateChanged()
             }
             settingsWindow = SettingsWindowController(store: store)
@@ -252,6 +320,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewerWindow?.showWindow(nil)
         viewerWindow?.retitle()
         viewerWindow?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// The actions, down the right-hand edge. One window, kept open as long as somebody wants it:
+    /// an answer arrives while you are doing something else, and it should arrive somewhere you
+    /// can see.
+    private func showActions(expanding id: String? = nil) {
+        panel?.dismiss()
+        if actionsWindow == nil {
+            actionsWindow = ActionsWindowController(store: actions)
+            actionsWindow?.onClose = { [weak self] in self?.actionsWindow = nil }
+        }
+        actionsWindow?.show(expanding: id)
     }
 
     // MARK: panel
