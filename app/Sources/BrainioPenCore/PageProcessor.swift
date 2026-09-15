@@ -319,9 +319,15 @@ public final class PageProcessor {
         Log.info("agent worked on \(ref): \(action.text) — \(answer.status) "
                  + "(\(outcome.stopReason ?? "no stop reason"))")
         guard let url else { return }
+        // A turn that ended with nothing said still has to say something here. It happens — the
+        // agent writes only the status line, or stops without a word — and an empty message in the
+        // thread reads on screen as a broken app rather than as a quiet agent.
+        let said = answer.text.isEmpty
+            ? "The agent finished without saying anything. Ask it again, or say more about what you want."
+            : answer.text
         try PageActions.update(url, key: action.key) {
-            $0.thread.append(ActionMessage(from: .agent, text: answer.text))
-            $0.note = answer.summary
+            $0.thread.append(ActionMessage(from: .agent, text: said))
+            $0.note = answer.summary ?? said
             $0.session = outcome.sessionId
             // Only the agent's own word for it, and only in one direction. It cannot un-tick
             // something, and it cannot call anything off.

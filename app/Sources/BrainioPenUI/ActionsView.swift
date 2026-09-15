@@ -6,6 +6,9 @@ import SwiftUI
 /// with the agent underneath whichever one is open.
 struct ActionsView: View {
     @ObservedObject var store: ActionsStore
+    /// The window has no title bar, so the one button it needs lives in the header.
+    var close: () -> Void = {}
+    @State private var hoveringHeader = false
 
     /// Everything still to do first, then what has been finished, then what was called off.
     /// Newest page first inside each — the sheet you wrote on this morning is the one you mean.
@@ -24,6 +27,19 @@ struct ActionsView: View {
         }.map(\.element)
     }
 
+    /// The word that starts a new pile, or nothing when this row is in the same pile as the one
+    /// above it.
+    private func heading(before item: ActionsStore.Item) -> String? {
+        let rows = sorted
+        guard let i = rows.firstIndex(where: { $0.id == item.id }) else { return nil }
+        let previous = i == 0 ? nil : rows[i - 1].status
+        switch item.status {
+        case .done where previous != .done: return "Done"
+        case .dismissed where previous != .dismissed: return "Not going to happen"
+        default: return nil
+        }
+    }
+
     private var outstanding: Int {
         store.items.filter { $0.status == .new || $0.status == .wip }.count
     }
@@ -38,6 +54,18 @@ struct ActionsView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(sorted) { item in
+                            // A heading where the pile changes character, and none above the
+                            // first: what is owed needs no announcing, because it is the list.
+                            if let heading = heading(before: item) {
+                                Text(heading)
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.tertiary)
+                                    .textCase(.uppercase)
+                                    .kerning(0.5)
+                                    .padding(.horizontal, 14)
+                                    .padding(.top, 16)
+                                    .padding(.bottom, 6)
+                            }
                             ActionCard(store: store, item: item,
                                        open: store.expanded == item.id)
                             Divider().opacity(0.35).padding(.leading, 38)
@@ -48,23 +76,40 @@ struct ActionsView: View {
             }
         }
         .background(VisualEffect(material: .sidebar))
+        // Rounded down the side that faces the work, square against the screen edge it is docked
+        // to — the shape of a drawer rather than of a floating box.
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 10, bottomLeadingRadius: 10))
         .frame(minWidth: 320)
     }
 
+    /// Sits in the title bar, beside the close button, rather than under it. The window is a
+    /// column down the edge of a screen; a strip of empty chrome above a heading that repeats the
+    /// window's own name is two things saying nothing.
+    /// The whole of the window's chrome: what it is, how much is owed, and the way out.
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text("Actions")
                 .font(.system(size: 13, weight: .semibold))
-            Spacer()
             if outstanding > 0 {
                 Text("\(outstanding) to do")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
+            Spacer(minLength: 4)
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(hoveringHeader ? Color.secondary : Color.secondary.opacity(0.45))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Close")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 11)
+        .onHover { hoveringHeader = $0 }
     }
 
     private var empty: some View {
@@ -118,23 +163,31 @@ private struct ActionCard: View {
                         .foregroundStyle(faded ? Color.secondary : Color.primary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(spacing: 5) {
+                    // Where it was written and who it goes to, on one line. Two lines of grey
+                    // under every title turned the list into a wall: the words a person is reading
+                    // for are in the title, and everything else is a caption.
+                    HStack(spacing: 4) {
                         Text("\(item.book) · page \(item.pageNumber)")
                             .font(.system(size: 10.5))
                             .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                        // Who it goes to. The reader proposed it from the page; a page is not
+                        // something to take instructions from, so the answer is always changeable
+                        // and always in sight before anything is sent.
+                        if !store.roster.isEmpty, item.status == .new || item.status == .wip {
+                            Text("·").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                            AgentChip(store: store, item: item)
+                        }
                         if item.action.needsYou, !open {
                             Text("waiting on you")
                                 .font(.system(size: 10.5, weight: .medium))
                                 .foregroundStyle(Ink.accent)
                         }
                     }
-                    // Who it goes to. The reader proposed it from the page; a page is not
-                    // something to take instructions from, so the answer is always changeable and
-                    // always in sight before anything is sent.
-                    if !store.roster.isEmpty, item.status == .new || item.status == .wip {
-                        AgentChip(store: store, item: item)
-                    }
-                    if !open, let note = item.action.note, !note.isEmpty {
+                    // Only while it is still somebody's problem. A finished line does not need its
+                    // last sentence repeated under it — that is what opening it is for.
+                    if !open, item.status == .new || item.status == .wip,
+                       let note = item.action.note, !note.isEmpty {
                         Text(note)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -167,11 +220,16 @@ private struct ActionCard: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 11))
-                            .foregroundStyle(hovering || open ? Color.secondary : Color.clear)
+                            .foregroundStyle(.secondary)
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
                     .frame(width: 16)
+                    // Faint until wanted, rather than hidden until wanted. A control that appears
+                    // under the pointer makes a list flicker as you read down it, and a column of
+                    // thirteen of them appearing one at a time is worse than a column of quiet
+                    // ones.
+                    .opacity(hovering || open ? 1 : 0.3)
                 }
             }
             .padding(.horizontal, 14)
@@ -181,7 +239,14 @@ private struct ActionCard: View {
 
             if open { conversation }
         }
-        .background(open ? Color.primary.opacity(0.04) : (hovering ? Color.primary.opacity(0.025) : Color.clear))
+        .background(open ? Color.primary.opacity(0.07) : (hovering ? Color.primary.opacity(0.025) : Color.clear))
+        // A rail down the edge of whichever row is open. Without it the conversation runs into the
+        // rows below and the list stops looking like a list.
+        .overlay(alignment: .leading) {
+            if open {
+                Rectangle().fill(Ink.accent).frame(width: 2)
+            }
+        }
         .onHover { hovering = $0 }
     }
 
@@ -276,21 +341,14 @@ private struct AgentChip: View {
             Divider()
             Button("Nobody in particular") { store.setAgent(item, to: nil) }
         } label: {
-            HStack(spacing: 3) {
-                Image(systemName: "person.crop.square").font(.system(size: 9))
-                Text(store.agentName(item) ?? "unrouted")
-                    .font(.system(size: 10))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(store.agentName(item) == nil ? Color.secondary : Ink.accent)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(Color.primary.opacity(0.06)))
+            Text(store.agentName(item) ?? "unrouted")
+                .font(.system(size: 10.5))
+                .lineLimit(1)
+                .foregroundStyle(store.agentName(item) == nil ? Color.secondary : Ink.accent)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .padding(.top, 2)
     }
 }
 
@@ -303,22 +361,30 @@ private struct Bubble: View {
     private var mine: Bool { message.from == .you }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(mine ? "You" : "Agent")
                 .font(.system(size: 9.5, weight: .semibold))
                 .foregroundStyle(mine ? Color.secondary : Ink.accent)
                 .textCase(.uppercase)
                 .kerning(0.4)
-            MarkdownText(message.text)
+            // A reply that came back empty. Nothing is written into a thread empty any more, but
+            // files written before that was fixed are still on disk, and a grey void reads as a
+            // broken app rather than as a quiet agent.
+            MarkdownText(message.text.isEmpty ? "*(said nothing)*" : message.text)
                 .font(.system(size: 11.5))
                 .foregroundStyle(mine ? Color.secondary : Color.primary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 9)
+        .padding(.horizontal, mine ? 0 : 10)
+        .padding(.vertical, mine ? 0 : 9)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(mine ? 0.04 : 0.07)))
+        // Only the agent gets a card. Two identical boxes down the column read as a form; what a
+        // person is looking for in there is the answer, and the answer is the agent's.
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(mine ? Color.clear : Color.primary.opacity(0.06))
+        )
     }
 }
 

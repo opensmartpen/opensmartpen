@@ -139,6 +139,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // paste a key into one.
         AppMenu.install()
         buildStatusItem()
+
+        // For working on the window itself: there is no way to click a menubar item from a script,
+        // and a design pass that cannot open the thing being designed is a design pass done blind.
+        if CommandLine.arguments.contains("--show-actions") {
+            // Open it on something with a conversation in it, because the shut row and the open
+            // row are two different designs and only one of them can be seen at a time.
+            actions.reload()
+            showActions(expanding: actions.items.first { !$0.action.thread.isEmpty }?.id)
+        }
         model.refresh()
         refreshStatusButton()
 

@@ -217,8 +217,21 @@ final class PenSession: NSObject {
         stepTimer = nil
     }
 
+    /// Write back only the two fields this object owns: which pen is paired.
+    ///
+    /// Two things save this file — the settings window and this — and each held its own copy of
+    /// the whole config. Whichever wrote last won, so pairing a pen quietly threw away an agent
+    /// roster somebody had just typed in. The file is re-read here so that everything this object
+    /// knows nothing about survives it.
     private func saveConfig() {
-        do { try config.save(to: configURL) } catch { Log.error("saving config failed: \(error)") }
+        do {
+            var latest = (try? Config.loadOrCreate(at: configURL)) ?? config
+            latest.penMac = config.penMac
+            latest.penPeripheralId = config.penPeripheralId
+            try latest.save(to: configURL)
+        } catch {
+            Log.error("saving config failed: \(error)")
+        }
     }
 
     // MARK: authorised

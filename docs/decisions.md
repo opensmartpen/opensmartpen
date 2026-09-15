@@ -283,3 +283,13 @@ One agent did everything, and that is the wrong shape for a page: reading means 
 1. **A stable signing identity.** Every rebuild changes the ad-hoc signature, so macOS throws away the Bluetooth grant and the app has to be allowed again. Deferred on purpose (2026-09-15), but it is what makes a rebuild cost nothing.
 2. **Bluetooth is still not granted** to the current build, so no new writing arrives from the pen. Reading of already-captured pages is unaffected.
 3. **Nothing is committed yet.** Everything from 2026-09-14 onwards is in the working tree.
+
+## 2026-09-15 — The design was being done blind, and now it is not
+
+Every panel until this point was written, packaged, installed, and then judged by somebody else looking at it. The strip beside the sheets was defensible in code and bad on screen, and there was no step between those two facts.
+
+- **`scripts/shot.sh` takes a picture of the app's own windows**, by window id through CoreGraphics, one PNG each. Nothing else on the screen is in the frame, which matters when it is somebody else's desktop. `--show-actions` opens the actions window on a row with a conversation in it, because a script cannot click a menubar item and the shut row and the open row are two different designs.
+- **What one look found, in one pass:** an empty agent bubble rendering as a grey void; a title bar with nothing in it above a heading that said the same word; two lines of grey caption under every row; a finished line repeating its last sentence under itself; no boundary around the row that was open; and no heading above the pile of finished ones. Six faults, none of which were visible from the code.
+- **An empty reply is now a sentence**, not an empty card. A turn can end with the agent saying nothing — it writes only the status line, or stops — and the thread says so in words.
+- **The window draws its own header.** Borderless, with the title, the count and the close button on one line, rounded down the side that faces the work and square against the screen edge. A docked column has no use for minimise or zoom.
+- **A bug the screenshot found by accident:** the agent roster had vanished from the config. Two objects each held a whole copy of it and wrote it back — pairing a pen quietly threw away everything typed into the settings window since that copy was made. `PenSession` now re-reads the file and writes back only the two fields it owns.
