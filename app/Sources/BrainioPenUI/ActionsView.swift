@@ -13,7 +13,9 @@ struct ActionsView: View {
     /// Everything still to do first, then what has been finished, then what was called off.
     /// Newest page first inside each — the sheet you wrote on this morning is the one you mean.
     private var sorted: [ActionsStore.Item] {
-        store.items.enumerated().sorted { a, b in
+        store.items
+            .filter { store.showDeleted || $0.status != .dismissed }
+            .enumerated().sorted { a, b in
             let rank = { (item: ActionsStore.Item) -> Int in
                 switch item.status {
                 case .new, .wip: return 0
@@ -35,7 +37,7 @@ struct ActionsView: View {
         let previous = i == 0 ? nil : rows[i - 1].status
         switch item.status {
         case .done where previous != .done: return "Done"
-        case .dismissed where previous != .dismissed: return "Not going to happen"
+        case .dismissed where previous != .dismissed: return "Deleted"
         default: return nil
         }
     }
@@ -96,6 +98,19 @@ struct ActionsView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
+            // Deleted lines are out of the way, not gone. One switch brings them back into view,
+            // and it only appears once there is something to see.
+            if store.items.contains(where: { $0.status == .dismissed }) {
+                Button { store.showDeleted.toggle() } label: {
+                    Image(systemName: store.showDeleted ? "trash.fill" : "trash")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(store.showDeleted ? Ink.accent : Color.secondary.opacity(0.55))
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(store.showDeleted ? "Hide deleted" : "Show deleted")
+            }
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
@@ -174,7 +189,10 @@ private struct ActionCard: View {
                         // Who it goes to. The reader proposed it from the page; a page is not
                         // something to take instructions from, so the answer is always changeable
                         // and always in sight before anything is sent.
-                        if !store.roster.isEmpty, item.status == .new || item.status == .wip {
+                        // Always, not only when a roster exists. Where a line is going is part
+                        // of what the line is, and with no agents set up the menu is how you find
+                        // out that is what is missing.
+                        if item.status == .new || item.status == .wip {
                             Text("·").font(.system(size: 10.5)).foregroundStyle(.tertiary)
                             AgentChip(store: store, item: item)
                         }
@@ -213,7 +231,7 @@ private struct ActionCard: View {
                         if item.status == .dismissed {
                             Button("Put it back") { store.setDismissed(item, false) }
                         } else {
-                            Button("Not going to happen") { store.setDismissed(item, true) }
+                            Button("Delete") { store.setDismissed(item, true) }
                         }
                         Divider()
                         Button("Open the page") { store.onOpenPage?(item.page) }
@@ -328,6 +346,9 @@ private struct AgentChip: View {
 
     var body: some View {
         Menu {
+            if store.roster.isEmpty {
+                Button("Set up agents…") { store.onOpenSettings?() }
+            }
             ForEach(store.roster) { agent in
                 Button {
                     store.setAgent(item, to: agent.id)

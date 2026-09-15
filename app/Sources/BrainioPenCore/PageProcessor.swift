@@ -61,6 +61,8 @@ public final class PageProcessor {
                   quietWindow: quietWindow)
     }
 
+    /// A page is being read. Carrying a line out is counted separately: several can be in the
+    /// air at once, and none of them is a reading.
     public var isReading: Bool { inFlight }
     /// When the next attempt is due after a failure; nil when nothing is being backed off.
     public var nextRetryAt: Date? { nextRetry == .distantPast ? nil : nextRetry }
@@ -264,29 +266,31 @@ public final class PageProcessor {
     /// reason: the agent is serial, and a queue here would only hide it.
     public func execute(action: PageAction, on ref: PageRef, say: String? = nil,
                         completion: @escaping (Error?) -> Void) {
-        guard !inFlight else {
+        // Only the same line twice over. Two different lines run at once on purpose: they are
+        // often two different agents, and even on one agent DAM queues them — which is a better
+        // place for a queue than here, where it would look like the app had stopped.
+        guard !running.contains(action.key) else {
             completion(ExecuteError.busy)
             return
         }
-        inFlight = true
-        running = (page: ref, key: action.key)
+        running.insert(action.key)
         onChange?()
         Task { [weak self] in
             guard let self else { return }
             var failure: Error?
             do { try await carryOut(action, on: ref, say: say) } catch { failure = error }
-            await self.finishRun(failure, completion: completion)
+            await self.finishRun(action.key, failure, completion: completion)
         }
     }
 
-    /// The action being carried out right now, if any.
-    public private(set) var running: (page: PageRef, key: String)?
+    /// The lines being carried out right now, by key.
+    public private(set) var running: Set<String> = []
 
     public enum ExecuteError: Error, LocalizedError {
         case busy
 
         public var errorDescription: String? {
-            "The agent is busy with another page. Try again in a moment."
+            "That one is already running. Wait for it to answer."
         }
     }
 
@@ -336,9 +340,8 @@ public final class PageProcessor {
     }
 
     @MainActor
-    private func finishRun(_ failure: Error?, completion: @escaping (Error?) -> Void) {
-        inFlight = false
-        running = nil
+    private func finishRun(_ key: String, _ failure: Error?, completion: @escaping (Error?) -> Void) {
+        running.remove(key)
         if let failure { Log.error("carrying out an action failed: \(failure)") }
         completion(failure)
         onChange?()

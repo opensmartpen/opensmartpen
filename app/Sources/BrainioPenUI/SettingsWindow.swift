@@ -50,10 +50,22 @@ public final class SettingsStore: ObservableObject {
     @Published var damStatus: String?
     @Published var damAgents: [DamAgent] = []
 
+    /// The key, a moment after typing stops. Same reason as the rest, and one more: a key is
+    /// pasted, and a paste with no Return after it was silently doing nothing.
+    func saveKeySoon() {
+        keyPause?.invalidate()
+        keyPause = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.saveDamKey() }
+        }
+    }
+
+    private var keyPause: Timer?
+
     func saveDamKey() {
         do {
             try DamKey.write(damApiKey)
             onConfigChange?(config)
+            noteSaved()
         } catch {
             Log.error("writing the DAM key failed: \(error)")
             damStatus = error.localizedDescription
@@ -129,24 +141,74 @@ public final class SettingsStore: ObservableObject {
         do {
             try config.save(to: configURL)
             onConfigChange?(config)
+            noteSaved()
         } catch {
             Log.error("saving config failed: \(error)")
+            saved = "could not save: \(error.localizedDescription)"
         }
     }
+
+    /// What the window says about the last save, and when it stops saying it.
+    ///
+    /// A settings window that changes a file silently leaves everybody pressing Return to find out
+    /// whether it took. This is the answer to that question, in the corner, for a few seconds.
+    @Published var saved: String?
+    private var savedUntil: Timer?
+
+    private func noteSaved() {
+        saved = "Saved"
+        savedUntil?.invalidate()
+        savedUntil = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.saved = nil }
+        }
+    }
+
+    /// Save a field a moment after typing stops. Nothing here is worth a Save button, and nothing
+    /// here should need the Return key — that is a rule somebody has to be told, and nobody is.
+    func saveSoon() {
+        typingPause?.invalidate()
+        typingPause = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.saveConfig() }
+        }
+    }
+
+    private var typingPause: Timer?
 }
 
-struct SettingsView: View {
+public struct SettingsView: View {
     @ObservedObject var store: SettingsStore
+    /// Which page it opens on. "Set up agents…" on an action has somewhere to go.
+    @State var tab: Tab = .pens
 
-    var body: some View {
-        TabView {
-            PensTab(store: store).tabItem { Text("Pens") }
-            BooksTab(store: store).tabItem { Text("Notebooks") }
-            GeneralTab(store: store).tabItem { Text("General") }
-            ReadingTab(store: store).tabItem { Text("Reading") }
+    public enum Tab: Hashable { case pens, books, general, reading }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            TabView(selection: $tab) {
+                PensTab(store: store).tabItem { Text("Pens") }.tag(Tab.pens)
+                BooksTab(store: store).tabItem { Text("Notebooks") }.tag(Tab.books)
+                GeneralTab(store: store).tabItem { Text("General") }.tag(Tab.general)
+                ReadingTab(store: store).tabItem { Text("Reading") }.tag(Tab.reading)
+            }
+            // Nothing here has a Save button, so something has to say that a change landed. One
+            // line, in the same place whichever tab you are on, gone a few seconds later.
+            HStack(spacing: 5) {
+                if let saved = store.saved {
+                    Image(systemName: saved == "Saved" ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(saved == "Saved" ? Ink.accent : Ink.critical)
+                    Text(saved).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Text("Changes are kept as you make them")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(height: 18)
+            .padding(.top, 8)
         }
         .padding(16)
-        .frame(width: 460, height: 420)
+        .frame(width: 480, height: 430)
     }
 }
 
@@ -404,17 +466,20 @@ private struct ReadingTab: View {
     private var roster: [DamAgentProfile] { store.config.damRoster }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Row("DAM") {
                 TextField("https://dam.example.com", text: Binding(
                     get: { store.config.damHost ?? "" },
-                    set: { store.config.damHost = $0.isEmpty ? nil : $0 }
-                ), onCommit: { store.saveConfig() })
+                    set: { store.config.damHost = $0.isEmpty ? nil : $0; store.saveSoon() }
+                ))
                 .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 260)
             }
             Row("Key") {
-                SecureField("pk_…", text: $store.damApiKey, onCommit: { store.saveDamKey() })
+                SecureField("pk_…", text: $store.damApiKey)
                     .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 180)
+                    .onChange(of: store.damApiKey) { _ in store.saveKeySoon() }
                 Button(checking ? "Checking…" : "Check") {
                     checking = true
                     Task {
@@ -426,66 +491,62 @@ private struct ReadingTab: View {
                 .disabled(checking)
             }
 
-            if !roster.isEmpty {
+            // The agents, and which of them reads. A list rather than a picker: choosing the
+            // reader is choosing which agent sees the paper, and that is a decision to be made
+            // looking at what all of them can reach.
+            HStack(spacing: 6) {
+                Text("Agents").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                Text("· the marked one reads your pages")
+                    .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+                let spare = store.damAgents.filter { known in !roster.contains { $0.id == known.id } }
+                if !spare.isEmpty {
+                    Menu("Add") {
+                        ForEach(spare) { agent in
+                            Button(agent.name) { Task { await store.addToRoster(agent) } }
+                        }
+                    }
+                    .frame(width: 70)
+                }
+            }
+
+            // Scrolls, and keeps everything under it on screen. Eight agents used to push the host
+            // and the key off both ends of the window.
+            ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(roster) { agent in
                         AgentRow(store: store, agent: agent,
                                  reads: store.config.damAgentId == agent.id)
                         if agent.id != roster.last?.id { Divider().opacity(0.4) }
                     }
-                }
-                .padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
-            }
-
-            // What the key can see and the roster has not taken yet.
-            let spare = store.damAgents.filter { known in !roster.contains { $0.id == known.id } }
-            HStack(spacing: 8) {
-                if spare.isEmpty && store.damAgents.isEmpty {
-                    // No listing yet: an id can still be typed, which is how the very first agent
-                    // gets in when the key can list nothing.
-                    TextField("agent-…", text: Binding(
-                        get: { store.config.damAgentId ?? "" },
-                        set: { store.config.damAgentId = $0.isEmpty ? nil : $0 }
-                    ), onCommit: { store.saveConfig() })
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 220)
-                } else {
-                    Menu("Add an agent") {
-                        ForEach(spare) { agent in
-                            Button(agent.name) {
-                                Task {
-                                    await store.addToRoster(agent)
-                                    if store.config.damAgentId == nil {
-                                        store.config.damAgentId = agent.id
-                                        store.saveConfig()
-                                    }
-                                }
-                            }
-                        }
+                    if roster.isEmpty {
+                        Text(store.damApiKey.isEmpty
+                             ? "Put a host and a key in, then press Check."
+                             : "Press Check to see what the key can reach.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                            .padding(10)
                     }
-                    .frame(width: 140)
-                    .disabled(spare.isEmpty)
                 }
-                Spacer()
             }
+            .frame(maxHeight: 176)
+            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
 
             if let status = store.damStatus {
                 Hint(status)
             }
-            Row("Wait before reading") {
+            Row("Wait") {
                 Stepper(value: $store.config.damQuietMinutes, in: 1...60, step: 1) {
                     Text("\(Int(store.config.damQuietMinutes)) min").font(.system(size: 11)).monospacedDigit()
                 }
                 .onChange(of: store.config.damQuietMinutes) { _ in store.saveConfig() }
             }
-            Spacer()
-            Hint("A page that has been still for this long is drawn, sent to the reader and read "
-                 + "back as Markdown beside the strokes. The reader also proposes which agent "
-                 + "should carry out each line the page asks for — so give the reading to an agent "
-                 + "with nothing confidential behind it: it is the one looking at whatever the "
-                 + "paper happens to say. The key needs the agents:operate scope for every agent "
-                 + "here; it is kept in dam-key beside the config file, readable only by you.")
+            Spacer(minLength: 0)
+            // Short, because the long version was five lines and the biggest thing on the tab.
+            // What a person has to know here is why the mark matters.
+            Hint("The marked agent sees whatever is written on your paper, so mark one with "
+                 + "nothing confidential behind it. It also proposes which agent carries out each "
+                 + "line a page asks for, choosing from what the others say they do.")
         }
         .padding(.top, 4)
     }
@@ -497,58 +558,64 @@ private struct AgentRow: View {
     @ObservedObject var store: SettingsStore
     let agent: DamAgentProfile
     let reads: Bool
+    @State private var hovering = false
 
     private var asking: Bool { store.asking.contains(agent.id) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            // One reader at a time, chosen here. A radio rather than a menu, because the point of
-            // the choice is that everything else on this list is not it.
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // One reader at a time. A radio rather than a menu, because the point of the choice is
+            // that everything else on this list is not it.
             Button {
                 store.config.damAgentId = agent.id
                 store.saveConfig()
             } label: {
                 Image(systemName: reads ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 12))
+                    .font(.system(size: 11))
                     .foregroundStyle(reads ? Ink.accent : Color.secondary)
             }
             .buttonStyle(.plain)
             .help("Read pages with this agent")
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(agent.name).font(.system(size: 12, weight: .medium))
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 5) {
+                    Text(agent.name).font(.system(size: 11.5, weight: .medium))
                     if reads {
-                        Text("reads pages")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Ink.accent)
+                        Text("reads pages").font(.system(size: 9.5)).foregroundStyle(Ink.accent)
                     }
                 }
                 Text(asking ? "asking what it does…" : (agent.summary ?? "never asked"))
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 10))
                     .foregroundStyle(agent.summary == nil && !asking ? .tertiary : .secondary)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if !agent.systems.isEmpty {
                     Text(agent.systems.joined(separator: " · "))
-                        .font(.system(size: 10))
+                        .font(.system(size: 9.5))
                         .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 4)
-            Button("Ask") { Task { await store.ask(agent.id) } }
+            // Quiet until wanted. Eight rows each shouting a button is a wall of buttons.
+            Button(agent.summary == nil ? "Ask" : "Again") { Task { await store.ask(agent.id) } }
+                .buttonStyle(.plain)
                 .font(.system(size: 10.5))
+                .foregroundStyle(asking ? Color.secondary : Ink.accent)
                 .disabled(asking)
-            Button {
-                store.removeFromRoster(agent.id)
-            } label: {
-                Image(systemName: "minus.circle").font(.system(size: 11))
+                .opacity(agent.summary == nil || hovering ? 1 : 0.35)
+            Button { store.removeFromRoster(agent.id) } label: {
+                Image(systemName: "xmark").font(.system(size: 9))
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .opacity(hovering ? 1 : 0.25)
             .help("Take it off the list")
         }
         .padding(.horizontal, 9)
-        .padding(.vertical, 7)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
 }
 
@@ -578,8 +645,8 @@ private struct Hint: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
+            .font(.system(size: 10.5))
+            .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -589,14 +656,14 @@ private struct Hint: View {
 public final class SettingsWindowController: NSWindowController {
     let store: SettingsStore
 
-    public init(store: SettingsStore) {
+    public init(store: SettingsStore, tab: SettingsView.Tab = .pens) {
         self.store = store
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 420),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 430),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
         window.title = "Brainio Pen Settings"
         window.isReleasedWhenClosed = false
-        window.contentViewController = NSHostingController(rootView: SettingsView(store: store))
+        window.contentViewController = NSHostingController(rootView: SettingsView(store: store, tab: tab))
         window.setFrameAutosaveName("brainio-pen-settings")
         window.center()
         super.init(window: window)

@@ -17,8 +17,13 @@ public final class ActionsStore: ObservableObject {
         /// Somebody is on it: the agent has said something, or is saying it right now.
         case wip
         case done
+        /// Deleted by you. Out of the list unless you ask to see them.
         case dismissed
     }
+
+    /// Whether deleted lines are shown. Off by default — deleting something and having it stay on
+    /// the list is not deleting it.
+    @Published public var showDeleted = false
 
     public struct Item: Identifiable, Equatable {
         public let id: String
@@ -63,6 +68,8 @@ public final class ActionsStore: ObservableObject {
 
     /// Set by the app delegate, which owns the viewer window.
     public var onOpenPage: ((PageRef) -> Void)?
+    /// Set by the app delegate. The way out of "there are no agents yet".
+    public var onOpenSettings: (() -> Void)?
 
     /// The agents an action can be handed to. Set by the app delegate from the config, so the row
     /// can name the one that was chosen and offer the rest.

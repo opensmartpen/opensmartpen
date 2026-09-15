@@ -26,10 +26,12 @@ public struct ActionMessage: Codable, Equatable {
 public struct PageAction: Codable, Equatable {
     public var text: String
     public var done: Bool
-    /// Not going to happen: a line the reader made nonsense of, or one you have decided against.
+    /// Deleted: a line the reader made nonsense of, or one you have decided against.
     ///
-    /// It is marked, never deleted. The line is still on the paper, so a reading would find it
-    /// again and put it back — which makes "delete" a button that undoes itself a minute later.
+    /// Marked rather than removed, and the field is still called `dismissed` in the file so that
+    /// what is already on disk keeps its meaning. A row marked this way leaves the list. It is
+    /// kept because the line is still on the paper: a reading would find it again and put it back,
+    /// so a true delete is a button that undoes itself a minute later.
     public var dismissed: Bool
     /// The last thing said about it, in one line, for a row that has no room for more.
     public var note: String?
@@ -130,9 +132,16 @@ public enum PageActions {
     ///
     /// Read, change, write — no locking. One person is clicking, and the agent's answers come back
     /// through `merge`, so there is no second writer to race with.
+    /// Read, change, write is not atomic, and several lines on one page can now be carried out at
+    /// the same time. One lock across the whole file keeps two answers landing at once from losing
+    /// one of them — cheap, because a write is a few hundred bytes and happens seconds apart.
+    private static let pen = NSRecursiveLock()
+
     @discardableResult
     public static func update(_ url: URL, key: String,
                               _ change: (inout PageAction) -> Void) throws -> [PageAction] {
+        pen.lock()
+        defer { pen.unlock() }
         var actions = load(url)
         guard let i = actions.firstIndex(where: { $0.key == key }) else { return actions }
         change(&actions[i])
@@ -141,6 +150,9 @@ public enum PageActions {
     }
 
     public static func save(_ actions: [PageAction], to url: URL) throws {
+        // Recursive, because `update` holds it across its own save.
+        pen.lock()
+        defer { pen.unlock() }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
         try encoder.encode(actions).write(to: url, options: .atomic)

@@ -424,7 +424,7 @@ private struct ActionLine: View {
                 if action.action.dismissed {
                     Button("Put it back") { model.setDismissed(action, false) }
                 } else {
-                    Button("Not going to happen") { model.setDismissed(action, true) }
+                    Button("Delete") { model.setDismissed(action, true) }
                 }
                 Divider()
                 // Where the rest of it lives: the whole page, what the agent said back, and the

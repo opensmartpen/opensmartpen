@@ -37,6 +37,12 @@ public final class ActionsWindowController: NSWindowController, NSWindowDelegate
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
+        // The pointer moving over this window should be this window's business. It is only half a
+        // cure: macOS sends mouse-moved events to the *active* application, and this app is an
+        // accessory that is usually not it, so an app underneath can still light up its own
+        // buttons under our panel. The rest of the cure is activating on entry, which would steal
+        // the keyboard from whatever you were typing in — a worse fault than a stray highlight.
+        panel.acceptsMouseMovedEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
         panel.minSize = NSSize(width: 320, height: 300)

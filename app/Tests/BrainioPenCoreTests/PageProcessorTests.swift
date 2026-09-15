@@ -442,3 +442,43 @@ private final class FakeRunner: DamPrompting, @unchecked Sendable {
         return DamRunResult(sessionId: "sess-1", text: reply, stopReason: "end_turn")
     }
 }
+
+extension PageProcessorTests {
+    /// Two lines at once. They are often two different agents, and even on one agent DAM queues
+    /// them — which is a better place for a queue than here, where it looks like the app stopped.
+    func testTwoLinesCanBeCarriedOutAtTheSameTime() async throws {
+        let (ref, books) = try writePage()
+        let fleet = FakeFleet()
+        let p = processor(books, fleet: fleet)
+        let url = try XCTUnwrap(p.actionsURL(for: ref))
+        let first = PageAction(text: "CALL")
+        let second = PageAction(text: "SEND IT")
+        try PageActions.save([first, second], to: url)
+
+        async let a: Error? = executed(p, first, on: ref)
+        async let b: Error? = executed(p, second, on: ref)
+        let (one, two) = await (a, b)
+        XCTAssertNil(one)
+        XCTAssertNil(two)
+        // Both answers survive: the file is written under a lock, so neither reply is lost.
+        let after = PageActions.load(url)
+        XCTAssertEqual(after.count, 2)
+        XCTAssertTrue(after.allSatisfy { !$0.thread.isEmpty })
+    }
+
+    func testTheSameLineTwiceIsRefused() async throws {
+        let (ref, books) = try writePage()
+        let fleet = FakeFleet()
+        let p = processor(books, fleet: fleet)
+        let url = try XCTUnwrap(p.actionsURL(for: ref))
+        let action = PageAction(text: "CALL")
+        try PageActions.save([action], to: url)
+
+        // One in the air, and the same one asked for again while it is.
+        let second: Error? = await withCheckedContinuation { continuation in
+            p.execute(action: action, on: ref, say: nil) { _ in }
+            p.execute(action: action, on: ref, say: nil) { continuation.resume(returning: $0) }
+        }
+        XCTAssertTrue(second is PageProcessor.ExecuteError)
+    }
+}
