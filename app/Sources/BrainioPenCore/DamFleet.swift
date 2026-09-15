@@ -53,6 +53,17 @@ public protocol DamFleet: Sendable {
     /// Nil means the reader.
     func prompter(for agentId: String?) throws -> DamPrompting
     func workspace(for agentId: String?) throws -> DamWorkspace
+    /// Where a held request is answered. Nil when nothing in this fleet can reach the queue,
+    /// which is the case in a test and in a setup with no DAM at all.
+    func approvals(for agentId: String?) throws -> DamApprovals?
+}
+
+public extension DamFleet {
+    /// The queue is owner-wide and the workspace connection already holds the key, so the same
+    /// object answers both. A fleet whose workspaces are something else says so by returning nil.
+    func approvals(for agentId: String?) throws -> DamApprovals? {
+        try workspace(for: agentId) as? DamApprovals
+    }
 }
 
 public final class DamAgents: DamFleet, @unchecked Sendable {

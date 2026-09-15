@@ -376,8 +376,10 @@ extension PageProcessorTests {
 /// A fleet that answers for anybody and remembers who was asked.
 private final class FakeFleet: DamFleet, @unchecked Sendable {
     private let lock = NSLock()
-    private let runner = FakeRunner()
+    let runner = FakeRunner()
     private let space = FakeWorkspace()
+    /// Stands in for DAM's approvals queue, which is where an egress hold is answered.
+    let gate = FakeApprovals()
     var prompted: [String?] = []
     var staged: [String?] = []
     var reply: String {
@@ -394,6 +396,18 @@ private final class FakeFleet: DamFleet, @unchecked Sendable {
         // The reader's own reads and writes pass nil; anything else is a hand-over.
         if let agentId { lock.withLock { staged.append(agentId) } }
         return space
+    }
+
+    func approvals(for agentId: String?) throws -> DamApprovals? { gate }
+}
+
+final class FakeApprovals: DamApprovals, @unchecked Sendable {
+    private let lock = NSLock()
+    private var answers: [(String, ApprovalVerdict)] = []
+    var decided: [(String, ApprovalVerdict)] { lock.withLock { answers } }
+
+    func decide(approvalId: String, verdict: ApprovalVerdict) async throws {
+        lock.withLock { answers.append((approvalId, verdict)) }
     }
 }
 
@@ -431,12 +445,20 @@ private final class FakeRunner: DamPrompting, @unchecked Sendable {
     /// in one.
     var resumed: [String?] = []
 
-    func run(prompt: String, image: DamImage?, resume: String?,
-             timeout: TimeInterval) async throws -> DamRunResult {
+    /// A question the agent is stopped by the moment the prompt lands, as DAM's gate would put it.
+    /// The turn then waits for it to be answered, which is the behaviour being tested.
+    var heldUpBy: ApprovalAsk?
+
+    func run(prompt: String, image: DamImage?, resume: String?, timeout: TimeInterval,
+             approvals: ApprovalDesk?) async throws -> DamRunResult {
         lock.withLock {
             prompts.append(prompt)
             resumed.append(resume)
             if let image { images.append(image) }
+        }
+        if let ask = lock.withLock({ heldUpBy }), let approvals {
+            approvals.post(ask)
+            while approvals.isWaiting { try await Task.sleep(nanoseconds: 2_000_000) }
         }
         if let failure { throw failure }
         return DamRunResult(sessionId: "sess-1", text: reply, stopReason: "end_turn")
@@ -464,6 +486,41 @@ extension PageProcessorTests {
         let after = PageActions.load(url)
         XCTAssertEqual(after.count, 2)
         XCTAssertTrue(after.allSatisfy { !$0.thread.isEmpty })
+    }
+
+    /// The whole loop: the agent is stopped at DAM's gate, the line says so, a person allows it,
+    /// the answer goes to the queue the gate is waiting on, and the turn finishes.
+    func testALineHeldAtTheGateWaitsForYouAndThenCarriesOn() async throws {
+        let (ref, books) = try writePage()
+        let fleet = FakeFleet()
+        fleet.runner.heldUpBy = ApprovalAsk(id: "hold-1",
+                                            kind: .egress(method: "POST", host: "slack.com",
+                                                          path: "/api/chat.postMessage"),
+                                            approvalId: "hold-1")
+        let p = processor(books, fleet: fleet)
+        let url = try XCTUnwrap(p.actionsURL(for: ref))
+        let action = PageAction(text: "TELL TOMAS")
+        try PageActions.save([action], to: url)
+
+        async let finished: Error? = executed(p, action, on: ref)
+
+        var ask: ApprovalAsk?
+        for _ in 0..<500 where ask == nil {
+            ask = p.waiting(on: action.key).first
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+        let held = try XCTUnwrap(ask, "the line should say what it is waiting for")
+        XCTAssertEqual(held.title, "POST slack.com")
+
+        try await p.decide(held, on: action.key, .allowOnce)
+        XCTAssertEqual(fleet.gate.decided.map(\.0), ["hold-1"])
+        XCTAssertEqual(fleet.gate.decided.map(\.1), [.allowOnce])
+
+        let outcome = await finished
+        XCTAssertNil(outcome)
+        // The question dies with the turn: nothing is left on the row to answer twice.
+        XCTAssertTrue(p.waiting(on: action.key).isEmpty)
+        XCTAssertFalse(PageActions.load(url)[0].thread.isEmpty)
     }
 
     func testTheSameLineTwiceIsRefused() async throws {

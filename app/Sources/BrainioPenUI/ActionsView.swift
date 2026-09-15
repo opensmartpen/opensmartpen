@@ -255,6 +255,13 @@ private struct ActionCard: View {
             .contentShape(Rectangle())
             .onTapGesture { toggle() }
 
+            // Above the conversation and never folded away: the agent is stopped until this is
+            // answered, and a question hidden behind a disclosure triangle is a job that quietly
+            // fails half an hour later.
+            ForEach(store.waiting(item)) { ask in
+                Permission(store: store, item: item, ask: ask)
+            }
+
             if open { conversation }
         }
         .background(open ? Color.primary.opacity(0.07) : (hovering ? Color.primary.opacity(0.025) : Color.clear))
@@ -332,6 +339,99 @@ private struct ActionCard: View {
         guard canSend else { return }
         store.run(item, say: reply)
         reply = ""
+    }
+}
+
+/// The agent has been stopped by DAM and wants to be let through.
+///
+/// Two things arrive here and they are not the same. A **tool call** is the agent asking before it
+/// does something inside its own session. An **egress hold** is the platform's own gate: the agent
+/// tried to reach a host it has no standing rule for, and the request is held — for half an hour,
+/// and then refused — until somebody says yes. Both are shown the same way, because the question a
+/// person is answering is the same question: is this line allowed to do that?
+///
+/// It is drawn on the row rather than in a dialog. A dialog would arrive over whatever you were
+/// doing, in an app that is usually not the front one, for a job you started ten minutes ago; the
+/// row already says what the job was.
+private struct Permission: View {
+    @ObservedObject var store: ActionsStore
+    let item: ActionsStore.Item
+    let ask: ApprovalAsk
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Image(systemName: "hand.raised.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Ink.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(ask.isEgress ? "Wants to reach" : "Wants to run")
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(Ink.accent)
+                        .textCase(.uppercase)
+                        .kerning(0.4)
+                    Text(ask.title)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !ask.detail.isEmpty {
+                        Text(ask.detail)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+            if store.isDeciding(ask) {
+                ProgressView().controlSize(.small).scaleEffect(0.65)
+            } else {
+                HStack(spacing: 6) {
+                    Choice(title: "Allow once", strong: true) { store.decide(item, ask, .allowOnce) }
+                    // "Always" writes a standing rule in DAM for this agent. Said plainly in the
+                    // tooltip, because it is the one answer here that outlives the line.
+                    Choice(title: "Always") { store.decide(item, ask, .allowAlways) }
+                        .help(ask.isEgress
+                              ? "Let this agent reach \(ask.title) from now on, without asking"
+                              : "Let this agent do this from now on, without asking")
+                    Choice(title: "No") { store.decide(item, ask, .deny) }
+                        .help("Just this once. Nothing is written down.")
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Ink.accent.opacity(0.08))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Ink.accent.opacity(0.3)))
+        )
+        .padding(.horizontal, 14)
+        .padding(.leading, 24)
+        .padding(.bottom, 11)
+    }
+}
+
+/// One of the three answers. Small, because three of them sit on a 380pt column.
+private struct Choice: View {
+    let title: String
+    var strong = false
+    let act: () -> Void
+
+    var body: some View {
+        Button(action: act) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(strong ? Ink.accent : Color.primary.opacity(0.07))
+                )
+                .foregroundStyle(strong ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -404,6 +404,14 @@ private struct ActionLine: View {
                         .foregroundStyle(action.action.state == .open ? Color.primary : Color.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                    // Stopped at DAM's gate. A hand rather than a word: the line itself needs the
+                    // width, and clicking the row is where the question can actually be read.
+                    if model.isWaiting(action) {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Ink.accent)
+                            .help("The agent is waiting for your say-so")
+                    }
                     Spacer(minLength: 0)
                 }
                 .contentShape(Rectangle())

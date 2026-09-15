@@ -148,6 +148,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Open it on something with a conversation in it, because the shut row and the open
             // row are two different designs and only one of them can be seen at a time.
             actions.reload()
+            // And, when asked, with a question on it: the card that appears when DAM stops an
+            // agent at the gate cannot be reached by clicking, so this is the only way to look at
+            // it before shipping it.
+            if CommandLine.arguments.contains("--show-approval") {
+                // On an open row and a shut one, because they are two different pictures: the
+                // question has to read as urgent in a list somebody is scanning, not only in the
+                // conversation they happen to have open.
+                let egress = ApprovalAsk(id: "rehearsal-1",
+                                         kind: .egress(method: "POST", host: "slack.com",
+                                                       path: "/api/chat.postMessage"),
+                                         approvalId: "rehearsal-1")
+                let tool = ApprovalAsk(id: "rehearsal-2", kind: .tool("Bash(git push origin main)"))
+                for row in actions.items.prefix(2) {
+                    actions.rehearsed[row.id] = [row.action.thread.isEmpty ? tool : egress]
+                }
+            }
             showActions(expanding: actions.items.first { !$0.action.thread.isEmpty }?.id)
         }
         model.refresh()

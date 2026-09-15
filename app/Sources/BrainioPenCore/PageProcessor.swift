@@ -274,17 +274,65 @@ public final class PageProcessor {
             return
         }
         running.insert(action.key)
+        let desk = makeDesk(for: action)
+        desks[action.key] = desk
         onChange?()
         Task { [weak self] in
             guard let self else { return }
             var failure: Error?
-            do { try await carryOut(action, on: ref, say: say) } catch { failure = error }
+            do { try await carryOut(action, on: ref, say: say, desk: desk) } catch { failure = error }
             await self.finishRun(action.key, failure, completion: completion)
         }
     }
 
     /// The lines being carried out right now, by key.
     public private(set) var running: Set<String> = []
+
+    // MARK: - What the agent is waiting to be allowed to do
+
+    /// One desk per line in the air. A line that is not running has none: the question only exists
+    /// while the turn that asked it does.
+    private var desks: [String: ApprovalDesk] = [:]
+
+    /// What is waiting on somebody, for one line.
+    public func waiting(on key: String) -> [ApprovalAsk] { desks[key]?.waiting ?? [] }
+
+    /// Whether anything at all is waiting on a person.
+    public var isWaitingOnYou: Bool { desks.values.contains { $0.isWaiting } }
+
+    /// Yes, yes-from-now-on, or no.
+    ///
+    /// Two different places take the answer and neither of them is here: a tool call goes back
+    /// down the socket the run is holding open, and an egress hold goes to DAM's approvals queue,
+    /// where the gate is waiting on it. The desk knows which.
+    public func decide(_ ask: ApprovalAsk, on key: String, _ verdict: ApprovalVerdict) async throws {
+        guard let desk = desks[key] else { throw ApprovalError.gone }
+        try await desk.decide(ask, verdict)
+    }
+
+    private func makeDesk(for action: PageAction) -> ApprovalDesk {
+        // The queue is owner-wide, so any agent's connection reaches it; this one is the agent
+        // whose run is being held up, which is the one a log should name.
+        let queue = (try? fleet.approvals(for: action.agent)) ?? nil
+        let desk = ApprovalDesk(gate: queue.map { queue in
+            { id, verdict in try await queue.decide(approvalId: id, verdict: verdict) }
+        })
+        desk.onChange = { [weak self] in self?.approvalsChanged(for: action) }
+        return desk
+    }
+
+    /// A question has arrived or been answered.
+    ///
+    /// The notice matters more than the refresh: the window is usually shut, the agent is stopped
+    /// until somebody answers, and DAM holds the request for half an hour and then says no.
+    private func approvalsChanged(for action: PageAction) {
+        for ask in desks[action.key]?.waiting ?? [] {
+            notifier.post(Notice(key: "approval-\(ask.id)",
+                                 title: "The agent needs your say-so",
+                                 body: "\(ask.title) — for “\(action.text)”"))
+        }
+        onChange?()
+    }
 
     public enum ExecuteError: Error, LocalizedError {
         case busy
@@ -294,7 +342,8 @@ public final class PageProcessor {
         }
     }
 
-    private func carryOut(_ action: PageAction, on ref: PageRef, say: String?) async throws {
+    private func carryOut(_ action: PageAction, on ref: PageRef, say: String?,
+                          desk: ApprovalDesk? = nil) async throws {
         let url = actionsURL(for: ref)
         // Yours goes in before the turn starts. A turn can fail, and what you typed is not
         // something to lose to a dropped socket — and it is also what the agent is about to read.
@@ -318,7 +367,7 @@ public final class PageProcessor {
         // being restarted underneath us.
         let outcome = try await fleet.prompter(for: action.agent)
             .run(prompt: text, image: DamImage(data: staged.png, mimeType: "image/png"),
-                 resume: action.session, timeout: 900)
+                 resume: action.session, timeout: 900, approvals: desk)
         let answer = ActionAnswer(outcome.text)
         Log.info("agent worked on \(ref): \(action.text) — \(answer.status) "
                  + "(\(outcome.stopReason ?? "no stop reason"))")
@@ -342,6 +391,7 @@ public final class PageProcessor {
     @MainActor
     private func finishRun(_ key: String, _ failure: Error?, completion: @escaping (Error?) -> Void) {
         running.remove(key)
+        desks.removeValue(forKey: key)?.closeUp()
         if let failure { Log.error("carrying out an action failed: \(failure)") }
         completion(failure)
         onChange?()

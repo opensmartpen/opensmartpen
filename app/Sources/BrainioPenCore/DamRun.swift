@@ -43,14 +43,19 @@ public struct DamImage: Equatable, Sendable {
 /// One prompt, waited on until the turn ends. A protocol so a test can answer it.
 public protocol DamPrompting: Sendable {
     /// `resume` continues an earlier session, so the agent still has what it worked out last time.
-    func run(prompt: String, image: DamImage?, resume: String?,
-             timeout: TimeInterval) async throws -> DamRunResult
+    ///
+    /// `approvals` is where a request for permission is put while somebody decides. Without one the
+    /// turn ends at the first such request, which is right when nobody is watching.
+    func run(prompt: String, image: DamImage?, resume: String?, timeout: TimeInterval,
+             approvals: ApprovalDesk?) async throws -> DamRunResult
 }
 
 public extension DamPrompting {
-    func run(prompt: String, image: DamImage? = nil,
+    /// Unattended: no desk, so a permission request stalls the run rather than waiting for a
+    /// person who is not there.
+    func run(prompt: String, image: DamImage? = nil, resume: String? = nil,
              timeout: TimeInterval = 900) async throws -> DamRunResult {
-        try await run(prompt: prompt, image: image, resume: nil, timeout: timeout)
+        try await run(prompt: prompt, image: image, resume: resume, timeout: timeout, approvals: nil)
     }
 }
 
@@ -100,12 +105,18 @@ public final class DamRunner: DamPrompting {
 
     /// Run one prompt to completion, with a picture attached when there is one.
     public func run(prompt: String, image: DamImage? = nil, resume: String? = nil,
-                    timeout: TimeInterval = 900) async throws -> DamRunResult {
-        let socket = AcpSocket(transport: connect(url))
+                    timeout: TimeInterval = 900,
+                    approvals: ApprovalDesk? = nil) async throws -> DamRunResult {
+        let socket = AcpSocket(transport: connect(url), approvals: approvals)
         await socket.start()
-        defer { Task { await socket.close() } }
+        defer {
+            // Nothing on the desk outlives the socket it arrived on: the question was the agent's
+            // and the agent is no longer listening for the answer.
+            approvals?.closeUp()
+            Task { await socket.close() }
+        }
 
-        return try await withDeadline(timeout) {
+        return try await withDeadline(timeout, while: approvals) {
             _ = try await socket.request("initialize", [
                 "protocolVersion": 1,
                 "clientCapabilities": [:],
@@ -174,12 +185,22 @@ public final class DamRunner: DamPrompting {
 
     /// Races the work against the clock. A turn that outlives the deadline is left running on the
     /// agent: its output is a file, and the file is picked up whenever it appears.
-    private func withDeadline<T: Sendable>(_ seconds: TimeInterval,
+    ///
+    /// The clock stops while a question is on the desk. A person deciding is not the agent hanging,
+    /// and DAM holds an egress request for half an hour — longer than the turn's own deadline — so
+    /// counting a person's thinking against it would time the run out while the dialog was still
+    /// on screen.
+    private func withDeadline<T: Sendable>(_ seconds: TimeInterval, while desk: ApprovalDesk? = nil,
                                            _ work: @escaping @Sendable () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in
             group.addTask { try await work() }
             group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                let slice: TimeInterval = 5
+                var left = seconds
+                while left > 0 {
+                    try await Task.sleep(nanoseconds: UInt64(min(slice, left) * 1_000_000_000))
+                    if desk?.isWaiting != true { left -= slice }
+                }
                 throw DamRunError.timedOut(seconds: seconds)
             }
             guard let first = try await group.next() else { throw DamRunError.connection("nothing happened") }
@@ -220,6 +241,8 @@ struct WebSocketTransport: AcpTransport {
 /// and the agent's own requests answered the way the platform expects.
 actor AcpSocket {
     private let transport: AcpTransport
+    /// Where a request for permission is put while somebody decides. Nil means nobody is watching.
+    private let approvals: ApprovalDesk?
     private var nextId = 1
     private var pending: [Int: CheckedContinuation<Any?, Error>] = [:]
     private var said = ""
@@ -228,8 +251,12 @@ actor AcpSocket {
     /// for an answer that can no longer arrive.
     private var ended: Error?
 
-    init(transport: AcpTransport) {
+    init(transport: AcpTransport, approvals: ApprovalDesk? = nil) {
         self.transport = transport
+        self.approvals = approvals
+        approvals?.answerHere { [weak self] rpc, optionId in
+            await self?.answerPermission(rpc, with: optionId)
+        }
     }
 
     /// Everything the agent has said so far.
@@ -285,7 +312,10 @@ actor AcpSocket {
     }
 
     private func handle(_ frame: [String: Any]) async {
-        let id = frame["id"] as? Int
+        let rpc = RpcId(frame["id"])
+        // Ours always go out with a number. A string id belongs to the other end — DAM labels an
+        // egress hold with the id of its own approvals row — and is never an answer to us.
+        let id: Int? = { if case let .number(value) = rpc { return value } else { return nil } }()
         let method = frame["method"] as? String
 
         // An answer to something we asked.
@@ -300,10 +330,23 @@ actor AcpSocket {
         }
 
         // A request from the agent.
-        if let id, let method {
+        if let rpc, let method {
             if method == "session/request_permission" {
-                let title = ((frame["params"] as? [String: Any])?["toolCall"] as? [String: Any])?["title"] as? String
-                fail(DamRunError.stalled(title ?? "a tool call"))
+                let params = frame["params"] as? [String: Any] ?? [:]
+                guard let approvals else {
+                    // Nobody is watching. The request is in DAM's queue either way, where a person
+                    // can deal with it; waiting here would be waiting on a dialog nobody can see.
+                    let title = (params["toolCall"] as? [String: Any])?["title"] as? String
+                    fail(DamRunError.stalled(title ?? "a tool call"))
+                    return
+                }
+                // Put, not answered. The turn goes on waiting — which is the whole point: an
+                // answer that arrives in a minute lets the agent finish the job it started.
+                approvals.post(ApprovalAsk.read(params: params, rpc: rpc))
+                return
+            }
+            guard let id else {
+                // A request we have no answer for and cannot address: its id is not one of ours.
                 return
             }
             let answers: [String: Any] = ["fs/read_text_file": ["content": ""], "fs/write_text_file": [:]]
@@ -325,6 +368,16 @@ actor AcpSocket {
            let text = content["text"] as? String {
             said += text
         }
+    }
+
+    /// Tell the agent what was decided about one of its own tool calls.
+    ///
+    /// Only a tool call: an egress hold is answered in DAM's approvals queue, because the thing
+    /// waiting for that answer is the gate, not the agent.
+    private func answerPermission(_ rpc: RpcId, with optionId: String?) async {
+        let outcome: [String: Any] = optionId.map { ["outcome": "selected", "optionId": $0] }
+            ?? ["outcome": "cancelled"]
+        try? await send(["jsonrpc": "2.0", "id": rpc.json, "result": ["outcome": outcome]])
     }
 
     /// Everything still waiting fails together: the socket is the only way an answer can arrive.

@@ -503,6 +503,13 @@ public final class PanelModel: ObservableObject {
 
     var busyActions: Set<String> { actionsStore?.busy ?? [] }
 
+    /// Lines the agent has been stopped on, waiting for a person to allow something. The panel
+    /// only says that one is; the answer is given in the actions window, which is a click away and
+    /// has the room for what is being asked.
+    func isWaiting(_ item: ActionItem) -> Bool {
+        processor?.waiting(on: item.action.key).isEmpty == false
+    }
+
     /// True when there is an agent to hand an action to. With none configured the menu offers only
     /// what a person can do alone.
     var canRun: Bool { actionsStore?.canRun ?? false }

@@ -171,6 +171,42 @@ final class DamRunTests: XCTestCase {
         }
     }
 
+    /// With somebody watching, the same request is a question rather than the end of the run: it
+    /// goes on the desk, the turn stays up, and the answer goes back down the socket in the shape
+    /// the harness expects.
+    func testWithADeskAPermissionRequestIsAskedRatherThanFatal() async throws {
+        let agent = ScriptedAgent()
+        agent.answer("initialize") { _ in [:] }
+        agent.answer("session/prompt") { _ in ["stopReason": "end_turn"] }
+        agent.ask(["jsonrpc": "2.0", "id": 42, "method": "session/request_permission",
+                   "params": ["sessionId": "sess-1",
+                              "options": [["optionId": "yes", "name": "Allow", "kind": "allow_once"]],
+                              "toolCall": ["title": "Bash(git push)"]]],
+                  after: "session/prompt")
+        let desk = ApprovalDesk()
+        let socket = AcpSocket(transport: agent, approvals: desk)
+        await socket.start()
+        _ = try await socket.request("initialize", [:])
+
+        let answer = try await socket.request("session/prompt", [:])
+        XCTAssertEqual((answer as? [String: Any])?["stopReason"] as? String, "end_turn")
+
+        var ask: ApprovalAsk?
+        for _ in 0..<500 where ask == nil {
+            ask = desk.waiting.first
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+        let waiting = try XCTUnwrap(ask)
+        XCTAssertEqual(waiting.title, "Bash(git push)")
+
+        try await desk.decide(waiting, .allowOnce)
+
+        let reply = try await agent.waitForReply(to: 42)
+        let outcome = (reply["result"] as? [String: Any])?["outcome"] as? [String: Any]
+        XCTAssertEqual(outcome?["outcome"] as? String, "selected")
+        XCTAssertEqual(outcome?["optionId"] as? String, "yes")
+    }
+
     func testADeadSocketFailsWhatIsWaitingAndWhatComesAfter() async throws {
         let agent = ScriptedAgent()
         agent.hangUpOn("session/prompt")

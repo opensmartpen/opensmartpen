@@ -40,9 +40,11 @@ When a page has been still for a minute, the app draws it, sends it, asks for a 
 - **That file is the one thing here that is not derived.** `done`, `dismissed` and the thread are facts about the world and about the writer's decisions, so a later reading can set the flags but never clear them, and knows nothing of the thread. Only a person clears them, with an undo on the row.
 - **The key is in a file of its own**, `dam-key` beside `config.json`, readable only by its owner. Not in the config, because a config is pasted into bug reports; not in the Keychain, because the Keychain's protection is tied to a code signature this app does not have a stable one of — see the decision log for 2026-09-15. With any of host, agent or key missing, reading is off and everything else works as before.
 
-Two things this deliberately does not do, because nobody is watching it:
+- **A line being carried out can be stopped by DAM, and then the question comes to the person.** Both kinds arrive on the same socket and are answered in two different places: an egress hold belongs to the platform's gate and is answered in the approvals queue; a tool call is the agent's own and is answered on the socket. The card sits on the line that caused it, the turn keeps waiting, and the deadline stops running while somebody decides.
 
-- **A permission request ends the run.** It is mirrored into DAM's approvals queue, where a person deals with it. Waiting instead would hold a turn open for an hour and say nothing.
+Two things a **reading** deliberately does not do, because nobody is watching it:
+
+- **A permission request ends the run.** It is mirrored into DAM's approvals queue, where a person deals with it. Waiting instead would hold a turn open for an hour and say nothing. A line being carried out is different: a person clicked it, so there is somebody to ask.
 - **A dropped socket ends the run.** The turn carries on at the agent. The page is read again at the next tick, because its captured file is still the newer of the two.
 
 ## Alternatives Considered

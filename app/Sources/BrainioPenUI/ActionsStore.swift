@@ -167,4 +167,46 @@ public final class ActionsStore: ObservableObject {
 
     public func isBusy(_ item: Item) -> Bool { busy.contains(item.id) }
     public func failure(_ item: Item) -> String? { failures[item.id] }
+
+    // MARK: - What the agent is waiting to be allowed to do
+
+    /// Rows whose answer is being sent, by ask.
+    @Published public private(set) var deciding: Set<String> = []
+
+    /// A question put on a row by hand, by the `--show-approval` dev flag and nothing else.
+    ///
+    /// The card underneath this is the one piece of the window that cannot be reached by clicking:
+    /// it appears only when a live agent is stopped at DAM's gate. Without a way to put one on
+    /// screen it would be designed blind, which is how the last six faults got in.
+    public var rehearsed: [String: [ApprovalAsk]] = [:] {
+        didSet { objectWillChange.send() }
+    }
+
+    /// What is held up on this line. Only ever a line with a turn in the air: DAM asks while the
+    /// work is running, and the question dies with the turn.
+    public func waiting(_ item: Item) -> [ApprovalAsk] {
+        if let rehearsed = rehearsed[item.id] { return rehearsed }
+        return processor?.waiting(on: item.action.key) ?? []
+    }
+
+    /// Yes, yes-from-now-on, or no.
+    ///
+    /// The answer goes to DAM, not into any file of ours: the agent is stopped mid-job waiting for
+    /// it, and what a person allowed once is the platform's business to remember, not ours.
+    public func decide(_ item: Item, _ ask: ApprovalAsk, _ verdict: ApprovalVerdict) {
+        guard let processor, !deciding.contains(ask.id) else { return }
+        deciding.insert(ask.id)
+        failures[item.id] = nil
+        Task { @MainActor [weak self] in
+            do {
+                try await processor.decide(ask, on: item.action.key, verdict)
+            } catch {
+                self?.failures[item.id] = error.localizedDescription
+            }
+            self?.deciding.remove(ask.id)
+            self?.reload()
+        }
+    }
+
+    public func isDeciding(_ ask: ApprovalAsk) -> Bool { deciding.contains(ask.id) }
 }

@@ -80,7 +80,7 @@ public protocol DamWorkspace: Sendable {
 /// `/api/trpc/…` instead; it exists so a person can pick an agent by name once and never see an id.
 ///
 /// Plain JSON on the wire: neither router installs a transformer.
-public final class DamClient: DamWorkspace {
+public final class DamClient: DamWorkspace, DamApprovals {
     private let account: DamAccount
     private let session: URLSession
 
@@ -147,6 +147,23 @@ public final class DamClient: DamWorkspace {
             guard let id = row["id"] as? String else { return nil }
             return DamAgent(id: id, name: row["name"] as? String ?? id)
         }
+    }
+
+    /// Answer one held request in DAM's approvals queue.
+    ///
+    /// Owner-wide, like `agents.list`: the queue is the api-server's own, not the agent's, so this
+    /// goes to `/api/trpc` and carries only the row id. The gate that stopped the request is
+    /// listening on that row, and lets the agent's call through the moment it is resolved.
+    ///
+    /// `not_actionable` is not a fault of ours — it means the row was answered somewhere else, or
+    /// the half-hour hold ran out — but it is not a yes either, so it is reported rather than
+    /// swallowed.
+    public func decide(approvalId: String, verdict: ApprovalVerdict) async throws {
+        let payload = try await call(url: "\(ownerTrpc)/\(verdict.procedure)",
+                                     procedure: verdict.procedure,
+                                     input: ["id": approvalId], method: "POST", timeout: 30)
+        let outcome = (payload as? [String: Any])?["outcome"] as? String
+        if outcome == "not_actionable" { throw ApprovalError.answeredAlready }
     }
 
     // MARK: - The wire
