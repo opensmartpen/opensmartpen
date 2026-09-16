@@ -100,6 +100,12 @@ public final class ActionsStore: ObservableObject {
 
     public var canRun: Bool { processor != nil }
 
+    /// Fill the list without a disk. For the design window, which has no notebooks to read and
+    /// needs the column in every state at once. Nothing in the shipped app calls it.
+    public func preview(_ items: [Item]) {
+        self.items = items
+    }
+
     /// Read every action off disk again.
     ///
     /// A directory walk and a handful of small files. Called when the window opens, after anything

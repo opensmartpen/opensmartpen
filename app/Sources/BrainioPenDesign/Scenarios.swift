@@ -21,7 +21,7 @@ private typealias Publish = PanelModel.Publish
 /// see even once.
 public enum Scenario: String, CaseIterable {
     case synced, writing, waiting, copying, failing, asleep, bluetoothOff, firstRun
-    case newNotebook, threePens
+    case newNotebook, threePens, penOpen
 
     public var title: String {
         switch self {
@@ -35,6 +35,7 @@ public enum Scenario: String, CaseIterable {
         case .firstRun: return "First run"
         case .newNotebook: return "A second pad"
         case .threePens: return "Three pens"
+        case .penOpen: return "Pen settings"
         }
     }
 
@@ -50,6 +51,7 @@ public enum Scenario: String, CaseIterable {
         case .firstRun: return "never paired"
         case .newNotebook: return "two copies, decided silently"
         case .threePens: return "what the width is cut for"
+        case .penOpen: return "a tile clicked open"
         }
     }
 
@@ -105,6 +107,13 @@ public enum Scenario: String, CaseIterable {
                                  mode: .highlight, percent: 48, low: false, active: false,
                                  state: "Pen off", awake: false))
             s.status = .connected
+        case .penOpen:
+            // The ink and width controls under a tile. Only a click opens them — the panel no
+            // longer opens the pen in your hand by itself — so the state has to be posed here,
+            // or the one part of the panel you configure a pen from is never seen in the design
+            // window at all.
+            s.openPen = "a"
+            s.status = .connected
         }
         return s
     }
@@ -141,6 +150,37 @@ public enum Scenario: String, CaseIterable {
             Self.action("3", "Call the landlord back", done: true),
         ]
         return s
+    }
+
+    /// The actions column with one of everything on it: a line nobody has touched, one the agent
+    /// is on and has come back with a question, two finished, one thrown out. Static, because
+    /// the column is not what changes between scenarios; the panel is.
+    static var actionsColumn: [ActionsStore.Item] {
+        let page = PageRef(folder: BookFolder(name: "s3-o1012-b3017-2b81e4")!,
+                           page: PageID(section: 3, owner: 1012, book: 3017, page: 6))
+        let now = Date()
+        func item(_ id: String, _ action: PageAction, page number: Int = 6, ago: TimeInterval = 0,
+                  status: ActionsStore.Status) -> ActionsStore.Item {
+            ActionsStore.Item(id: id, page: page, book: "LAMY digital paper", pageNumber: number,
+                       written: now.addingTimeInterval(-ago), action: action, status: status)
+        }
+        return [
+            item("1", PageAction(text: "Find out who is Ondřej Široký from Apoco"), status: .new),
+            item("2", PageAction(text: "Send the pricing to Brainio",
+                                 note: "Which pricing — the seat plan or the API rates?",
+                                 thread: [
+                                     ActionMessage(from: .agent,
+                                                   text: "I found two price lists in the drive. Which pricing — the **seat plan** or the **API rates**?"),
+                                 ]), status: .wip),
+            item("3", PageAction(text: "Book the dentist for the week after next"),
+                 page: 5, ago: 86_400, status: .new),
+            item("4", PageAction(text: "Call the landlord back", done: true), page: 4, ago: 2 * 86_400,
+                 status: .done),
+            item("5", PageAction(text: "Renew the domain", done: true), page: 4, ago: 2 * 86_400,
+                 status: .done),
+            item("6", PageAction(text: "Try the new coffee place", dismissed: true), page: 3,
+                 ago: 3 * 86_400, status: .dismissed),
+        ]
     }
 
     private static func action(_ id: String, _ text: String, done: Bool) -> ActionItem {

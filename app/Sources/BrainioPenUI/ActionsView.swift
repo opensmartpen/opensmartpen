@@ -4,49 +4,57 @@ import SwiftUI
 
 /// The list down the right-hand edge: one line per thing a page asks for, and the conversation
 /// with the agent underneath whichever one is open.
-struct ActionsView: View {
+public struct ActionsView: View {
     @ObservedObject var store: ActionsStore
     /// The window has no title bar, so the one button it needs lives in the header.
     var close: () -> Void = {}
     @State private var hoveringHeader = false
 
-    /// Everything still to do first, then what has been finished, then what was called off.
-    /// Newest page first inside each — the sheet you wrote on this morning is the one you mean.
-    private var sorted: [ActionsStore.Item] {
-        store.items
-            .filter { store.showDeleted || $0.status != .dismissed }
-            .enumerated().sorted { a, b in
-            let rank = { (item: ActionsStore.Item) -> Int in
-                switch item.status {
-                case .new, .wip: return 0
-                case .done: return 1
-                case .dismissed: return 2
-                }
-            }
-            if rank(a.element) != rank(b.element) { return rank(a.element) < rank(b.element) }
-            if a.element.written != b.element.written { return a.element.written > b.element.written }
-            return a.offset < b.offset
-        }.map(\.element)
+    public init(store: ActionsStore, close: @escaping () -> Void = {}) {
+        self.store = store
+        self.close = close
     }
 
-    /// The word that starts a new pile, or nothing when this row is in the same pile as the one
-    /// above it.
-    private func heading(before item: ActionsStore.Item) -> String? {
-        let rows = sorted
-        guard let i = rows.firstIndex(where: { $0.id == item.id }) else { return nil }
-        let previous = i == 0 ? nil : rows[i - 1].status
-        switch item.status {
-        case .done where previous != .done: return "Done"
-        case .dismissed where previous != .dismissed: return "Deleted"
-        default: return nil
+    /// The three piles, in the order a person wants them: what is still to do, what is finished,
+    /// and — only when asked for — what was called off. Newest page first inside each: the sheet
+    /// you wrote on this morning is the one you mean.
+    ///
+    /// Each pile is one tile. The tile does what a heading and a row of dividers used to do
+    /// between them, and does it more quietly: a group of lines on a shared ground reads as a
+    /// group without anything drawn between the lines.
+    private struct Pile: Identifiable {
+        let id: ActionsStore.Status
+        /// Nothing above the first pile: what is owed needs no announcing, because it is the list.
+        let title: String?
+        let rows: [ActionsStore.Item]
+    }
+
+    private var piles: [Pile] {
+        let newest: (ActionsStore.Item, ActionsStore.Item) -> Bool = { $0.written > $1.written }
+        let rows = { (keep: (ActionsStore.Status) -> Bool) -> [ActionsStore.Item] in
+            // A stable sort, so two lines off the same page stay in the order they were written.
+            store.items.enumerated()
+                .filter { keep($0.element.status) }
+                .sorted { a, b in
+                    a.element.written == b.element.written ? a.offset < b.offset : newest(a.element, b.element)
+                }
+                .map(\.element)
         }
+        var piles = [
+            Pile(id: .new, title: nil, rows: rows { $0 == .new || $0 == .wip }),
+            Pile(id: .done, title: "Done", rows: rows { $0 == .done }),
+        ]
+        if store.showDeleted {
+            piles.append(Pile(id: .dismissed, title: "Deleted", rows: rows { $0 == .dismissed }))
+        }
+        return piles.filter { !$0.rows.isEmpty }
     }
 
     private var outstanding: Int {
         store.items.filter { $0.status == .new || $0.status == .wip }.count
     }
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 0) {
             header
             Divider().opacity(0.5)
@@ -54,25 +62,30 @@ struct ActionsView: View {
                 empty
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(sorted) { item in
-                            // A heading where the pile changes character, and none above the
-                            // first: what is owed needs no announcing, because it is the list.
-                            if let heading = heading(before: item) {
-                                Text(heading)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(.tertiary)
-                                    .textCase(.uppercase)
-                                    .kerning(0.5)
-                                    .padding(.horizontal, 14)
-                                    .padding(.top, 16)
-                                    .padding(.bottom, 6)
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(piles) { pile in
+                            VStack(alignment: .leading, spacing: 5) {
+                                if let title = pile.title {
+                                    Text(title)
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundStyle(.tertiary)
+                                        .textCase(.uppercase)
+                                        .kerning(0.5)
+                                        .padding(.horizontal, 12)
+                                }
+                                VStack(spacing: 0) {
+                                    ForEach(pile.rows) { item in
+                                        ActionCard(store: store, item: item,
+                                                   open: store.expanded == item.id)
+                                    }
+                                }
+                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.primary.opacity(0.045)))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
-                            ActionCard(store: store, item: item,
-                                       open: store.expanded == item.id)
-                            Divider().opacity(0.35).padding(.leading, 38)
                         }
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.top, 6)
                     .padding(.bottom, 24)
                 }
             }
@@ -99,17 +112,13 @@ struct ActionsView: View {
             }
             Spacer(minLength: 4)
             // Deleted lines are out of the way, not gone. One switch brings them back into view,
-            // and it only appears once there is something to see.
+            // and it only appears once there is something to see. A pill with the word on it,
+            // because that is what a filter looks like; a trash can in the title bar looks like a
+            // way to throw the list out.
             if store.items.contains(where: { $0.status == .dismissed }) {
-                Button { store.showDeleted.toggle() } label: {
-                    Image(systemName: store.showDeleted ? "trash.fill" : "trash")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(store.showDeleted ? Ink.accent : Color.secondary.opacity(0.55))
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(store.showDeleted ? "Hide deleted" : "Show deleted")
+                Toggle(isOn: $store.showDeleted) { Text("Deleted") }
+                    .toggleStyle(PillToggle())
+                    .help(store.showDeleted ? "Hide deleted" : "Show deleted")
             }
             Button(action: close) {
                 Image(systemName: "xmark")
@@ -172,9 +181,10 @@ private struct ActionCard: View {
                     .help(item.status == .done ? "Not done after all" : "Done")
 
                 VStack(alignment: .leading, spacing: 3) {
+                    // A finished line goes grey and keeps its words. Crossing it out says it was
+                    // wrong, and it was not wrong, it was done; the tick already says which.
                     Text(item.text)
                         .font(.system(size: 12.5, weight: .medium))
-                        .strikethrough(faded, color: .secondary)
                         .foregroundStyle(faded ? Color.secondary : Color.primary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -196,21 +206,34 @@ private struct ActionCard: View {
                             Text("·").font(.system(size: 10.5)).foregroundStyle(.tertiary)
                             AgentChip(store: store, item: item)
                         }
-                        if item.action.needsYou, !open {
-                            Text("waiting on you")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(Ink.accent)
-                        }
                     }
                     // Only while it is still somebody's problem. A finished line does not need its
                     // last sentence repeated under it — that is what opening it is for.
                     if !open, item.status == .new || item.status == .wip,
                        let note = item.action.note, !note.isEmpty {
+                        // A question left for you gets its label on a line of its own, above the
+                        // question, the way the permission card labels its own. On the caption
+                        // line it pushed the notebook's name off the end of the row.
+                        if item.action.needsYou {
+                            Text("Waiting on you")
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(Ink.accent)
+                                .textCase(.uppercase)
+                                .kerning(0.4)
+                                .padding(.top, 5)
+                        }
                         Text(note)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
-                            .padding(.top, 2)
+                            .padding(.top, item.action.needsYou ? 1 : 2)
+                    } else if !open, item.action.needsYou {
+                        Text("Waiting on you")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(Ink.accent)
+                            .textCase(.uppercase)
+                            .kerning(0.4)
+                            .padding(.top, 3)
                     }
                 }
                 if busy {
@@ -250,8 +273,8 @@ private struct ActionCard: View {
                     .opacity(hovering || open ? 1 : 0.3)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .contentShape(Rectangle())
             .onTapGesture { toggle() }
 
@@ -264,14 +287,10 @@ private struct ActionCard: View {
 
             if open { conversation }
         }
-        .background(open ? Color.primary.opacity(0.07) : (hovering ? Color.primary.opacity(0.025) : Color.clear))
-        // A rail down the edge of whichever row is open. Without it the conversation runs into the
-        // rows below and the list stops looking like a list.
-        .overlay(alignment: .leading) {
-            if open {
-                Rectangle().fill(Ink.accent).frame(width: 2)
-            }
-        }
+        // The open row sits a shade deeper in the tile. That is all it takes to keep the
+        // conversation from running into the rows below now that the tile holds the lines
+        // together; a rail down the edge on top of it was two things saying one thing.
+        .background(open ? Color.primary.opacity(0.05) : (hovering ? Color.primary.opacity(0.025) : Color.clear))
         .onHover { hovering = $0 }
     }
 
@@ -319,9 +338,9 @@ private struct ActionCard: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.leading, 24)
-        .padding(.bottom, 14)
+        .padding(.horizontal, 12)
+        .padding(.leading, 26)
+        .padding(.bottom, 12)
     }
 
     /// The box says what saying something would do, which changes with where the line has got to.
@@ -407,9 +426,9 @@ private struct Permission: View {
                 .fill(Ink.accent.opacity(0.08))
                 .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Ink.accent.opacity(0.3)))
         )
-        .padding(.horizontal, 14)
-        .padding(.leading, 24)
-        .padding(.bottom, 11)
+        .padding(.horizontal, 12)
+        .padding(.leading, 26)
+        .padding(.bottom, 10)
     }
 }
 
@@ -506,6 +525,27 @@ private struct Bubble: View {
             RoundedRectangle(cornerRadius: 9)
                 .fill(mine ? Color.clear : Color.primary.opacity(0.06))
         )
+    }
+}
+
+/// A filter, drawn as one: a small capsule with the word on it, tinted while it is in force.
+private struct PillToggle: ToggleStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Button { configuration.isOn.toggle() } label: {
+            configuration.label
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(configuration.isOn ? Ink.accent : Color.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    Capsule().fill(configuration.isOn ? Ink.accent.opacity(0.14) : Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    Capsule().strokeBorder(configuration.isOn ? Ink.accent.opacity(0.45) : Color.clear, lineWidth: 1)
+                )
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 

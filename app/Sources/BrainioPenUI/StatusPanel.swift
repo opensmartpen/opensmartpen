@@ -400,7 +400,6 @@ private struct ActionLine: View {
                     mark
                     Text(action.text)
                         .font(.system(size: 12))
-                        .strikethrough(action.action.state != .open, color: .secondary)
                         .foregroundStyle(action.action.state == .open ? Color.primary : Color.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
