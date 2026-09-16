@@ -246,6 +246,17 @@ private struct ActionCard: View {
                                 store.run(item)
                             }
                         }
+                        // Only once there is something to forget. "Ask it again" carries the
+                        // conversation on; this throws it away and puts the original line in
+                        // front of a fresh agent — for when the first attempt went down the
+                        // wrong road and no amount of saying more will bring it back.
+                        if store.canRun, !item.action.thread.isEmpty || item.action.session != nil {
+                            Button("Start over") {
+                                store.expanded = item.id
+                                store.startOver(item)
+                            }
+                            .help("Forget the conversation and send the line again as new")
+                        }
                         if item.status == .done {
                             Button("Not done after all") { store.setDone(item, false) }
                         } else if item.status != .dismissed {

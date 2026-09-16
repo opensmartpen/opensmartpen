@@ -171,6 +171,31 @@ public final class ActionsStore: ObservableObject {
         }
     }
 
+    /// Forget the whole exchange and send the line again as if for the first time.
+    ///
+    /// The conversation, the agent's summary and the session it ran in all go. The session is
+    /// what makes this different from asking again: asked again, the agent carries on from where
+    /// it got to, with everything it has already decided; started over, a fresh agent reads the
+    /// page cold and nothing it worked out last time is in the room. Which is what you want when
+    /// last time went wrong.
+    ///
+    /// The line stays the line — its words, its notebook, the agent it is routed to — and the
+    /// tick comes off, because a thing being started over is not finished.
+    public func startOver(_ item: Item) {
+        guard !busy.contains(item.id) else { return }
+        change(item) {
+            $0.thread = []
+            $0.note = nil
+            $0.session = nil
+            $0.done = false
+            $0.dismissed = false
+        }
+        // `change` reloaded, so the item the run is given is the emptied one, not the one the
+        // menu was opened on.
+        guard let fresh = items.first(where: { $0.id == item.id }) else { return }
+        run(fresh)
+    }
+
     public func isBusy(_ item: Item) -> Bool { busy.contains(item.id) }
     public func failure(_ item: Item) -> String? { failures[item.id] }
 

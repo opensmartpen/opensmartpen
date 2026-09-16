@@ -81,6 +81,25 @@ final class ActionsStoreTests: XCTestCase {
         XCTAssertNil(store.expanded)
     }
 
+    func testStartingOverForgetsTheConversationAndTheSession() throws {
+        let said = [ActionMessage(from: .you, text: "The seat plan."),
+                    ActionMessage(from: .agent, text: "Sent to the wrong address, sorry.")]
+        let store = try store([PageAction(text: "SEND THE PRICING", done: true, note: "Sent.",
+                                          thread: said, session: "s-1", agent: "mailer")])
+        store.startOver(try XCTUnwrap(store.items.first))
+
+        let url = try XCTUnwrap(PageActions.url(root: root, books: books, for: ref))
+        let action = try XCTUnwrap(PageActions.load(url).first)
+        XCTAssertEqual(action.thread, [])
+        XCTAssertNil(action.session)
+        XCTAssertNil(action.note)
+        XCTAssertFalse(action.done)
+        // The line itself and where it goes are kept: it is the same errand, sent again.
+        XCTAssertEqual(action.text, "SEND THE PRICING")
+        XCTAssertEqual(action.agent, "mailer")
+        XCTAssertEqual(store.items.map(\.status), [.new])
+    }
+
     func testWithNoAgentNothingCanBeHandedOver() throws {
         let store = try store([PageAction(text: "CALL")])
         XCTAssertFalse(store.canRun)
