@@ -7,7 +7,7 @@ import XCTest
 final class DamRunTests: XCTestCase {
     private let account = DamAccount(host: "https://dam.example.com/", agentId: "agent-7", apiKey: "pk_test")
 
-    func testTheRelayUrlCarriesTheKeyWhereTheUpgradeTranscribesIt() throws {
+    func testTheRelayUrlCarriesTheKeyWhereTheUpgradeReadsIt() throws {
         let runner = try DamRunner(account: account)
         XCTAssertEqual(runner.url.absoluteString,
                        "wss://dam.example.com/api/agents/agent-7/acp?token=pk_test")

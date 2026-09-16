@@ -626,6 +626,13 @@ public enum PagePrompt {
         """
     }
 
+    /// The one line the app reads out of an errand's reply. Short, because a rule stated in three
+    /// annotated lines is a rule a model copies annotations from; `ActionAnswer` reads it.
+    static let statusFooter = """
+    End with one line: `STATUS: done`, `STATUS: needs-info` if you need something only the \
+    person can tell you, or `STATUS: blocked` if it cannot be done from where you are.
+    """
+
     /// One line, to be carried out now, with the page it was written on attached and whatever has
     /// already been said about it.
     ///
@@ -668,11 +675,7 @@ public enum PagePrompt {
         detail as it deserves and no more. If you cannot finish, say plainly what is in the way: \
         ask the question you need answered, and nothing else.
 
-        End your reply with one line, exactly one of these and nothing after it:
-
-        STATUS: done — you carried it out, and the answer is above.
-        STATUS: needs-info — you need something only the person can tell you.
-        STATUS: blocked — it cannot be done from where you are.
+        \(statusFooter)
         """)
 
         return parts.joined(separator: "\n\n")
@@ -720,11 +723,7 @@ public enum PagePrompt {
         return """
         \(opening)
 
-        End your reply with one line, exactly one of these and nothing after it:
-
-        STATUS: done — you carried it out, and the answer is above.
-        STATUS: needs-info — you need something only the person can tell you.
-        STATUS: blocked — it cannot be done from where you are.
+        \(statusFooter)
         """
     }
 }

@@ -5,7 +5,7 @@ import XCTest
 /// An agent is asked once what it is for, and the answer is what the transcriber later chooses from.
 /// It is a model answering, so the parsing has to survive a model being helpful.
 final class AgentProfileAnswerTests: XCTestCase {
-    func testTheTwoLinesAreTranscribe() {
+    func testTheTwoLinesAreRead() {
         let answer = AgentProfileAnswer("""
         SUMMARY: I run the team's Slack and keep the sprint board honest.
         SYSTEMS: Slack, Jira, GitHub

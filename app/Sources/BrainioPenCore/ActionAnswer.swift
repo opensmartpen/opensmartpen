@@ -48,10 +48,15 @@ public struct ActionAnswer: Equatable {
         // Anything before it has to be decoration — a bullet, a bold marker — not a sentence.
         guard lower[lower.startIndex..<range.lowerBound].allSatisfy({ "*-_# \t>".contains($0) })
         else { return nil }
-        let value = lower[range.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " *_`.")) 
-        switch value {
+        // The word after it, and anything trailing is a remark the model added — `STATUS: done.`,
+        // `STATUS: done — sent it`. A verdict with a comment is still a verdict.
+        let rest = lower[range.upperBound...].trimmingCharacters(in: CharacterSet(charactersIn: " *_`"))
+        let word = rest.split(whereSeparator: { !$0.isLetter && $0 != "-" }).first.map(String.init) ?? ""
+        switch word {
         case "done": return .done
-        case "needs-info", "needs info", "needsinfo": return .needsInfo
+        case "needs-info", "needsinfo": return .needsInfo
+        case "needs":
+            return rest.hasPrefix("needs info") ? .needsInfo : nil
         case "blocked": return .blocked
         default: return nil
         }

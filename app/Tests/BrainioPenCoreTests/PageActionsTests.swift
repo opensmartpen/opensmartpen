@@ -88,7 +88,7 @@ final class PageActionsTests: XCTestCase {
         XCTAssertEqual(PageAction(text: "call", done: true, dismissed: true).state, .dismissed)
     }
 
-    func testAFileWrittenWithoutTheDismissedFieldStillTranscribes() throws {
+    func testAFileWrittenWithoutTheDismissedFieldStillReads() throws {
         // What the agent wrote before the field existed, and what it writes if it forgets.
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("acts-\(UUID().uuidString)/p1.actions.json")

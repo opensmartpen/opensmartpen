@@ -130,7 +130,7 @@ final class PageProcessorTests: XCTestCase {
         XCTAssertTrue(p.outstanding.contains(ref))
     }
 
-    func testTapsOnAControlSurfaceAreNeverTranscribe() throws {
+    func testTapsOnAControlSurfaceAreNeverTranscribed() throws {
         let (ref, books) = try writePage(at: Date().addingTimeInterval(-300))
         let p = processor(books)
         p.controlBooks = [ref.folder.surface]

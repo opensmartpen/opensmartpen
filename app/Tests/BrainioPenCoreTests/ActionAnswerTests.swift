@@ -5,7 +5,7 @@ import XCTest
 /// The reply is the deliverable and is kept whole. The one thing read out of it is the status, and
 /// the rule that matters is that a tick is never guessed at.
 final class ActionAnswerTests: XCTestCase {
-    func testTheStatusLineIsTranscribeAndTakenOff() {
+    func testTheStatusLineIsReadAndTakenOff() {
         let answer = ActionAnswer("""
         Ondrej Siroky runs delivery at Apoco. He joined in 2021.
 
@@ -22,8 +22,23 @@ final class ActionAnswerTests: XCTestCase {
         XCTAssertEqual(answer.text, "Which Tomas? There are two in the address book.")
     }
 
-    func testBlockedIsTranscribe() {
+    func testBlockedIsRead() {
         XCTAssertEqual(ActionAnswer("No mail account here.\n**STATUS: blocked**").status, .blocked)
+    }
+
+    func testARemarkAfterTheStatusWordDoesNotUnmakeIt() {
+        // The old prompt listed each status with an explanation after a dash, and a model copied
+        // the explanation along. The word is the verdict; the rest is a remark.
+        XCTAssertEqual(ActionAnswer("Sent.\nSTATUS: done — you carried it out, and the answer is above.").status, .done)
+        XCTAssertEqual(ActionAnswer("Sent.\nSTATUS: done.").status, .done)
+        XCTAssertEqual(ActionAnswer("Who?\n`STATUS: needs-info` (which Ondrej)").status, .needsInfo)
+        XCTAssertEqual(ActionAnswer("No Slack.\nSTATUS: blocked, no connection here").status, .blocked)
+        XCTAssertEqual(ActionAnswer("Sent.\nSTATUS: done — you carried it out.").text, "Sent.")
+    }
+
+    func testAWordThatOnlyStartsLikeAStatusIsNotOne() {
+        XCTAssertEqual(ActionAnswer("STATUS: donee").status, .unclear)
+        XCTAssertEqual(ActionAnswer("STATUS: blockedish").status, .unclear)
     }
 
     func testAnAnswerWithNoStatusIsNotDone() {
