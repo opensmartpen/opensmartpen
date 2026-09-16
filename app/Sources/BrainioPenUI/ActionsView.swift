@@ -214,26 +214,16 @@ private struct ActionCard: View {
                         // A question left for you gets its label on a line of its own, above the
                         // question, the way the permission card labels its own. On the caption
                         // line it pushed the notebook's name off the end of the row.
-                        if item.action.needsYou {
-                            Text("Waiting on you")
-                                .font(.system(size: 9.5, weight: .semibold))
-                                .foregroundStyle(Ink.accent)
-                                .textCase(.uppercase)
-                                .kerning(0.4)
-                                .padding(.top, 5)
+                        if let verdict = closedVerdict {
+                            VerdictBadge(status: verdict, wording: .yours).padding(.top, 5)
                         }
                         Text(note)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
-                            .padding(.top, item.action.needsYou ? 1 : 2)
-                    } else if !open, item.action.needsYou {
-                        Text("Waiting on you")
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .foregroundStyle(Ink.accent)
-                            .textCase(.uppercase)
-                            .kerning(0.4)
-                            .padding(.top, 3)
+                            .padding(.top, closedVerdict != nil ? 1 : 2)
+                    } else if !open, let verdict = closedVerdict {
+                        VerdictBadge(status: verdict, wording: .yours).padding(.top, 3)
                     }
                 }
                 if busy {
@@ -328,6 +318,14 @@ private struct ActionCard: View {
         withAnimation(.easeOut(duration: 0.14)) {
             store.expanded = open ? nil : item.id
         }
+    }
+
+    /// What the closed row says above its last line: the agent's verdict, while the line is still
+    /// open and the agent has the last word. A question is labelled as waiting on you rather than
+    /// as "needs info", because on this side of the exchange that is what it is.
+    private var closedVerdict: ActionStatus? {
+        guard item.action.needsYou, let verdict = item.action.verdict else { return nil }
+        return verdict
     }
 
     /// What has been said, and the box for saying the next thing.
@@ -618,11 +616,19 @@ private struct Bubble: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(mine ? "You" : "Agent")
-                .font(.system(size: 9.5, weight: .semibold))
-                .foregroundStyle(mine ? Color.secondary : Ink.accent)
-                .textCase(.uppercase)
-                .kerning(0.4)
+            HStack(spacing: 6) {
+                Text(mine ? "You" : "Agent")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(mine ? Color.secondary : Ink.accent)
+                    .textCase(.uppercase)
+                    .kerning(0.4)
+                // How the turn ended, from the file — the line the app read off the reply and took
+                // away before showing it.
+                if let status = message.status {
+                    Text("·").font(.system(size: 9.5)).foregroundStyle(.tertiary)
+                    VerdictBadge(status: status)
+                }
+            }
             // A reply that came back empty. Nothing is written into a thread empty any more, but
             // files written before that was fixed are still on disk, and a grey void reads as a
             // broken app rather than as a quiet agent.
@@ -641,6 +647,56 @@ private struct Bubble: View {
             RoundedRectangle(cornerRadius: 9)
                 .fill(mine ? Color.clear : Color.primary.opacity(0.06))
         )
+    }
+}
+
+/// The agent's verdict on a turn, as an icon and a word. One view for the three places it shows,
+/// so a tick in the thread is the same tick as on the row.
+///
+/// The word changes with who is reading. In the thread it is the agent's word: "needs info". On the
+/// closed row it is yours: "waiting on you".
+struct VerdictBadge: View {
+    let status: ActionStatus
+    var wording: Wording = .agents
+
+    enum Wording { case agents, yours }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: status.symbol)
+                .font(.system(size: 9.5, weight: .semibold))
+            Text(word)
+                .font(.system(size: 9.5, weight: .semibold))
+                .textCase(.uppercase)
+                .kerning(0.4)
+        }
+        .foregroundStyle(colour)
+        .help(help)
+    }
+
+    private var word: String {
+        if wording == .yours, status == .needsInfo { return "Waiting on you" }
+        return status.label
+    }
+
+    /// Violet for what is waiting on somebody, red for what is stuck, grey for the rest — the
+    /// same rule as the mark on the row.
+    private var colour: Color {
+        switch status {
+        case .done: return .secondary
+        case .needsInfo: return Ink.accent
+        case .blocked: return Ink.critical
+        case .unclear: return Color.secondary.opacity(0.7)
+        }
+    }
+
+    private var help: String {
+        switch status {
+        case .done: return "The agent says it carried this out"
+        case .needsInfo: return "The agent needs something only you can tell it"
+        case .blocked: return "The agent says it cannot be done from where it is"
+        case .unclear: return "The agent did not say how it ended; the line stays open"
+        }
     }
 }
 

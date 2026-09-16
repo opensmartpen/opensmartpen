@@ -10,11 +10,15 @@ public struct ActionMessage: Codable, Equatable {
     public var from: From
     public var text: String
     public var at: Date
+    /// How the agent ended the turn, read off its last line. Only an agent's message has one; a
+    /// message from you never does. Files written before this field decode with none.
+    public var status: ActionStatus?
 
-    public init(from: From, text: String, at: Date = Date()) {
+    public init(from: From, text: String, at: Date = Date(), status: ActionStatus? = nil) {
         self.from = from
         self.text = text
         self.at = at
+        self.status = status
     }
 }
 
@@ -87,6 +91,13 @@ public struct PageAction: Codable, Equatable {
     /// Waiting on you: the agent asked something and nothing has been said back.
     public var needsYou: Bool {
         state == .open && thread.last?.from == .agent
+    }
+
+    /// The agent's last word on it: how its most recent turn ended. Nil until it has answered, and
+    /// nil for a message that predates the field. Not the same as `done`, which is a person's to
+    /// set both ways; this is only what the agent said.
+    public var verdict: ActionStatus? {
+        thread.last(where: { $0.from == .agent })?.status
     }
 
     /// What the row looks like. Dismissed outranks done: something you have called off is called

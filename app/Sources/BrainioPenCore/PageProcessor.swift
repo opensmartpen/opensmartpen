@@ -483,7 +483,7 @@ public final class PageProcessor {
         // raise and nothing the person can fix by asking again more politely.
         let said = answer.text.isEmpty ? Self.nothingSaid(outcome.stopReason) : answer.text
         try PageActions.update(url, key: action.key) {
-            $0.thread.append(ActionMessage(from: .agent, text: said))
+            $0.thread.append(ActionMessage(from: .agent, text: said, status: answer.status))
             $0.note = answer.summary ?? said
             $0.session = outcome.sessionId
             // Only the agent's own word for it, and only in one direction. It cannot un-tick

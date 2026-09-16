@@ -5,6 +5,41 @@ import XCTest
 /// An action that has been carried out has changed something outside this Mac. So the only rule
 /// worth testing hard is that nothing a later transcript says can make a done action undone.
 final class PageActionsTests: XCTestCase {
+    func testTheVerdictIsWrittenToTheFileAndReadBack() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString).appendingPathComponent("p3.actions.json")
+        let action = PageAction(text: "SEND HI TO ONDREJ", thread: [
+            ActionMessage(from: .you, text: "go"),
+            ActionMessage(from: .agent, text: "No Slack here.", status: .blocked),
+        ])
+        try PageActions.save([action], to: url)
+        let json = try String(contentsOf: url, encoding: .utf8)
+        // The word on disk is the word the agent wrote, so the file reads without the app.
+        XCTAssertTrue(json.contains("\"status\" : \"blocked\""))
+        let back = try XCTUnwrap(PageActions.load(url).first)
+        XCTAssertEqual(back.thread[1].status, .blocked)
+        XCTAssertNil(back.thread[0].status)
+        XCTAssertEqual(back.verdict, .blocked)
+    }
+
+    func testAFileFromBeforeTheVerdictStillReads() throws {
+        let json = """
+        [{"text": "CALL BACK", "done": false, "dismissed": false, "note": null,
+          "thread": [{"from": "agent", "text": "Called.", "at": "2026-09-01T10:00:00Z"}]}]
+        """
+        let actions = try PageActions.decoder.decode([PageAction].self, from: Data(json.utf8))
+        XCTAssertNil(actions[0].thread[0].status)
+        XCTAssertNil(actions[0].verdict)
+    }
+
+    func testTheVerdictIsTheAgentsLastWordNotYours() {
+        let action = PageAction(text: "X", thread: [
+            ActionMessage(from: .agent, text: "Which one?", status: .needsInfo),
+            ActionMessage(from: .you, text: "The second"),
+        ])
+        XCTAssertEqual(action.verdict, .needsInfo)
+    }
+
     func testTheNewTranscriptDecidesWhichActionsExist() {
         let merged = PageActions.merge(ours: [PageAction(text: "book the room")],
                                        theirs: [PageAction(text: "book the room"),

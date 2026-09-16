@@ -6,17 +6,44 @@ import Foundation
 /// done — so it is kept whole. The one thing read out of it is a status line the prompt asks for,
 /// because "is this finished" is the only part the app has to act on, and a model saying it in
 /// plain words is a model the app would have to interpret.
-public struct ActionAnswer: Equatable {
-    public enum Status: String, Equatable {
-        /// Carried out. The only status that ticks the box.
-        case done
-        /// The agent needs something only you can tell it.
-        case needsInfo = "needs-info"
-        /// It cannot be done from where the agent stands.
-        case blocked
-        /// The agent did not say. Treated as unfinished, because a tick is not something to guess.
-        case unclear
+/// The agent's verdict on one turn, as it wrote it on its last line.
+///
+/// Kept on the message it came with in `actions.json`, so the file says not just what the agent
+/// said but how it ended — and a row can show that without reading the words again.
+public enum ActionStatus: String, Codable, Equatable, CaseIterable {
+    /// Carried out. The only status that ticks the box.
+    case done
+    /// The agent needs something only you can tell it.
+    case needsInfo = "needs-info"
+    /// It cannot be done from where the agent stands.
+    case blocked
+    /// The agent did not say. Treated as unfinished, because a tick is not something to guess.
+    case unclear
+
+    /// The word the row shows beside the icon.
+    public var label: String {
+        switch self {
+        case .done: return "Done"
+        case .needsInfo: return "Needs info"
+        case .blocked: return "Blocked"
+        case .unclear: return "No status"
+        }
     }
+
+    /// The SF Symbol for it. Named here so the thread, the closed row and the design window draw
+    /// the same one.
+    public var symbol: String {
+        switch self {
+        case .done: return "checkmark.circle.fill"
+        case .needsInfo: return "questionmark.circle.fill"
+        case .blocked: return "hand.raised.circle.fill"
+        case .unclear: return "circle.dotted"
+        }
+    }
+}
+
+public struct ActionAnswer: Equatable {
+    public typealias Status = ActionStatus
 
     public let status: Status
     /// Everything the agent said, with the status line taken off the end.
@@ -46,7 +73,7 @@ public struct ActionAnswer: Equatable {
         let lower = line.lowercased()
         guard let range = lower.range(of: "status:") else { return nil }
         // Anything before it has to be decoration — a bullet, a bold marker — not a sentence.
-        guard lower[lower.startIndex..<range.lowerBound].allSatisfy({ "*-_# \t>".contains($0) })
+        guard lower[lower.startIndex..<range.lowerBound].allSatisfy({ "*-_#` \t>".contains($0) })
         else { return nil }
         // The word after it, and anything trailing is a remark the model added — `STATUS: done.`,
         // `STATUS: done — sent it`. A verdict with a comment is still a verdict.

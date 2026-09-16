@@ -170,7 +170,8 @@ public enum Scenario: String, CaseIterable {
                                  note: "Which pricing — the seat plan or the API rates?",
                                  thread: [
                                      ActionMessage(from: .agent,
-                                                   text: "I found two price lists in the drive. Which pricing — the **seat plan** or the **API rates**?"),
+                                                   text: "I found two price lists in the drive. Which pricing — the **seat plan** or the **API rates**?",
+                                                   status: .needsInfo),
                                  ]), status: .wip),
             item("3", PageAction(text: "Book the dentist for the week after next"),
                  page: 5, ago: 86_400, status: .new),

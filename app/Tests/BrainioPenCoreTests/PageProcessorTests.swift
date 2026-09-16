@@ -279,6 +279,10 @@ extension PageProcessorTests {
         XCTAssertTrue(after.done)
         XCTAssertEqual(after.thread.map(\.from), [.agent])
         XCTAssertEqual(after.thread[0].text, "Ondrej Siroky runs delivery at Apoco.")
+        // The verdict goes into the file with the message it ended, so a row can show how the
+        // turn ended without reading the words again.
+        XCTAssertEqual(after.thread[0].status, .done)
+        XCTAssertEqual(after.verdict, .done)
         XCTAssertEqual(after.session, "sess-1")
         // The status line is the app's, not the transcriber's: it never appears in what is shown.
         XCTAssertFalse(after.note!.contains("STATUS"))
@@ -298,6 +302,8 @@ extension PageProcessorTests {
         var after = try XCTUnwrap(PageActions.load(url).first)
         XCTAssertFalse(after.done)
         XCTAssertTrue(after.needsYou)
+
+        XCTAssertEqual(after.verdict, .needsInfo)
 
         // Answering says the new thing and nothing else: the agent is carrying on a conversation
         // it still holds, and repeating the errand would have it read its own words twice.
