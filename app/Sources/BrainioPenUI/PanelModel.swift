@@ -483,6 +483,10 @@ public final class PanelModel: ObservableObject {
         refreshActions()
     }
 
+    func stop(_ item: ActionItem) {
+        actionsStore?.stop(item)
+    }
+
     var busyActions: Set<String> { actionsStore?.busy ?? [] }
 
     /// Lines the agent has been stopped on, waiting for a person to allow something. The panel

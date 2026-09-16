@@ -412,11 +412,27 @@ private struct ActionLine: View {
 
     private var busy: Bool { model.busyActions.contains(action.action.key) }
 
+    /// A line nobody has started, with an agent to start it: the mark is a play button only then.
+    private var runnable: Bool { model.canRun && action.status == .new && !busy }
+
     var body: some View {
         HStack(spacing: 9) {
+            // The same mark as the window, doing the same thing: play on a fresh line, stop on a
+            // running one, and a mark on every other. The row beside it opens the page.
+            Button {
+                if busy { model.stop(action) } else if runnable { model.run(action) }
+            } label: {
+                Image(systemName: symbol)
+                    .font(.system(size: 13))
+                    .foregroundStyle(colour)
+                    .frame(width: 17, height: 17)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!runnable && !busy)
+            .help(busy ? "Stop the agent" : runnable ? "Execute: hand this line to the agent" : "")
             Button(action: open) {
                 HStack(spacing: 9) {
-                    mark
                     Text(action.text)
                         .font(.system(size: 12))
                         .foregroundStyle(action.action.state == .open ? Color.primary : Color.secondary)
@@ -477,11 +493,24 @@ private struct ActionLine: View {
         .onHover { hovering = $0 }
     }
 
-    @ViewBuilder private var mark: some View {
-        switch action.action.state {
-        case .open: Image(systemName: "square").font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 15)
-        case .done: Image(systemName: "checkmark.square.fill").font(.system(size: 12)).foregroundStyle(Ink.done).frame(width: 15)
-        case .dismissed: Image(systemName: "xmark.square").font(.system(size: 12)).foregroundStyle(.tertiary).frame(width: 15)
+    private var symbol: String {
+        if busy { return "stop.circle" }
+        switch action.status {
+        case .new: return runnable ? "play.circle" : "circle"
+        case .wip: return "circle.inset.filled"
+        case .done: return "checkmark.circle"
+        case .dismissed: return "xmark.circle"
+        }
+    }
+
+    /// The window's rule: green for done, violet for what is moving, grey for the rest.
+    private var colour: Color {
+        if busy { return Ink.accent }
+        switch action.status {
+        case .new: return .secondary
+        case .wip: return Ink.accent
+        case .done: return Ink.done
+        case .dismissed: return Color.secondary.opacity(0.5)
         }
     }
 }
