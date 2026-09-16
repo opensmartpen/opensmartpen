@@ -55,7 +55,7 @@ final class DamKeyTests: XCTestCase {
     }
 
     /// A loosened file is still read — the person may have meant it — and the log says so.
-    func testALooseFileIsReadRatherThanRefused() throws {
+    func testALooseFileIsTranscribeRatherThanRefused() throws {
         try DamKey.write("pk_secret", to: file)
         try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
         XCTAssertEqual(DamKey.read(at: file), "pk_secret")

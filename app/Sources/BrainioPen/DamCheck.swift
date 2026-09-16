@@ -13,7 +13,7 @@ enum DamCheck {
     static func run() -> Never {
         let config = (try? Config.loadOrCreate(at: Config.defaultLocation)) ?? Config()
         guard let account = config.damAccount() else {
-            say("no DAM agent configured. Set one in Settings → Reading.")
+            say("no DAM agent configured. Set one in Settings → Agents.")
             exit(1)
         }
         say("agent \(account.agentId) at \(account.host)")
@@ -58,7 +58,7 @@ enum DamCheck {
                 let written = try await client.read(path: answer)
                 let text = (written.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 say(text.lowercased().contains("purple")
-                    ? "the agent saw the attached picture and wrote the file. Reading pages will work."
+                    ? "the agent saw the attached picture and wrote the file. Transcribing pages will work."
                     : "the agent wrote \(answerForAgent), but it says '\(text)' rather than the "
                         + "colour of the attached square — the picture may not be reaching it")
                 ok = true
@@ -73,7 +73,7 @@ enum DamCheck {
         exit(ok ? 0 : 1)
     }
 
-    /// A square of one unmistakable colour. Small, but not so small that a reader has to squint:
+    /// A square of one unmistakable colour. Small, but not so small that a transcriber has to squint:
     /// the question is only whether the picture arrives at all.
     private static func probeImage() -> Data {
         let side = 96

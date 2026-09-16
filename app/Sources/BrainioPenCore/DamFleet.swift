@@ -3,8 +3,8 @@ import Foundation
 /// One agent this app may hand work to, and what it says about itself.
 ///
 /// The summary and the list of systems are not written by us. They are asked of the agent once,
-/// when it is added, because an agent knows what it is for and we would only be guessing — and
-/// because the reader is given this list to choose from, and a list written by hand goes stale the
+/// when it is switched on, because an agent knows what it is for and we would only be guessing — and
+/// because the transcriber is given this list to choose from, and a list written by hand goes stale the
 /// day somebody connects a new tool.
 public struct DamAgentProfile: Codable, Equatable, Identifiable, Sendable {
     public var id: String
@@ -44,13 +44,13 @@ public struct DamAgentProfile: Codable, Equatable, Identifiable, Sendable {
 
 /// Every agent the key can reach, as things that can be prompted and written to.
 ///
-/// One key, several agents, and a deliberate split: the agent that **reads** pages is chosen to be
+/// One key, several agents, and a deliberate split: the agent that **transcribes** pages is chosen to be
 /// one with no confidential connections, because it is the one looking at whatever is written on a
 /// page — and a page is an untrusted document. The agents that **carry actions out** are the ones
 /// with the keys to Slack, mail and the rest. A page cannot talk to them; it can only ask the
-/// reader to propose one, and a person can always change the answer.
+/// transcriber to propose one, and a person can always change the answer.
 public protocol DamFleet: Sendable {
-    /// Nil means the reader.
+    /// Nil means the transcriber.
     func prompter(for agentId: String?) throws -> DamPrompting
     func workspace(for agentId: String?) throws -> DamWorkspace
     /// Where a held request is answered. Nil when nothing in this fleet can reach the queue,
@@ -67,8 +67,8 @@ public extension DamFleet {
 }
 
 public final class DamAgents: DamFleet, @unchecked Sendable {
-    /// The account of the agent that reads pages.
-    private let reader: DamAccount
+    /// The account of the agent that transcribes pages.
+    private let transcriber: DamAccount
     private let session: URLSession
     private let lock = NSLock()
     private var prompters: [String: DamPrompting] = [:]
@@ -76,15 +76,15 @@ public final class DamAgents: DamFleet, @unchecked Sendable {
 
     /// Refuses a plain-http host here rather than at the first turn: a setup that cannot work
     /// should say so while somebody is still looking at the settings window.
-    public init(reader: DamAccount, session: URLSession = .shared) throws {
-        guard DamClient.isSecure(reader.host) else { throw DamError.insecureHost(reader.host) }
-        self.reader = reader
+    public init(transcriber: DamAccount, session: URLSession = .shared) throws {
+        guard DamClient.isSecure(transcriber.host) else { throw DamError.insecureHost(transcriber.host) }
+        self.transcriber = transcriber
         self.session = session
     }
 
     private func account(_ agentId: String?) -> DamAccount {
-        guard let agentId, !agentId.isEmpty, agentId != reader.agentId else { return reader }
-        return DamAccount(host: reader.host, agentId: agentId, apiKey: reader.apiKey)
+        guard let agentId, !agentId.isEmpty, agentId != transcriber.agentId else { return transcriber }
+        return DamAccount(host: transcriber.host, agentId: agentId, apiKey: transcriber.apiKey)
     }
 
     public func prompter(for agentId: String?) throws -> DamPrompting {
@@ -160,7 +160,7 @@ public struct AgentProfileAnswer: Equatable {
             .trimmingCharacters(in: CharacterSet(charactersIn: " \t*_`"))
     }
 
-    /// What an agent is asked, once, when it is added.
+    /// What an agent is asked, once, when it is switched on.
     public static let question = """
     Two questions about yourself, for a list somebody is choosing from.
 

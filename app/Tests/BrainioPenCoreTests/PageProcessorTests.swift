@@ -2,14 +2,14 @@ import Foundation
 @testable import BrainioPenCore
 import XCTest
 
-/// A page goes to the agent when it has been still for a while and its reading is out of date, and
+/// A page goes to the agent when it has been still for a while and its transcript is out of date, and
 /// the answer lands beside the strokes it was made from. Nothing here is remembered between ticks:
 /// every question is asked of the files.
 final class PageProcessorTests: XCTestCase {
     var root: URL!
 
     override func setUpWithError() throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("brainio-pen-read-\(UUID().uuidString)")
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("brainio-pen-transcribe-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
 
@@ -60,15 +60,15 @@ final class PageProcessorTests: XCTestCase {
         XCTAssertEqual(p.due(now: Date().addingTimeInterval(61)), [ref])
     }
 
-    func testAPageWhoseReadingIsUpToDateIsLeftAlone() throws {
+    func testAPageWhoseTranscriptIsUpToDateIsLeftAlone() throws {
         let (ref, books) = try writePage(at: Date().addingTimeInterval(-300))
         let p = processor(books)
-        let reading = try XCTUnwrap(p.readingURL(for: ref))
-        try FileManager.default.createDirectory(at: reading.deletingLastPathComponent(),
+        let transcript = try XCTUnwrap(p.transcriptURL(for: ref))
+        try FileManager.default.createDirectory(at: transcript.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        try "# already read".write(to: reading, atomically: true, encoding: .utf8)
+        try "# already transcribed".write(to: transcript, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-200)],
-                                              ofItemAtPath: reading.path)
+                                              ofItemAtPath: transcript.path)
         XCTAssertEqual(p.due(), [])
 
         // Written on again: the captured file is now the newer of the two, so it goes again.
@@ -86,11 +86,11 @@ final class PageProcessorTests: XCTestCase {
         XCTAssertEqual(p.outstanding, [ref])
     }
 
-    func testAskingToReadNowWorksThroughEveryPageThatIsWaiting() async throws {
+    func testAskingToTranscribeNowWorksThroughEveryPageThatIsWaiting() async throws {
         let (first, books) = try writePage(4, at: Date())
         let (second, _) = try writePage(5, at: Date())
         let workspace = FakeWorkspace()
-        // The agent writes a reading for each page; the fake stands in for that.
+        // The agent writes a transcript for each page; the fake stands in for that.
         workspace.files["work/pen/\(first.folder.name)/p4.md"] = Data("# p4".utf8)
         workspace.files["work/pen/\(second.folder.name)/p5.md"] = Data("# p5".utf8)
         let p = processor(books, workspace: workspace)
@@ -98,11 +98,11 @@ final class PageProcessorTests: XCTestCase {
         XCTAssertEqual(p.due(), [])
         XCTAssertEqual(Set(p.outstanding), [first, second])
 
-        // The panel says "Read 2 pages now", and that is what it has to mean.
-        p.readNow()
+        // The panel says "Transcribe 2 pages now", and that is what it has to mean.
+        p.transcribeNow()
         XCTAssertTrue(p.sweeping)
-        try await p.read(first)
-        try await p.read(second)
+        try await p.transcribe(first)
+        try await p.transcribe(second)
         XCTAssertEqual(Set(p.outstanding), [])
 
         // Nothing left: the next tick ends the sweep rather than looking again forever.
@@ -116,7 +116,7 @@ final class PageProcessorTests: XCTestCase {
         let runner = FakeRunner()
         runner.failure = DamRunError.connection("no route")
         let p = processor(books, runner: runner)
-        p.readNow()
+        p.transcribeNow()
         XCTAssertTrue(p.sweeping)
 
         // The attempt the click started fails; the backoff takes over and the pages still owed a
@@ -130,27 +130,27 @@ final class PageProcessorTests: XCTestCase {
         XCTAssertTrue(p.outstanding.contains(ref))
     }
 
-    func testTapsOnAControlSurfaceAreNeverRead() throws {
+    func testTapsOnAControlSurfaceAreNeverTranscribe() throws {
         let (ref, books) = try writePage(at: Date().addingTimeInterval(-300))
         let p = processor(books)
         p.controlBooks = [ref.folder.surface]
         XCTAssertEqual(p.due(), [])
     }
 
-    func testTheRoundTripPutsTheImageUpAndTheReadingBack() async throws {
+    func testTheRoundTripPutsTheImageUpAndTheTranscriptBack() async throws {
         let (ref, books) = try writePage(at: Date().addingTimeInterval(-300))
         let workspace = FakeWorkspace()
         workspace.files["work/pen/\(ref.folder.name)/p4.md"] = Data("# p4\n\n- [ ] >> book the room".utf8)
         let runner = FakeRunner()
         let p = processor(books, workspace: workspace, runner: runner)
 
-        try await p.read(ref)
+        try await p.transcribe(ref)
 
         // Uploaded under `work/`, because the file API is rooted at the agent's home while the
         // agent itself runs one directory down.
         XCTAssertEqual(workspace.uploaded.map(\.path), ["work/pen/\(ref.folder.name)/p4.png"])
         XCTAssertEqual(workspace.uploaded.first?.contentType, "image/png")
-        // The page travels with the prompt, so the reader is shown it rather than sent to fetch it.
+        // The page travels with the prompt, so the transcriber is shown it rather than sent to fetch it.
         XCTAssertEqual(runner.images.first?.mimeType, "image/png")
         XCTAssertEqual(runner.images.first?.data, Data([0x89, 0x50, 0x4E, 0x47]))
         // The prompt names both files as the agent sees them: no `work/`, or it looks in
@@ -160,24 +160,24 @@ final class PageProcessorTests: XCTestCase {
         XCTAssertTrue(prompt.contains("`pen/\(ref.folder.name)/p4.md`"))
         XCTAssertFalse(prompt.contains("work/pen/"))
 
-        let reading = try XCTUnwrap(p.readingURL(for: ref))
-        XCTAssertEqual(try String(contentsOf: reading, encoding: .utf8), "# p4\n\n- [ ] >> book the room")
-        XCTAssertEqual(reading.lastPathComponent, "p4.md")
+        let transcript = try XCTUnwrap(p.transcriptURL(for: ref))
+        XCTAssertEqual(try String(contentsOf: transcript, encoding: .utf8), "# p4\n\n- [ ] >> book the room")
+        XCTAssertEqual(transcript.lastPathComponent, "p4.md")
         // Beside the captured file it was made from, never inside raw/.
-        XCTAssertEqual(reading.deletingLastPathComponent().lastPathComponent, "pages")
+        XCTAssertEqual(transcript.deletingLastPathComponent().lastPathComponent, "pages")
     }
 
-    func testAnEarlierReadingGoesUpWithTheImage() async throws {
+    func testAnEarlierTranscriptGoesUpWithTheImage() async throws {
         let (ref, books) = try writePage(at: Date().addingTimeInterval(-300))
         let workspace = FakeWorkspace()
         let p = processor(books, workspace: workspace)
-        let reading = try XCTUnwrap(p.readingURL(for: ref))
-        try FileManager.default.createDirectory(at: reading.deletingLastPathComponent(),
+        let transcript = try XCTUnwrap(p.transcriptURL(for: ref))
+        try FileManager.default.createDirectory(at: transcript.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
-        try "- [x] >> already done".write(to: reading, atomically: true, encoding: .utf8)
+        try "- [x] >> already done".write(to: transcript, atomically: true, encoding: .utf8)
         workspace.files["work/pen/\(ref.folder.name)/p4.md"] = Data("- [x] >> already done".utf8)
 
-        try await p.read(ref)
+        try await p.transcribe(ref)
 
         XCTAssertEqual(workspace.uploaded.map(\.path).sorted(),
                        ["work/pen/\(ref.folder.name)/p4.md", "work/pen/\(ref.folder.name)/p4.png"])
@@ -190,12 +190,12 @@ final class PageProcessorTests: XCTestCase {
         let p = processor(books, runner: runner)
 
         do {
-            try await p.read(ref)
-            XCTFail("a stalled run is not a reading")
+            try await p.transcribe(ref)
+            XCTFail("a stalled run is not a transcript")
         } catch {
             XCTAssertEqual(error as? DamRunError, .stalled("Bash(rm)"))
         }
-        // Nothing was written, so the page is still owed a reading.
+        // Nothing was written, so the page is still owed a transcript.
         XCTAssertEqual(p.due(), [ref])
     }
 }
@@ -216,7 +216,7 @@ extension PageProcessorTests {
         }
     }
 
-    func testTheReaderCanBeAskedToFixTheWording() async throws {
+    func testTheTranscriberCanBeAskedToFixTheWording() async throws {
         let (ref, books) = try writePage()
         let runner = FakeRunner()
         runner.reply = """
@@ -240,7 +240,7 @@ extension PageProcessorTests {
         XCTAssertEqual(after[1].thread.map(\.text), ["Which pricing?"])
         XCTAssertEqual(after[1].session, "s-1")
         XCTAssertEqual(after[1].agent, "mailer")
-        // The reader was asked, with the page in view, and told what to change.
+        // The transcriber was asked, with the page in view, and told what to change.
         XCTAssertEqual(runner.images.count, 1)
         XCTAssertTrue(runner.prompts[0].contains("fix the name and the case"))
         XCTAssertTrue(runner.prompts[0].contains("FIND OUT WHO IS ONDREJ SIROKY FROM APOCO"))
@@ -280,7 +280,7 @@ extension PageProcessorTests {
         XCTAssertEqual(after.thread.map(\.from), [.agent])
         XCTAssertEqual(after.thread[0].text, "Ondrej Siroky runs delivery at Apoco.")
         XCTAssertEqual(after.session, "sess-1")
-        // The status line is the app's, not the reader's: it never appears in what is shown.
+        // The status line is the app's, not the transcriber's: it never appears in what is shown.
         XCTAssertFalse(after.note!.contains("STATUS"))
     }
 
@@ -400,12 +400,12 @@ extension PageProcessorTests {
         let failure = await executed(p, action, on: ref)
         XCTAssertNil(failure)
         XCTAssertEqual(fleet.prompted, ["agent-slack"])
-        // And the page goes to that agent's own workspace, not the reader's: it cannot read what
+        // And the page goes to that agent's own workspace, not the transcriber's: it cannot read what
         // it was never given.
         XCTAssertEqual(fleet.staged, ["agent-slack"])
     }
 
-    func testAnUnroutedLineStaysWithTheReader() async throws {
+    func testAnUnroutedLineStaysWithTheTranscriber() async throws {
         let (ref, books) = try writePage()
         let fleet = FakeFleet()
         let p = processor(books, fleet: fleet)
@@ -417,7 +417,7 @@ extension PageProcessorTests {
         XCTAssertEqual(fleet.prompted, [nil])
     }
 
-    func testTheReaderIsToldWhoCouldCarryEachLineOut() async throws {
+    func testTheTranscriberIsToldWhoCouldCarryEachLineOut() async throws {
         let (ref, books) = try writePage(at: Date().addingTimeInterval(-300))
         let runner = FakeRunner()
         let workspace = FakeWorkspace()
@@ -426,34 +426,34 @@ extension PageProcessorTests {
                                     systems: ["Slack"])]
         workspace.files[p.workspacePath(for: ref, ext: "md")] = Data("# page".utf8)
 
-        try await p.read(ref)
+        try await p.transcribe(ref)
         let prompt = try XCTUnwrap(runner.prompts.first)
         XCTAssertTrue(prompt.contains("agent-slack"))
         XCTAssertTrue(prompt.contains("Can reach: Slack."))
         XCTAssertTrue(prompt.contains("\"agent\""))
     }
 
-    func testWithNoRosterTheReaderIsNotAskedToRouteAnything() async throws {
+    func testWithNoRosterTheTranscriberIsNotAskedToRouteAnything() async throws {
         let (ref, books) = try writePage(at: Date().addingTimeInterval(-300))
         let runner = FakeRunner()
         let workspace = FakeWorkspace()
         let p = processor(books, workspace: workspace, runner: runner)
         workspace.files[p.workspacePath(for: ref, ext: "md")] = Data("# page".utf8)
 
-        try await p.read(ref)
+        try await p.transcribe(ref)
         XCTAssertFalse(try XCTUnwrap(runner.prompts.first).contains("\"agent\""))
     }
 
-    func testWhereALineWasRoutedSurvivesTheNextReading() {
-        // A person changed it, or the first reading chose it. Either way the paper has no say.
+    func testWhereALineWasRoutedSurvivesTheNextTranscript() {
+        // A person changed it, or the first transcript chose it. Either way the paper has no say.
         let ours = [PageAction(text: "SEND TO BRAINIO", agent: "agent-slack")]
         let merged = PageActions.merge(ours: ours,
                                        theirs: [PageAction(text: "send to brainio", agent: "agent-other")])
         XCTAssertEqual(merged.map(\.agent), ["agent-slack"])
     }
 
-    func testAReadingOfThePageCannotLoseTheConversation() async throws {
-        // The two paths write the same file. A reading proposes what the paper says; it has never
+    func testATranscriptOfThePageCannotLoseTheConversation() async throws {
+        // The two paths write the same file. A transcript proposes what the paper says; it has never
         // heard of the exchange, and must not take it away.
         let (ref, books) = try writePage()
         let p = processor(books)
@@ -488,7 +488,7 @@ private final class FakeFleet: DamFleet, @unchecked Sendable {
     }
 
     func workspace(for agentId: String?) throws -> DamWorkspace {
-        // The reader's own reads and writes pass nil; anything else is a hand-over.
+        // The transcriber's own reads and writes pass nil; anything else is a hand-over.
         if let agentId { lock.withLock { staged.append(agentId) } }
         return space
     }
@@ -533,7 +533,7 @@ private final class FakeRunner: DamPrompting, @unchecked Sendable {
     var prompts: [String] = []
     var images: [DamImage] = []
     var failure: Error?
-    /// What the agent says back. The default is a reading; an execution test sets its own.
+    /// What the agent says back. The default is a transcript; an execution test sets its own.
     var reply = "read it"
 
     /// The sessions it was asked to carry on, so a test can say whether the conversation stayed

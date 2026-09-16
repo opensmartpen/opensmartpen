@@ -2,10 +2,10 @@ import Foundation
 @testable import BrainioPenCore
 import XCTest
 
-/// An agent is asked once what it is for, and the answer is what the reader later chooses from.
+/// An agent is asked once what it is for, and the answer is what the transcriber later chooses from.
 /// It is a model answering, so the parsing has to survive a model being helpful.
 final class AgentProfileAnswerTests: XCTestCase {
-    func testTheTwoLinesAreRead() {
+    func testTheTwoLinesAreTranscribe() {
         let answer = AgentProfileAnswer("""
         SUMMARY: I run the team's Slack and keep the sprint board honest.
         SYSTEMS: Slack, Jira, GitHub
@@ -45,29 +45,29 @@ final class AgentProfileAnswerTests: XCTestCase {
 }
 
 /// One key, several agents. What matters is that a turn goes to the agent it was routed to, and
-/// that the reader's own account is what everything else is built from.
+/// that the transcriber's own account is what everything else is built from.
 final class DamAgentsTests: XCTestCase {
-    private let reader = DamAccount(host: "https://dam.example.com", agentId: "agent-reader",
+    private let transcriber = DamAccount(host: "https://dam.example.com", agentId: "agent-transcriber",
                                     apiKey: "pk_test")
 
     func testAnAgentGetsItsOwnRelayOnTheSameKey() throws {
-        let fleet = try DamAgents(reader: reader)
+        let fleet = try DamAgents(transcriber: transcriber)
         let other = try XCTUnwrap(fleet.prompter(for: "agent-slack") as? DamRunner)
         XCTAssertEqual(other.url.absoluteString,
                        "wss://dam.example.com/api/agents/agent-slack/acp?token=pk_test")
         let mine = try XCTUnwrap(fleet.prompter(for: nil) as? DamRunner)
         XCTAssertEqual(mine.url.absoluteString,
-                       "wss://dam.example.com/api/agents/agent-reader/acp?token=pk_test")
+                       "wss://dam.example.com/api/agents/agent-transcriber/acp?token=pk_test")
     }
 
     func testTheSameAgentIsOnlyBuiltOnce() throws {
-        let fleet = try DamAgents(reader: reader)
+        let fleet = try DamAgents(transcriber: transcriber)
         XCTAssertTrue(try fleet.prompter(for: "agent-slack") as AnyObject
                       === fleet.prompter(for: "agent-slack") as AnyObject)
     }
 
     func testAPlainHttpHostIsRefusedBeforeAnythingIsSent() {
-        XCTAssertThrowsError(try DamAgents(reader: DamAccount(host: "http://dam.example.com",
+        XCTAssertThrowsError(try DamAgents(transcriber: DamAccount(host: "http://dam.example.com",
                                                               agentId: "a", apiKey: "k")))
     }
 

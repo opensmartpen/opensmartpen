@@ -12,6 +12,6 @@ Digitise handwritten notes from a Neo smartpen (A1, Ncode paper) into a store of
 Components:
 
 - `app/` — the Brainio Pen macOS menubar app, on NeoLAB's NISDK3, filing captured strokes under `~/Brainio/pen`. Called PenBridge until 2026-09-12; see `app/README.md` for what the rename moved.
-- Reading a page runs in a DAM agent: the app draws a quiet page, uploads the PNG and asks for one turn, and files the Markdown that comes back. See `docs/processing.md` and `docs/adrs/DRAFT-a-page-is-read-by-an-agent.md`. Set it up in Settings → Reading, and prove the connection with `brainio-pen --check-dam`.
+- Transcribing a page runs in a DAM agent: the app draws a quiet page, uploads the PNG and asks for one turn, and files the Markdown that comes back. See `docs/processing.md` and `docs/adrs/DRAFT-a-page-is-transcribed-by-an-agent.md`. Set it up in Settings → Agents, and prove the connection with `brainio-pen --check-dam`.
 - The rest of processing (SVG, geometry, a note index) is not built; `pipeline/` holds what exists.
 - `docs/adrs/` — architecture decision records.

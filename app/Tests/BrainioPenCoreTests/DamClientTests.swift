@@ -48,7 +48,7 @@ final class DamClientTests: XCTestCase {
         XCTAssertEqual(body["overwrite"] as? Bool, true)
     }
 
-    func testReadingBackTextCarriesTheModificationTime() async throws {
+    func testTranscriptBackTextCarriesTheModificationTime() async throws {
         let c = try client { _ in
             (200, Data(#"""
             {"result":{"data":{"path":"pen/p4.md","content":"# hello","binary":false,
@@ -95,7 +95,7 @@ final class DamClientTests: XCTestCase {
         }
     }
 
-    func testTheProxysOwnRefusalIsReadable() async throws {
+    func testTheProxysOwnRefusalIsTranscribeable() async throws {
         let c = try client { _ in
             (403, Data(#"{"error":"forbidden","message":"API key is not bound to agent agent-7"}"#.utf8))
         }

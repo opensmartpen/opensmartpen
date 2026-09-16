@@ -191,7 +191,7 @@ public protocol DamApprovals: Sendable {
 /// One per line being carried out, handed to the run and to the window at the same time. The run
 /// puts asks on it and goes on waiting; the window shows them and takes the answer. Without one,
 /// nothing has changed: a request for permission ends the turn, which is the right behaviour when
-/// nobody is looking — a page being read has no desk, on purpose.
+/// nobody is looking — a page being transcribed has no desk, on purpose.
 public final class ApprovalDesk: @unchecked Sendable {
     /// How an egress hold is answered: in DAM's queue, by row id.
     public typealias Gate = (String, ApprovalVerdict) async throws -> Void

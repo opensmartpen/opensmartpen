@@ -22,7 +22,7 @@ and the characteristic failure is not a refusal but a fluent, confident, wrong r
 
 A page becomes text by rendering it and asking Claude to read the image, and **the image stays
 beside the text** as the evidence that can be checked by eye. Where that reading happens is not
-decided here: `DRAFT-a-page-is-read-by-an-agent` moved it from the local CLI to a DAM agent, and
+decided here: `DRAFT-a-page-is-transcribed-by-an-agent` moved it from the local CLI to a DAM agent, and
 this record keeps only what is asked of the reading itself.
 
 - The image is rasterised from the strokes directly, never converted from the vector page. macOS
@@ -47,7 +47,7 @@ this record keeps only what is asked of the reading itself.
 ## Alternatives Considered
 
 - **Stroke-based recognition as the baseline** — on-device and incapable of hallucinating, but unproven here; it can run first and let Claude clean up if it wins a comparison.
-- **An API key instead of the CLI** — one more secret to hold when the existing login already works. Taken in the end, in `DRAFT-a-page-is-read-by-an-agent`: a CLI on this Mac is not an agent, and the key is bound to one agent and kept in the Keychain.
+- **An API key instead of the CLI** — one more secret to hold when the existing login already works. Taken in the end, in `DRAFT-a-page-is-transcribed-by-an-agent`: a CLI on this Mac is not an agent, and the key is bound to one agent and kept in the Keychain.
 - **Convert the vector page to an image** — this is exactly how strokes went missing.
 - **Treat the transcription as the record** — ADR-001 puts truth in raw; the text is derived and disposable, which is what makes re-running it safe.
 - **Keep command state in a separate file** — a second store to reconcile with a derived file that is rewritten on every render.

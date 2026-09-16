@@ -38,22 +38,34 @@ public struct Config: Codable, Equatable {
     /// are logged and discarded instead of being filed as pages.
     public var controlBooks: [String] = ["s3/o1013/b1"]
 
-    /// The DAM agent that reads a page once it has gone quiet, as `https://dam.example.com` and an
-    /// `agent-…` id. Both nil leaves reading off, and the app behaves exactly as it did before.
+    /// The DAM agent that transcribes a page once it has gone quiet, as `https://dam.example.com` and an
+    /// `agent-…` id. Both nil leaves transcription off, and the app behaves exactly as it did before.
     /// The API key is not here: it is in `dam-key` beside this file (`DamKey`).
     public var damHost: String?
     public var damAgentId: String?
-    /// Every agent an action may be handed to, with what each says it does.
+    /// Every assistant that has been switched on, with what each says it does.
     ///
-    /// `damAgentId` is the one that reads pages, and it is deliberately the one with nothing
-    /// confidential behind it: reading means looking at whatever somebody wrote on paper, and a
-    /// page is an untrusted document. The others are the ones with the connections, and a page
-    /// cannot reach them — it can only have an agent proposed for it, which a person can change.
+    /// `damAgentId` is the transcriber, and it is deliberately the one with nothing confidential
+    /// behind it: transcribing means looking at whatever somebody wrote on paper, and a page is an
+    /// untrusted document. The assistants are the ones with the connections, and a page cannot
+    /// reach them — it can only have one proposed for it, which a person can change.
+    ///
+    /// An entry here is an assistant somebody switched on. Its summary arrives a moment later,
+    /// from the agent itself, and until it has the entry is not offered anywhere: see `assistants`.
     public var damRoster: [DamAgentProfile] = []
-    /// Minutes without strokes before a page is sent to DAM to be read.
+
+    /// The assistants an action may be handed to: switched on, answered, and not the transcriber.
+    ///
+    /// The transcriber is left out because it has no connections, so proposing it says nothing.
+    /// An agent that has not answered is left out because the transcriber chooses by what each
+    /// one says it can reach, and "no description" gives it nothing to choose by.
+    public var assistants: [DamAgentProfile] {
+        damRoster.filter { $0.id != damAgentId && $0.summary != nil }
+    }
+    /// Minutes without strokes before a page is sent to DAM to be transcribed.
     ///
     /// Much shorter than `quietMinutes`, and for a different reason. A commit is a record and can
-    /// wait; a reading is what a person looks at, so it should be there when they put the pen down.
+    /// wait; a transcript is what a person looks at, so it should be there when they put the pen down.
     /// A page written on again is simply sent again — the text is derived, and regenerating it
     /// costs nothing but a turn.
     public var damQuietMinutes: Double = 1
@@ -92,7 +104,7 @@ public struct Config: Codable, Equatable {
         sdkDebugLog = try c.decodeIfPresent(Bool.self, forKey: .sdkDebugLog) ?? d.sdkDebugLog
     }
 
-    /// The DAM agent to hand pages to, or nil when reading is not set up. Asking for the key here
+    /// The DAM agent to hand pages to, or nil when transcription is not set up. Asking for the key here
     /// rather than storing it keeps one answer to "is this configured": all three parts, or none.
     public func damAccount(key: String? = DamKey.read()) -> DamAccount? {
         guard let damHost, let damAgentId, let key, !key.isEmpty else { return nil }

@@ -5,7 +5,7 @@ import XCTest
 /// The reply is the deliverable and is kept whole. The one thing read out of it is the status, and
 /// the rule that matters is that a tick is never guessed at.
 final class ActionAnswerTests: XCTestCase {
-    func testTheStatusLineIsReadAndTakenOff() {
+    func testTheStatusLineIsTranscribeAndTakenOff() {
         let answer = ActionAnswer("""
         Ondrej Siroky runs delivery at Apoco. He joined in 2021.
 
@@ -22,7 +22,7 @@ final class ActionAnswerTests: XCTestCase {
         XCTAssertEqual(answer.text, "Which Tomas? There are two in the address book.")
     }
 
-    func testBlockedIsRead() {
+    func testBlockedIsTranscribe() {
         XCTAssertEqual(ActionAnswer("No mail account here.\n**STATUS: blocked**").status, .blocked)
     }
 

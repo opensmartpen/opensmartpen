@@ -293,14 +293,14 @@ public struct StatusPanel: View {
                 // handler stays; only the promise is gone.
                 // Only when there is something to send. A page goes on its own a minute after it
                 // is put down, so this is for the person who does not want to wait — and it is a
-                // count, because the number of pages still owed a reading is the thing you want
+                // count, because the number of pages still owed a transcript is the thing you want
                 // to know before you ask for them.
-                if model.isReading {
-                    MenuItem(title: model.unread > 0
-                        ? "Reading… (\(model.unread) left)" : "Reading…") {}
-                } else if model.unread > 0 {
-                    MenuItem(title: "Read \(model.unread) page\(model.unread == 1 ? "" : "s") now",
-                             action: model.readNow)
+                if model.isTranscribing {
+                    MenuItem(title: model.owed > 0
+                        ? "Transcribing… (\(model.owed) left)" : "Transcribing…") {}
+                } else if model.owed > 0 {
+                    MenuItem(title: "Transcribe \(model.owed) page\(model.owed == 1 ? "" : "s") now",
+                             action: model.transcribeNow)
                 }
                 MenuItem(title: "Settings…", action: model.openConfig)
                 MenuItem(title: "Quit") { NSApp.terminate(nil) }
@@ -369,7 +369,7 @@ private struct RecentRow: View {
         Button(action: open) {
             HStack(spacing: 9) {
                 // On the notebook itself, not in a column of its own. The mark belongs to the
-                // book, the way an unread badge belongs to an app icon — put it at the start of
+                // book, the way an owed badge belongs to an app icon — put it at the start of
                 // the line instead and it reads as a bullet, and the title it sits beside is not
                 // the thing it is about.
                 PaperMark(binding: book.binding)
@@ -440,9 +440,9 @@ private struct ActionLine: View {
                     Button("Ask the agent to do it") { model.run(action) }
                 }
                 if action.action.done {
-                    Button("Not done after all") { model.setDone(action, false) }
+                    Button("Reopen") { model.setDone(action, false) }
                 } else if !action.action.dismissed {
-                    Button("I have done this") { model.setDone(action, true) }
+                    Button("Mark as done") { model.setDone(action, true) }
                 }
                 if action.action.dismissed {
                     Button("Put it back") { model.setDismissed(action, false) }
@@ -452,7 +452,7 @@ private struct ActionLine: View {
                 Divider()
                 // Where the rest of it lives: the whole page, what the agent said back, and the
                 // box for the part the paper left out.
-                Button("Open the page") { open() }
+                Button("Reveal in notebook") { open() }
             } label: {
                 if busy {
                     ProgressView().controlSize(.small).scaleEffect(0.6)

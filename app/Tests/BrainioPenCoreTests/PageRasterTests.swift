@@ -37,7 +37,7 @@ final class PageRasterTests: XCTestCase {
         let scale = PageRaster.minPx / 32.0
         XCTAssertEqual(Double(raster.widthPx), (32.0 * scale).rounded(), accuracy: 1)
         XCTAssertEqual(Double(raster.heightPx), (12.0 * scale).rounded(), accuracy: 1)
-        // Nothing like the 210 mm the sheet is wide: 32 mm of it, drawn to be read.
+        // Nothing like the 210 mm the sheet is wide: 32 mm of it, drawn to be transcribed.
         XCTAssertLessThan(Double(raster.widthPx), PageRaster.maxPx)
     }
 

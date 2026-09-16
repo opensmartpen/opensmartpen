@@ -23,7 +23,7 @@ final class ApprovalsTests: XCTestCase {
         ],
     ]
 
-    func testAnEgressHoldIsReadAsWhatTheAgentIsTryingToReach() {
+    func testAnEgressHoldIsTranscribeAsWhatTheAgentIsTryingToReach() {
         let ask = ApprovalAsk.read(params: egressFrame, rpc: .text("2f9b-1"))
 
         XCTAssertTrue(ask.isEgress)

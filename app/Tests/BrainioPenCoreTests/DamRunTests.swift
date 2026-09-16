@@ -7,7 +7,7 @@ import XCTest
 final class DamRunTests: XCTestCase {
     private let account = DamAccount(host: "https://dam.example.com/", agentId: "agent-7", apiKey: "pk_test")
 
-    func testTheRelayUrlCarriesTheKeyWhereTheUpgradeReadsIt() throws {
+    func testTheRelayUrlCarriesTheKeyWhereTheUpgradeTranscribesIt() throws {
         let runner = try DamRunner(account: account)
         XCTAssertEqual(runner.url.absoluteString,
                        "wss://dam.example.com/api/agents/agent-7/acp?token=pk_test")
@@ -19,7 +19,7 @@ final class DamRunTests: XCTestCase {
     }
 
     /// The frame that carries a page. What DAM is given has to be a picture, in front of the
-    /// words, or the reader is back to opening files and magnifying them.
+    /// words, or the transcriber is back to opening files and magnifying them.
     func testThePageTravelsWithThePromptAsAPicture() async throws {
         let agent = ScriptedAgent()
         agent.answer("initialize") { _ in ["protocolVersion": 1] }

@@ -3,16 +3,16 @@ import Foundation
 import XCTest
 
 /// An action that has been carried out has changed something outside this Mac. So the only rule
-/// worth testing hard is that nothing a later reading says can make a done action undone.
+/// worth testing hard is that nothing a later transcript says can make a done action undone.
 final class PageActionsTests: XCTestCase {
-    func testTheNewReadingDecidesWhichActionsExist() {
+    func testTheNewTranscriptDecidesWhichActionsExist() {
         let merged = PageActions.merge(ours: [PageAction(text: "book the room")],
                                        theirs: [PageAction(text: "book the room"),
                                                 PageAction(text: "send this to Tomas")])
         XCTAssertEqual(merged.map(\.text), ["book the room", "send this to Tomas"])
     }
 
-    func testADoneActionStaysDoneWhateverTheReadingSays() {
+    func testADoneActionStaysDoneWhateverTheTranscriptSays() {
         let ours = [PageAction(text: "send this to Tomas", done: true, note: "sent 09:20")]
         let merged = PageActions.merge(ours: ours, theirs: [PageAction(text: "Send this to Tomas")])
         XCTAssertEqual(merged.count, 1)
@@ -27,16 +27,16 @@ final class PageActionsTests: XCTestCase {
         XCTAssertTrue(merged[0].done)
     }
 
-    func testADoneActionTheReadingLostIsKept() {
-        // The line was written over, or the reader missed it. It still happened.
+    func testADoneActionTheTranscriptLostIsKept() {
+        // The line was written over, or the transcriber missed it. It still happened.
         let ours = [PageAction(text: "send this to Tomas", done: true)]
         let merged = PageActions.merge(ours: ours, theirs: [PageAction(text: "book the room")])
         XCTAssertEqual(merged.map(\.text), ["book the room", "send this to Tomas"])
         XCTAssertTrue(merged.last!.done)
     }
 
-    func testARewrittenLineKeepsItsWordsAndItsRecordAcrossTheNextReading() {
-        // A person had the reader fix the case and the name. The next reading of the sheet says
+    func testARewrittenLineKeepsItsWordsAndItsRecordAcrossTheNextTranscript() {
+        // A person had the transcriber fix the case and the name. The next transcript of the sheet says
         // what the paper says, in capitals, as it always did.
         let said = [ActionMessage(from: .agent, text: "He runs delivery.")]
         let ours = [PageAction(text: "Find out who is Ondřej Široký", thread: said, session: "s-1",
@@ -48,8 +48,8 @@ final class PageActionsTests: XCTestCase {
         XCTAssertEqual(merged[0].session, "s-1")
     }
 
-    func testAReaderThatKeptTheFixedWordingStillMatches() {
-        // Told to keep our entries "exactly as they are", the reader may hand the fixed text back,
+    func testATranscriberThatKeptTheFixedWordingStillMatches() {
+        // Told to keep our entries "exactly as they are", the transcriber may hand the fixed text back,
         // with or without the paper's version beside it. Both are the same line.
         let ours = [PageAction(text: "Find out who is Ondřej Široký", done: true,
                                paper: "FIND OUT WHO IS ONDREJ SIROKY")]
@@ -69,7 +69,7 @@ final class PageActionsTests: XCTestCase {
     }
 
     func testADismissedActionStaysDismissedWhenThePageStillSaysIt() {
-        // You called it off; the paper has not changed its mind and neither has the reader.
+        // You called it off; the paper has not changed its mind and neither has the transcriber.
         let ours = [PageAction(text: "call", dismissed: true)]
         let merged = PageActions.merge(ours: ours, theirs: [PageAction(text: "call")])
         XCTAssertEqual(merged.count, 1)
@@ -77,7 +77,7 @@ final class PageActionsTests: XCTestCase {
         XCTAssertEqual(merged[0].state, .dismissed)
     }
 
-    func testADismissedActionTheReadingLostIsKept() {
+    func testADismissedActionTheTranscriptLostIsKept() {
         let ours = [PageAction(text: "call", dismissed: true)]
         let merged = PageActions.merge(ours: ours, theirs: [PageAction(text: "book the room")])
         XCTAssertEqual(merged.map(\.text), ["book the room", "call"])
@@ -88,7 +88,7 @@ final class PageActionsTests: XCTestCase {
         XCTAssertEqual(PageAction(text: "call", done: true, dismissed: true).state, .dismissed)
     }
 
-    func testAFileWrittenWithoutTheDismissedFieldStillReads() throws {
+    func testAFileWrittenWithoutTheDismissedFieldStillTranscribes() throws {
         // What the agent wrote before the field existed, and what it writes if it forgets.
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("acts-\(UUID().uuidString)/p1.actions.json")
@@ -101,7 +101,7 @@ final class PageActionsTests: XCTestCase {
     }
 
     func testUndoingIsAClickAndNotAMerge() throws {
-        // A person can put an action back; a reading cannot. `update` is the only door either way.
+        // A person can put an action back; a transcript cannot. `update` is the only door either way.
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("acts-\(UUID().uuidString)/p1.actions.json")
         try PageActions.save([PageAction(text: "call", done: true),

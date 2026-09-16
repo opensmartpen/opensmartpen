@@ -178,7 +178,7 @@ private struct ActionCard: View {
                 // ways — you can tick what it left open and re-open what it ticked.
                 Button { store.setDone(item, item.status != .done) } label: { Mark(status: item.status) }
                     .buttonStyle(.plain)
-                    .help(item.status == .done ? "Not done after all" : "Done")
+                    .help(item.status == .done ? "Reopen" : "Mark as done")
 
                 VStack(alignment: .leading, spacing: 3) {
                     // A finished line goes grey and keeps its words. Crossing it out says it was
@@ -196,7 +196,7 @@ private struct ActionCard: View {
                             .font(.system(size: 10.5))
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
-                        // Who it goes to. The reader proposed it from the page; a page is not
+                        // Who it goes to. The transcriber proposed it from the page; a page is not
                         // something to take instructions from, so the answer is always changeable
                         // and always in sight before anything is sent.
                         // Always, not only when a roster exists. Where a line is going is part
@@ -241,26 +241,31 @@ private struct ActionCard: View {
                 } else {
                     Menu {
                         if store.canRun, item.status == .new || item.status == .wip {
-                            Button(item.action.thread.isEmpty ? "Ask the agent" : "Ask it again") {
+                            // The two say what they keep. "Continue" carries the conversation on
+                            // with the same agent and everything it has decided; "Retry from
+                            // scratch" throws that away and puts the original line in front of a
+                            // fresh agent — for when the first attempt went down the wrong road
+                            // and no amount of saying more will bring it back.
+                            Button(item.action.thread.isEmpty ? "Ask the agent" : "Continue with the agent") {
                                 store.expanded = item.id
                                 store.run(item)
                             }
+                            .help(item.action.thread.isEmpty
+                                  ? "Hand this line to the agent"
+                                  : "Send it back to the same agent, which keeps what it has already decided")
                         }
-                        // Only once there is something to forget. "Ask it again" carries the
-                        // conversation on; this throws it away and puts the original line in
-                        // front of a fresh agent — for when the first attempt went down the
-                        // wrong road and no amount of saying more will bring it back.
+                        // Only once there is something to forget.
                         if store.canRun, !item.action.thread.isEmpty || item.action.session != nil {
-                            Button("Start over") {
+                            Button("Retry from scratch") {
                                 store.expanded = item.id
                                 store.startOver(item)
                             }
-                            .help("Forget the conversation and send the line again as new")
+                            .help("Forget the conversation and give the line to a fresh agent")
                         }
                         if item.status == .done {
-                            Button("Not done after all") { store.setDone(item, false) }
+                            Button("Reopen") { store.setDone(item, false) }
                         } else if item.status != .dismissed {
-                            Button("Done") { store.setDone(item, true) }
+                            Button("Mark as done") { store.setDone(item, true) }
                         }
                         if item.status == .dismissed {
                             Button("Put it back") { store.setDismissed(item, false) }
@@ -268,17 +273,17 @@ private struct ActionCard: View {
                             Button("Delete") { store.setDismissed(item, true) }
                         }
                         Divider()
-                        // The wording, not the line: the reader gets the whole page, because "make
-                        // them lowercase" is about the page and "the name is Ondřej Široký" fixes
-                        // the line wherever it appears.
+                        // The page's text, not the action: the transcriber gets the whole page, because
+                        // "make them lowercase" is about the page and "the name is Ondřej Široký"
+                        // fixes the line wherever it appears.
                         if store.canRun {
-                            Button("Fix the wording…") {
+                            Button("Fix the transcript…") {
                                 store.expanded = item.id
                                 store.rewordingFrom = item.id
                             }
-                            .help("Tell the reader what to change in this page's lines")
+                            .help("Tell the transcriber what it misread on this page")
                         }
-                        Button("Open the page") { store.onOpenPage?(item.page) }
+                        Button("Reveal in notebook") { store.onOpenPage?(item.page) }
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 11))
@@ -457,7 +462,7 @@ private struct Permission: View {
     }
 }
 
-/// Where you tell the reader what to change about the page's wording.
+/// Where you tell the transcriber what to change about the page's wording.
 ///
 /// On the row rather than in a sheet, like the permission card, and for the same reason: the row
 /// says which page, and a sentence like "the name is Ondřej Široký" is written while looking at
@@ -476,7 +481,7 @@ private struct RewordBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Fix the wording on page \(item.pageNumber)")
+                Text("Fix the transcript of page \(item.pageNumber)")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(Ink.accent)
                     .textCase(.uppercase)
@@ -514,11 +519,11 @@ private struct RewordBox: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(canSend ? Ink.accent : Color.secondary.opacity(0.4))
                 .disabled(!canSend)
-                .help("Send to the reader")
+                .help("Send to the transcriber")
             }
             // Every line on the page changes, not only this one: said here, once, rather than
             // discovered.
-            Text("The reader gets the page and every line on it. Nothing is carried out.")
+            Text("The transcriber gets the page and every line on it. Nothing is carried out.")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
         }
@@ -567,7 +572,7 @@ private struct Choice: View {
 
 /// Which agent carries this line out, and a menu to change it.
 ///
-/// It reads as a suggestion, not a setting, because that is what it is: the agent that read the
+/// It reads as a suggestion, not a setting, because that is what it is: the agent that transcribed the
 /// page guessed from what each of the others says it can reach. The guess is worth showing before
 /// the work is sent, and worth one click to correct.
 private struct AgentChip: View {

@@ -78,13 +78,13 @@ public final class ActionsStore: ObservableObject {
     }
 
     /// The agent an action is routed to, as a person reads it. Nil means nobody chose, and it goes
-    /// to the reader — the agent with nothing to reach.
+    /// to the transcriber — the agent with nothing to reach.
     public func agentName(_ item: Item) -> String? {
         guard let id = item.action.agent else { return nil }
         return roster.first { $0.id == id }?.name ?? id
     }
 
-    /// Route it somewhere else. Always a person's to change: the reader proposes from a page, and
+    /// Route it somewhere else. Always a person's to change: the transcriber proposes from a page, and
     /// a page is not something to take instructions from.
     public func setAgent(_ item: Item, to id: String?) {
         change(item) { $0.agent = id }
@@ -173,12 +173,12 @@ public final class ActionsStore: ObservableObject {
 
     // MARK: - Fixing the wording
 
-    /// The row whose box for telling the reader what to change is open. One at a time.
+    /// The row whose box for telling the transcriber what to change is open. One at a time.
     @Published public var rewordingFrom: String?
-    /// The pages the reader is rewording right now.
+    /// The pages the transcriber is rewording right now.
     @Published public private(set) var rewording: Set<PageRef> = []
 
-    /// Ask the reader to change how this page's lines are worded — the case, a name it got wrong.
+    /// Ask the transcriber to change how this page's lines are worded — the case, a name it got wrong.
     /// Every line on the page, because that is what "lowercase" means; the failure, if any, lands
     /// on the row the box was opened from, since that is where you are looking.
     public func reword(_ item: Item, _ instruction: String) {

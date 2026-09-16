@@ -57,7 +57,7 @@ final class PensTests: XCTestCase {
         XCTAssertEqual(pens.record(mac: "aabbccddeeff")?.mode, .highlight)
     }
 
-    func testARecordWrittenByHandIsRead() throws {
+    func testARecordWrittenByHandIsTranscribe() throws {
         // Every other test here creates its record through the registry, so a mismatch between
         // what we write and what we read would pass all of them. This one writes the file the way
         // the pipeline and a person do, and reads it back.
@@ -155,7 +155,7 @@ final class PenStateTests: XCTestCase {
         XCTAssertEqual(state.lowBatteries(threshold: 15, now: now).first?.mac, "ffffffffffff")
     }
 
-    func testReadingsSurviveARestart() {
+    func testTranscriptsSurviveARestart() {
         let now = Date()
         PenState(directory: dir).record(mac: "9C:7B:D2:48:33:D9", battery: 11, charging: false, at: now)
         // A pen that went flat before you quit is still flat when you come back.

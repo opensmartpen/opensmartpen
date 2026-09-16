@@ -147,10 +147,10 @@ public final class PanelModel: ObservableObject {
     @Published private(set) var pagesOnPen: Int?
     @Published private(set) var lastPublish: Publish?
     @Published private(set) var isPublishing = false
-    /// Pages whose reading is older than the strokes on them. Nought when no agent is configured,
-    /// which is how the panel knows to say nothing about reading at all.
-    @Published private(set) var unread = 0
-    @Published private(set) var isReading = false
+    /// Pages whose transcript is older than the strokes on them. Nought when no agent is configured,
+    /// which is how the panel knows to say nothing about transcription at all.
+    @Published private(set) var owed = 0
+    @Published private(set) var isTranscribing = false
     @Published private(set) var recent: [RecentBook] = []
     /// What is still to be done, newest page first, with the last thing done after it if there is
     /// room. Five at most: the panel is a glance, not a task list, and a sixth row would push the
@@ -275,8 +275,8 @@ public final class PanelModel: ObservableObject {
         isPublishing = coordinator.isPublishing
         // Asked of the files, like everything else about what is owed (ADR-004). Cheap: it is a
         // directory listing and one date comparison per page.
-        unread = processor?.outstanding.count ?? 0
-        isReading = processor?.isReading ?? false
+        owed = processor?.outstanding.count ?? 0
+        isTranscribing = processor?.isTranscribing ?? false
 
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
         // and the macOS Bluetooth menu sets the convention: a battery for what is connected,
@@ -523,11 +523,11 @@ public final class PanelModel: ObservableObject {
         live?.coordinator.publishAll()
     }
 
-    /// Read every page that is owed a reading, oldest first, without waiting for any of them to go
+    /// Transcribe every page that is owed a transcript, oldest first, without waiting for any of them to go
     /// still. They go one at a time — an agent runs one turn at a time — so the count in the menu
     /// falls as they are done.
-    func readNow() {
-        processor?.readNow()
+    func transcribeNow() {
+        processor?.transcribeNow()
         refresh()
     }
 

@@ -36,10 +36,10 @@ public struct PageRaster: Equatable {
     /// White space around the writing, in millimetres.
     static let padMM = 6.0
     static let dpi = 200.0
-    /// Sized for the reader, not for a person, which is where this parts company with `render.py`:
+    /// Sized for the transcriber, not for a person, which is where this parts company with `render.py`:
     /// its PNG is opened in Preview, this one is looked at by a model. A model scales anything
     /// longer than about 1568 pixels back down, so more than that is bytes spent on nothing; and
-    /// under about 1100 a page with one line on it arrives small enough that the reader starts
+    /// under about 1100 a page with one line on it arrives small enough that the transcriber starts
     /// cropping and magnifying it to be sure, which costs minutes.
     static let maxPx = 1568.0
     static let minPx = 1100.0

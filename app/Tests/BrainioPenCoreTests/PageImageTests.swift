@@ -54,7 +54,7 @@ final class PageImageTests: XCTestCase {
 
     /// The fault the first real page found: paper counts y down from the top and Core Graphics
     /// counts it up from the bottom, so the page was drawn upside down — and handwriting flipped
-    /// about its own line still looks like handwriting, so only the reader noticed.
+    /// about its own line still looks like handwriting, so only the transcriber noticed.
     func testThePageIsTheRightWayUp() throws {
         let drawn = try darkPerRow(try XCTUnwrap(PageImage.png(raster())))
         let half = drawn.height / 2

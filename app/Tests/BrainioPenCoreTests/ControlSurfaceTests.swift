@@ -107,7 +107,7 @@ final class ControlSurfaceTests: XCTestCase {
 
     /// The field was called `src` while only the strip wrote to the log. A file written then is
     /// still read, because the record is never rewritten to suit a newer reader.
-    func testAModeLineWrittenBeforeTheClientFieldIsStillRead() throws {
+    func testAModeLineWrittenBeforeTheClientFieldIsStillTranscribe() throws {
         let url = root.appendingPathComponent(ModeLog.relativePath)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try """
@@ -179,7 +179,7 @@ final class ControlSurfaceTests: XCTestCase {
         XCTAssertEqual(p.resetAfterHours, 24, "but the reset still has a usable default")
     }
 
-    func testComponentsReadTheHex() throws {
+    func testComponentsTranscribeTheHex() throws {
         try writePalette()
         let rgb = try XCTUnwrap(Palette.load(root: root).components(for: .red))
         XCTAssertEqual(rgb.r, 1.0, accuracy: 0.01)

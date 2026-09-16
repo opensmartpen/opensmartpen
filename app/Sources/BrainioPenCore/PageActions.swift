@@ -26,11 +26,11 @@ public struct ActionMessage: Codable, Equatable {
 public struct PageAction: Codable, Equatable {
     public var text: String
     public var done: Bool
-    /// Deleted: a line the reader made nonsense of, or one you have decided against.
+    /// Deleted: a line the transcriber made nonsense of, or one you have decided against.
     ///
     /// Marked rather than removed, and the field is still called `dismissed` in the file so that
     /// what is already on disk keeps its meaning. A row marked this way leaves the list. It is
-    /// kept because the line is still on the paper: a reading would find it again and put it back,
+    /// kept because the line is still on the paper: a transcript would find it again and put it back,
     /// so a true delete is a button that undoes itself a minute later.
     public var dismissed: Bool
     /// The last thing said about it, in one line, for a row that has no room for more.
@@ -39,22 +39,22 @@ public struct PageAction: Codable, Equatable {
     ///
     /// This, and not a session on the far side, is what the conversation is made of: a DAM session
     /// hibernates, and this Mac restarts, and neither of those should lose what was said. Each turn
-    /// is sent the page, the reading and everything below, so the agent picks up where it left off
+    /// is sent the page, the transcript and everything below, so the agent picks up where it left off
     /// whatever happened in between.
     public var thread: [ActionMessage]
     /// The DAM session the last turn ran in, so a run can be found on the far side. We do not
     /// depend on it; it is a pointer for a person.
     public var session: String?
-    /// Which agent should carry it out. Proposed by the reader from the roster it is shown, and
-    /// changed by a person whenever the guess is wrong. Nil means the reader itself, which is the
+    /// Which agent should carry it out. Proposed by the transcriber from the roster it is shown, and
+    /// changed by a person whenever the guess is wrong. Nil means the transcriber itself, which is the
     /// agent with no connections — so an action nobody has routed can do nothing surprising.
     public var agent: String?
     /// What the paper says, once `text` no longer does.
     ///
-    /// A line is matched between readings by its words, and the reader's words are the paper's:
+    /// A line is matched between transcripts by its words, and the transcriber's words are the paper's:
     /// "FIND OUT WHO IS ONDREJ SIROKY", capitals and all. When a person has the wording fixed —
-    /// the case, a name the reader got wrong — the fixed text is what is shown and sent, and this
-    /// is what the next reading of the same sheet is matched against. Without it the fix would
+    /// the case, a name the transcriber got wrong — the fixed text is what is shown and sent, and this
+    /// is what the next transcript of the same sheet is matched against. Without it the fix would
     /// last until the page was next written on, and take the conversation with it.
     public var paper: String?
 
@@ -98,12 +98,12 @@ public struct PageAction: Codable, Equatable {
         return done ? .done : .open
     }
 
-    /// Actions are matched between readings by what they say, with spacing and case ignored. No
+    /// Actions are matched between transcripts by what they say, with spacing and case ignored. No
     /// ids: the model would have to invent them and keep them stable, and this is the same join
     /// with nothing to go wrong in it. Two identical lines on one page count as one — a fair price.
     ///
     /// The paper's wording when the text has been rewritten, because the paper is what the next
-    /// reading will say.
+    /// transcript will say.
     public var key: String { Self.key(of: paper ?? text) }
 
     static func key(of words: String) -> String {
@@ -111,9 +111,9 @@ public struct PageAction: Codable, Equatable {
     }
 }
 
-/// The actions on one page: read, written, and merged across readings.
+/// The actions on one page: read, written, and merged across transcripts.
 public enum PageActions {
-    /// Where one page's actions are kept: beside its reading, under the copy of the notebook it
+    /// Where one page's actions are kept: beside its transcript, under the copy of the notebook it
     /// was written in. Three places want this path — the processor that writes the file, the
     /// viewer that shows a spread, the panel that lists what is outstanding — so it is worked out
     /// once here rather than three times from the same three parts.
@@ -187,11 +187,11 @@ public enum PageActions {
     /// What the page says now, with what we know already having happened.
     ///
     /// The new list decides which actions exist and in what order — the paper is what says that.
-    /// Ours decides whether one is done, and nothing in a later reading can undo it: the agent is
+    /// Ours decides whether one is done, and nothing in a later transcript can undo it: the agent is
     /// asked to carry the flags forward, and this is what happens when it does not.
     public static func merge(ours: [PageAction], theirs: [PageAction]) -> [PageAction] {
-        // Ours, findable two ways: by the paper's wording, which is what a fresh reading proposes,
-        // and by the text as it is shown, which is what a reader that kept our entry "exactly as
+        // Ours, findable two ways: by the paper's wording, which is what a fresh transcript proposes,
+        // and by the text as it is shown, which is what a transcriber that kept our entry "exactly as
         // it is" hands back. A rewritten line has to answer to both.
         var known: [String: PageAction] = [:]
         for mine in ours.reversed() {
@@ -201,32 +201,32 @@ public enum PageActions {
         var merged = theirs.map { action -> PageAction in
             guard let mine = known[action.key] ?? known[PageAction.key(of: action.text)] else { return action }
             var kept = action
-            // The wording is the reading's, unless a person has had it fixed, in which case the fix
+            // The wording is the transcript's, unless a person has had it fixed, in which case the fix
             // stands and the paper's version is remembered beside it for the matching.
             if let paper = mine.paper {
                 kept.text = mine.text
                 kept.paper = paper
             }
-            // What we know beats what the reading proposes, in one direction only. `done` and
-            // `dismissed` are facts about the world and about your decisions; a reading is a
+            // What we know beats what the transcript proposes, in one direction only. `done` and
+            // `dismissed` are facts about the world and about your decisions; a transcript is a
             // proposal about a piece of paper, and it cannot undo either. Undoing is a click,
             // not something a model can do on your behalf.
             kept.done = mine.done || action.done
             kept.dismissed = mine.dismissed || action.dismissed
             kept.note = mine.note ?? action.note
-            // The conversation is ours. A reading of the paper knows nothing about it and cannot
+            // The conversation is ours. A transcript of the paper knows nothing about it and cannot
             // be allowed to drop it.
             kept.thread = mine.thread
             kept.session = mine.session ?? action.session
-            // Whoever it was routed to, it stays routed to. The first reading proposes an agent;
+            // Whoever it was routed to, it stays routed to. The first transcript proposes an agent;
             // after that the answer is either that proposal or a person's correction of it, and a
-            // later reading of the same paper is in no better position to judge than either.
+            // later transcript of the same paper is in no better position to judge than either.
             kept.agent = mine.agent ?? action.agent
             return kept
         }
-        // An action we have carried out, or called off, that the new reading does not mention —
-        // the line was rewritten, or the reader missed it. It stays: it happened, or it was
-        // decided, and neither of those is undone by a reading that failed to see the line.
+        // An action we have carried out, or called off, that the new transcript does not mention —
+        // the line was rewritten, or the transcriber missed it. It stays: it happened, or it was
+        // decided, and neither of those is undone by a transcript that failed to see the line.
         let seen = Set(merged.map(\.key))
         merged.append(contentsOf: ours.filter { ($0.done || $0.dismissed) && !seen.contains($0.key) })
         return merged

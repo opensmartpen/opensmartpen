@@ -31,6 +31,12 @@ public final class SettingsStore: ObservableObject {
         pens = penRegistry.pens
         books = bookRegistry.books.sorted { $0.title < $1.title }
         palette = Palette.load(root: config.dataURL)
+        // The agents tab is a list of what the key can see, so the list is fetched when the window
+        // opens rather than only when somebody presses Check. Quietly: a failure here is shown
+        // where the rows would be, not as an alarm over a tab nobody is looking at.
+        if damAgents.isEmpty, let host = config.damHost, !host.isEmpty, !damApiKey.isEmpty {
+            Task { @MainActor in await self.fetchAgents(announce: false) }
+        }
     }
 
     func save(_ pen: PenRecord) {
@@ -73,50 +79,79 @@ public final class SettingsStore: ObservableObject {
     }
 
     /// Ask the server who we are talking to. Proves the host and the key in one call, and gives the
-    /// person a list to pick an agent from instead of an id to copy.
+    /// person a list to pick from instead of an id to copy.
     @MainActor
-    func checkDam() async {
-        damStatus = "checking…"
+    func checkDam() async { await fetchAgents(announce: true) }
+
+    /// The list of agents the key can see. `announce` says whether the outcome goes in the status
+    /// line: yes when somebody pressed Check, no when the window merely opened.
+    @MainActor
+    private func fetchAgents(announce: Bool) async {
         guard let host = config.damHost, !host.isEmpty, !damApiKey.isEmpty else {
-            damStatus = "a host and a key are needed"
+            if announce { damStatus = "a host and a key are needed" }
             return
         }
+        if announce { damStatus = "checking…" }
         do {
             // Any agent id will do for a listing: it is owner-wide and not bound to one.
             let client = try DamClient(account: DamAccount(host: host,
                                                            agentId: config.damAgentId ?? "none",
                                                            apiKey: damApiKey))
             damAgents = try await client.agents()
-            damStatus = damAgents.isEmpty ? "the key can see no agents" : "\(damAgents.count) agent(s)"
+            damStatus = damAgents.isEmpty ? "the key can see no agents"
+                : (announce ? "\(damAgents.count) agent(s)" : nil)
         } catch {
             damAgents = []
             damStatus = error.localizedDescription
         }
     }
 
-    /// Add an agent to the roster and ask it what it is for, in one go. The question is one turn
-    /// against that agent, so it also proves the key reaches it.
+    /// Which agent transcribes pages. Nil switches transcription off.
+    ///
+    /// The transcriber cannot also be an assistant: it has no connections, so offering it a line
+    /// says nothing, and the point of the split is that the agent that sees the paper is not one
+    /// of the agents that can act on it.
     @MainActor
-    func addToRoster(_ agent: DamAgent) async {
+    func setTranscriber(_ id: String?) {
+        config.damAgentId = id
+        if let id { config.damRoster.removeAll { $0.id == id } }
+        saveConfig()
+    }
+
+    /// Switch an assistant on: put it on the roster and ask it what it does, in one go.
+    ///
+    /// The question is the setup. Until the agent has answered it is on the list but offered
+    /// nowhere, because the transcriber chooses by what each assistant says it can reach. An agent
+    /// that cannot be asked cannot be used, so a failed question switches it off again and the
+    /// row says why.
+    @MainActor
+    func switchOn(_ agent: DamAgent) async {
+        failures[agent.id] = nil
         if !config.damRoster.contains(where: { $0.id == agent.id }) {
             config.damRoster.append(DamAgentProfile(id: agent.id, name: agent.name))
             saveConfig()
         }
-        await ask(agent.id)
+        let answered = await ask(agent.id)
+        if !answered, config.damRoster.first(where: { $0.id == agent.id })?.summary == nil {
+            config.damRoster.removeAll { $0.id == agent.id }
+            saveConfig()
+        }
     }
 
     @MainActor
-    func removeFromRoster(_ id: String) {
+    func switchOff(_ id: String) {
+        failures[id] = nil
         config.damRoster.removeAll { $0.id == id }
         saveConfig()
     }
 
-    /// Ask one agent, in its own words, what it does and what it can reach.
+    /// Ask one agent, in its own words, what it does and what it can reach. True when it answered.
     @MainActor
-    func ask(_ id: String) async {
+    @discardableResult
+    func ask(_ id: String) async -> Bool {
         guard let host = config.damHost, !host.isEmpty, !damApiKey.isEmpty else {
-            damStatus = "a host and a key are needed"
-            return
+            failures[id] = "a host and a key are needed"
+            return false
         }
         asking.insert(id)
         defer { asking.remove(id) }
@@ -124,18 +159,23 @@ public final class SettingsStore: ObservableObject {
             let runner = try DamRunner(account: DamAccount(host: host, agentId: id, apiKey: damApiKey))
             let answer = AgentProfileAnswer(try await runner.run(prompt: AgentProfileAnswer.question,
                                                                  timeout: 180).text)
-            guard let i = config.damRoster.firstIndex(where: { $0.id == id }) else { return }
+            guard let i = config.damRoster.firstIndex(where: { $0.id == id }) else { return false }
             config.damRoster[i].summary = answer.summary
             config.damRoster[i].systems = answer.systems
             config.damRoster[i].askedAt = Date()
+            failures[id] = nil
             saveConfig()
+            return true
         } catch {
-            damStatus = "\(id): \(error.localizedDescription)"
+            failures[id] = error.localizedDescription
+            return false
         }
     }
 
     /// Agents being asked right now.
     @Published var asking: Set<String> = []
+    /// What went wrong the last time each agent was asked, shown on its row until it answers.
+    @Published var failures: [String: String] = [:]
 
     func saveConfig() {
         do {
@@ -180,7 +220,7 @@ public struct SettingsView: View {
     /// Which page it opens on. "Set up agents…" on an action has somewhere to go.
     @State var tab: Tab = .pens
 
-    public enum Tab: Hashable { case pens, books, general, reading }
+    public enum Tab: Hashable { case pens, books, general, agents }
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -188,7 +228,7 @@ public struct SettingsView: View {
                 PensTab(store: store).tabItem { Text("Pens") }.tag(Tab.pens)
                 BooksTab(store: store).tabItem { Text("Notebooks") }.tag(Tab.books)
                 GeneralTab(store: store).tabItem { Text("General") }.tag(Tab.general)
-                ReadingTab(store: store).tabItem { Text("Reading") }.tag(Tab.reading)
+                AgentsTab(store: store).tabItem { Text("Agents") }.tag(Tab.agents)
             }
             // Nothing here has a Save button, so something has to say that a change landed. One
             // line, in the same place whichever tab you are on, gone a few seconds later.
@@ -453,20 +493,43 @@ private struct GeneralTab: View {
     }
 }
 
-// MARK: - reading
+// MARK: - agents
 
-/// Where a page goes to be read, and how long it must have been still first.
+/// Where pages go, who transcribes them, and which assistants a line can be handed to.
 ///
-/// Off until a host, a key and an agent are all filled in. The key goes to its own file; the host,
-/// the agents and which of them reads pages go to the config.
-private struct ReadingTab: View {
+/// Three parts, in the order they are needed. The connection: a host and a key, proved by Check.
+/// The transcriber: one agent, chosen alone, because it is the one that sees the paper. The
+/// assistants: every other agent the key can see, each with a switch, because an agent is either
+/// something a line can be handed to or it is not.
+private struct AgentsTab: View {
     @ObservedObject var store: SettingsStore
     @State private var checking = false
 
-    private var roster: [DamAgentProfile] { store.config.damRoster }
+    private var transcriberId: String? { store.config.damAgentId }
+
+    /// What the transcriber picker offers: everything the key can see, plus the one already chosen
+    /// when the key can no longer see it — so the choice is shown rather than silently blanked.
+    private var transcriberChoices: [DamAgent] {
+        var choices = store.damAgents
+        if let id = transcriberId, !choices.contains(where: { $0.id == id }) {
+            choices.append(DamAgent(id: id, name: store.config.damRoster.first { $0.id == id }?.name ?? id))
+        }
+        return choices
+    }
+
+    /// Every agent that could be an assistant: what the key sees, minus the transcriber, plus any
+    /// on the roster the key no longer sees, which are kept so they can be switched off.
+    private var candidates: [DamAgent] {
+        var list = store.damAgents.filter { $0.id != transcriberId }
+        for kept in store.config.damRoster where kept.id != transcriberId
+            && !list.contains(where: { $0.id == kept.id }) {
+            list.append(DamAgent(id: kept.id, name: kept.name))
+        }
+        return list
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Row("DAM") {
                 TextField("https://dam.example.com", text: Binding(
                     get: { store.config.damHost ?? "" },
@@ -489,128 +552,173 @@ private struct ReadingTab: View {
                     }
                 }
                 .disabled(checking)
+                if let status = store.damStatus {
+                    Text(status).font(.system(size: 10.5)).foregroundStyle(.tertiary).lineLimit(1)
+                }
             }
 
-            // The agents, and which of them reads. A list rather than a picker: choosing the
-            // reader is choosing which agent sees the paper, and that is a decision to be made
-            // looking at what all of them can reach.
-            HStack(spacing: 6) {
-                Text("Agents").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                Text("· the marked one reads your pages")
-                    .font(.system(size: 10.5)).foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
-                let spare = store.damAgents.filter { known in !roster.contains { $0.id == known.id } }
-                if !spare.isEmpty {
-                    Menu("Add") {
-                        ForEach(spare) { agent in
-                            Button(agent.name) { Task { await store.addToRoster(agent) } }
+            Block("Transcriber", note: "sees everything you write") {
+                Row("Agent") {
+                    Picker("", selection: Binding(
+                        get: { transcriberId },
+                        set: { store.setTranscriber($0) }
+                    )) {
+                        Text("None — pages are kept, not transcribed").tag(String?.none)
+                        ForEach(transcriberChoices) { agent in
+                            Text(agent.name).tag(Optional(agent.id))
                         }
                     }
-                    .frame(width: 70)
+                    .labelsHidden()
+                    .frame(maxWidth: 260)
+                    .disabled(transcriberChoices.isEmpty)
                 }
+                Row("Wait") {
+                    Stepper(value: $store.config.damQuietMinutes, in: 1...60, step: 1) {
+                        Text("\(Int(store.config.damQuietMinutes)) min after the pen stops")
+                            .font(.system(size: 11)).monospacedDigit()
+                    }
+                    .onChange(of: store.config.damQuietMinutes) { _ in store.saveConfig() }
+                }
+                Hint("Pick an agent with nothing confidential behind it: a page is an untrusted "
+                     + "document. It also proposes which assistant carries out each line a page asks for.")
             }
 
-            // Scrolls, and keeps everything under it on screen. Eight agents used to push the host
-            // and the key off both ends of the window.
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(roster) { agent in
-                        AgentRow(store: store, agent: agent,
-                                 reads: store.config.damAgentId == agent.id)
-                        if agent.id != roster.last?.id { Divider().opacity(0.4) }
-                    }
-                    if roster.isEmpty {
-                        Text(store.damApiKey.isEmpty
-                             ? "Put a host and a key in, then press Check."
-                             : "Press Check to see what the key can reach.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.tertiary)
-                            .padding(10)
+            Block("Assistants", note: "switch one on to hand it lines") {
+                // Scrolls, and keeps everything above it on screen. Eight agents used to push the
+                // host and the key off both ends of the window.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(candidates) { agent in
+                            AssistantRow(store: store, agent: agent,
+                                         profile: store.config.damRoster.first { $0.id == agent.id },
+                                         seen: store.damAgents.contains { $0.id == agent.id })
+                            if agent.id != candidates.last?.id { Divider().opacity(0.4) }
+                        }
+                        if candidates.isEmpty {
+                            Text(emptyNote)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.tertiary)
+                                .padding(10)
+                        }
                     }
                 }
+                .frame(maxHeight: .infinity)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
+                Hint("An assistant is asked what it does and what it can reach when it is switched on. "
+                     + "Until it has answered, no line is offered to it.")
             }
-            .frame(maxHeight: 176)
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
-
-            if let status = store.damStatus {
-                Hint(status)
-            }
-            Row("Wait") {
-                Stepper(value: $store.config.damQuietMinutes, in: 1...60, step: 1) {
-                    Text("\(Int(store.config.damQuietMinutes)) min").font(.system(size: 11)).monospacedDigit()
-                }
-                .onChange(of: store.config.damQuietMinutes) { _ in store.saveConfig() }
-            }
-            Spacer(minLength: 0)
-            // Short, because the long version was five lines and the biggest thing on the tab.
-            // What a person has to know here is why the mark matters.
-            Hint("The marked agent sees whatever is written on your paper, so mark one with "
-                 + "nothing confidential behind it. It also proposes which agent carries out each "
-                 + "line a page asks for, choosing from what the others say they do.")
         }
         .padding(.top, 4)
     }
+
+    private var emptyNote: String {
+        if store.damApiKey.isEmpty || (store.config.damHost ?? "").isEmpty {
+            return "Put a host and a key in, then press Check."
+        }
+        if store.damAgents.isEmpty { return "Press Check to see what the key can reach." }
+        return "The key sees no agent other than the transcriber."
+    }
 }
 
-/// One agent on the roster: what it says it does, what it can reach, and whether it is the one
-/// that reads pages.
-private struct AgentRow: View {
+/// A titled block of the tab, with a quiet note beside the title saying what the block is for.
+private struct Block<Content: View>: View {
+    let title: String
+    let note: String
+    @ViewBuilder let content: () -> Content
+
+    init(_ title: String, note: String, @ViewBuilder content: @escaping () -> Content) {
+        self.title = title
+        self.note = note
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(title).font(.system(size: 11, weight: .semibold))
+                Text("· \(note)").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+            }
+            .padding(.top, 4)
+            content()
+        }
+    }
+}
+
+/// One agent that could be an assistant: a switch, what it says it does, and what it can reach.
+///
+/// The switch is the whole interface. On means the agent was asked and answered, and a line can
+/// now be handed to it; off means it is nothing to this app. In between, while the question is
+/// out, the row says so — and if the question fails, the switch falls back and the row says why.
+private struct AssistantRow: View {
     @ObservedObject var store: SettingsStore
-    let agent: DamAgentProfile
-    let reads: Bool
+    let agent: DamAgent
+    /// On the roster, with whatever it has said. Nil means switched off.
+    let profile: DamAgentProfile?
+    /// Whether the key can still see it. A row the key cannot see is kept only to be switched off.
+    let seen: Bool
     @State private var hovering = false
 
     private var asking: Bool { store.asking.contains(agent.id) }
+    private var isOn: Bool { profile != nil }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            // One reader at a time. A radio rather than a menu, because the point of the choice is
-            // that everything else on this list is not it.
-            Button {
-                store.config.damAgentId = agent.id
-                store.saveConfig()
-            } label: {
-                Image(systemName: reads ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 11))
-                    .foregroundStyle(reads ? Ink.accent : Color.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Read pages with this agent")
+            Toggle("", isOn: Binding(
+                get: { isOn },
+                set: { on in
+                    if on { Task { await store.switchOn(agent) } } else { store.switchOff(agent.id) }
+                }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .labelsHidden()
+            .disabled(asking || (!seen && !isOn))
+            .help(isOn ? "Switch it off: no line is handed to it" : "Switch it on and ask what it does")
 
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 5) {
                     Text(agent.name).font(.system(size: 11.5, weight: .medium))
-                    if reads {
-                        Text("reads pages").font(.system(size: 9.5)).foregroundStyle(Ink.accent)
+                        .foregroundStyle(isOn || seen ? .primary : .secondary)
+                    if !seen {
+                        Text("not seen by this key").font(.system(size: 9.5)).foregroundStyle(.tertiary)
                     }
                 }
-                Text(asking ? "asking what it does…" : (agent.summary ?? "never asked"))
-                    .font(.system(size: 10))
-                    .foregroundStyle(agent.summary == nil && !asking ? .tertiary : .secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !agent.systems.isEmpty {
-                    Text(agent.systems.joined(separator: " · "))
-                        .font(.system(size: 9.5))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                if let failure = store.failures[agent.id] {
+                    Text(failure)
+                        .font(.system(size: 10))
+                        .foregroundStyle(Ink.critical)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if asking {
+                    Text("setting up — asking what it does…")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                } else if let profile {
+                    Text(profile.summary ?? "did not say what it does")
+                        .font(.system(size: 10))
+                        .foregroundStyle(profile.summary == nil ? .tertiary : .secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !profile.systems.isEmpty {
+                        Text(profile.systems.joined(separator: " · "))
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                 }
             }
             Spacer(minLength: 4)
             // Quiet until wanted. Eight rows each shouting a button is a wall of buttons.
-            Button(agent.summary == nil ? "Ask" : "Again") { Task { await store.ask(agent.id) } }
+            if isOn, seen {
+                Button(store.failures[agent.id] == nil ? "Ask again" : "Retry") {
+                    Task { await store.ask(agent.id) }
+                }
                 .buttonStyle(.plain)
                 .font(.system(size: 10.5))
                 .foregroundStyle(asking ? Color.secondary : Ink.accent)
                 .disabled(asking)
-                .opacity(agent.summary == nil || hovering ? 1 : 0.35)
-            Button { store.removeFromRoster(agent.id) } label: {
-                Image(systemName: "xmark").font(.system(size: 9))
+                .opacity(store.failures[agent.id] != nil || hovering ? 1 : 0)
+                .help("Ask it again what it does and what it can reach")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .opacity(hovering ? 1 : 0.25)
-            .help("Take it off the list")
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
@@ -658,7 +766,7 @@ public final class SettingsWindowController: NSWindowController {
 
     public init(store: SettingsStore, tab: SettingsView.Tab = .pens) {
         self.store = store
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 430),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 470),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
         window.title = "Brainio Pen Settings"

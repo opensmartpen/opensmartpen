@@ -86,7 +86,7 @@ public extension DamPrompting {
 ///
 /// Three deliberate limits, because this runs with nobody watching:
 ///
-/// - A dropped socket ends the run here. The turn keeps going on the agent and the page is read
+/// - A dropped socket ends the run here. The turn keeps going on the agent and the page is transcribed
 ///   again on the next tick; reconnecting to watch it would be a second way to reach the same file.
 /// - A permission request is not answered. It goes to DAM's approvals queue, where a person deals
 ///   with it, and the run is reported as stalled rather than waited on for an hour.

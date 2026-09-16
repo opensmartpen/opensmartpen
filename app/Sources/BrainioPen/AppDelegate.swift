@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var config = Config()
     private let configURL = Config.defaultLocation
     private var coordinator: SyncCoordinator!
-    /// Hands quiet pages to a DAM agent to be read. Nil until one is configured.
+    /// Hands quiet pages to a DAM agent to be transcribed. Nil until one is configured.
     private var processor: PageProcessor?
     private var session: PenSession!
     private var notifier: DedupingNotifier!
@@ -103,9 +103,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // menubar panel that shows the first few.
         actions = ActionsStore(books: books, root: config.dataURL)
         actions.processor = processor
-        actions.roster = config.damRoster
+        actions.roster = config.assistants
         actions.onOpenPage = { [weak self] page in self?.showViewer(page) }
-        actions.onOpenSettings = { [weak self] in self?.showSettings(tab: .reading) }
+        actions.onOpenSettings = { [weak self] in self?.showSettings(tab: .agents) }
         // Paper we capture from but never read back. The coordinator still stores every tap and
         // decodes it as a command; what stops here is everything that treats a book as a
         // notebook — a record of its own and the live page in the viewer.
@@ -143,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // For working on the window itself: there is no way to click a menubar item from a script,
         // and a design pass that cannot open the thing being designed is a design pass done blind.
-        if CommandLine.arguments.contains("--show-settings") { showSettings(tab: .reading) }
+        if CommandLine.arguments.contains("--show-settings") { showSettings(tab: .agents) }
         if CommandLine.arguments.contains("--show-actions") {
             // Open it on something with a conversation in it, because the shut row and the open
             // row are two different designs and only one of them can be seen at a time.
@@ -172,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         session.start()
         tickTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.coordinator.tick()
-            // Reading a page is a separate errand from committing one, and a much shorter wait, so
+            // Transcribing a page is a separate errand from committing one, and a much shorter wait, so
             // it is asked on every tick rather than only when a commit happens.
             self?.processor?.tick()
             self?.stateChanged()
@@ -247,10 +247,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                              body: "Give it a name in Brainio Pen settings."))
     }
 
-    /// Wire up page reading, or leave it off.
+    /// Wire up page transcription, or leave it off.
     ///
     /// All three of host, agent and key are needed, and the key is in a file of its own, so a
-    /// config carried to another Mac starts with reading off rather than with a broken connection.
+    /// config carried to another Mac starts with transcription off rather than with a broken connection.
     /// Nothing else changes when it is off: pages are captured and committed exactly as before.
     ///
     /// Read straight through, on the main thread. While the key was in the Keychain this ran on a
@@ -259,54 +259,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeProcessor() {
         processor = nil
         guard let account = config.damAccount() else {
-            Log.info("no DAM agent configured; pages are captured but not read")
+            Log.info("no DAM agent configured; pages are captured but not transcribed")
             return
         }
         do {
-            // One key, several agents. The reader is the account above; anything routed elsewhere
+            // One key, several agents. The transcriber is the account above; anything routed elsewhere
             // gets its own connection out of the same key.
-            let fleet = try DamAgents(reader: account)
+            let fleet = try DamAgents(transcriber: account)
             let imager = PageImager(books: books, root: config.dataURL, modeLog: coordinator.modeLog)
             let processor = PageProcessor(books: books, root: config.dataURL, imaging: imager,
                                           fleet: fleet, notifier: notifier,
                                           quietWindow: config.damQuietMinutes * 60)
             processor.controlBooks = Set(config.controlBooks)
-            // Everything but the reader itself: the reader has no connections, which is why it is
-            // the reader, so proposing it as the one to carry something out says nothing.
-            processor.roster = config.damRoster.filter { $0.id != account.agentId }
+            // Only the assistants that are switched on and have said what they do. The transcriber
+            // is not among them: it has no connections, which is why it is the transcriber.
+            processor.roster = config.assistants
             processor.onChange = { [weak self] in self?.stateChanged() }
             self.processor = processor
             // The panel offers to send a page at once, and the viewer hands single actions over,
             // so both need the same object the timer ticks.
             model?.processor = processor
             actions?.processor = processor
-            actions?.roster = config.damRoster
+            actions?.roster = config.assistants
             Log.info("pages go to \(account.agentId) at \(account.host) after \(Int(config.damQuietMinutes)) min of quiet")
-            if config.damRoster.isEmpty { discoverAgents(account) }
         } catch {
             Log.error("the DAM agent could not be set up: \(error)")
-            notifier.post(Notice(key: "dam-setup", title: "Brainio Pen cannot reach the reading agent",
+            notifier.post(Notice(key: "dam-setup", title: "Brainio Pen cannot reach the transcribing agent",
                                  body: error.localizedDescription))
-        }
-    }
-
-    /// Fill the roster from what the key can see, the first time there is nothing in it.
-    ///
-    /// An empty roster means every line is routed nowhere, and nothing on the actions window says
-    /// why. Names only — what each agent does is asked in the settings window, one turn each, and
-    /// that is a question worth a person's say-so.
-    private func discoverAgents(_ account: DamAccount) {
-        Task { @MainActor [weak self] in
-            guard let client = try? DamClient(account: account),
-                  let found = try? await client.agents(), !found.isEmpty else { return }
-            do {
-                guard let self, self.config.damRoster.isEmpty else { return }
-                self.config.damRoster = found.map { DamAgentProfile(id: $0.id, name: $0.name) }
-                try? self.config.save(to: self.configURL)
-                self.actions?.roster = self.config.damRoster
-                self.processor?.roster = self.config.damRoster.filter { $0.id != account.agentId }
-                Log.info("found \(found.count) agent(s); ask what they do in Settings → Reading")
-            }
         }
     }
 

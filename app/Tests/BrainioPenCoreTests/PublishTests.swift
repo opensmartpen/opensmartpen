@@ -172,7 +172,7 @@ final class PublishTests: XCTestCase {
 
     /// Readable files are made again from the record, so committing them would bury the strokes
     /// that actually changed under a wall of regenerated SVG.
-    func testReadableFilesAreNotCommittedWithTheCapture() throws {
+    func testTranscribeableFilesAreNotCommittedWithTheCapture() throws {
         let p = try makePublisher()
         let flow = makeFlow(publisher: p)
         let a = PageID(section: 3, owner: 27, book: 5, page: 1)

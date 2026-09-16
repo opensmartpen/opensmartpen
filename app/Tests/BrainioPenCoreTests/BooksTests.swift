@@ -214,7 +214,7 @@ final class BooksTests: XCTestCase {
         XCTAssertEqual(books.derivedFile(for: padPage)?.lastPathComponent, "p3.png")
     }
 
-    func testCapturedAndReadableFilesStayApart() {
+    func testCapturedAndTranscribeableFilesStayApart() {
         XCTAssertTrue(padPage.rawRelativePath.contains("/raw/"))
         XCTAssertTrue(pad.pagePath(stem: "p3", ext: "svg").contains("/pages/"))
     }
@@ -249,7 +249,7 @@ final class RawReaderTests: XCTestCase {
         return url
     }
 
-    func testStrokesSurviveAWriteReadRoundTrip() throws {
+    func testStrokesSurviveAWriteTranscribeRoundTrip() throws {
         let original = Stroke(page: page, start: 1_757_530_000_123, end: 1_757_530_000_987,
                               dots: [DotSample(x: 10.5, y: 20.25, force: 0.5, dt: 0),
                                      DotSample(x: 11, y: 21, force: 0.75, dt: 12)],

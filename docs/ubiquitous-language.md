@@ -22,4 +22,6 @@ Terms used in this project, kept precise. Update inline when a term is resolved.
 - **Quiet page** — a page with no new strokes for the debounce window (default 10 minutes). Only quiet pages are published for processing.
 - **Publish** — hand a quiet page's raw file on for processing. The destination is undecided; a publish must confirm, because pen memory is cleared only after it does.
 - **Transcription** — the Markdown text derived from a page by handwriting recognition (stroke-based or image-based).
+- **Transcriber** — the one DAM agent that is sent a page and writes its transcription. Chosen alone, and chosen for having no confidential connections, because a page is an untrusted document. It also proposes an assistant for each line a page asks for; it never carries one out.
+- **Assistant** — a DAM agent a line can be handed to. Switched on by a person in Settings → Agents; switching it on asks it what it does and what it can reach, and until it has answered it is offered nowhere. Never the transcriber.
 - **Note** — a user-meaningful grouping of pages (by book, time gap, or marker). Derived and not yet defined; see `docs/decisions.md`.
