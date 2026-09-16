@@ -179,15 +179,19 @@ private struct ActionCard: View {
                 // other: the one thing you do with a fresh line is hand it over, so that is the
                 // click. Ticking and re-opening are in the menu, where a considered answer belongs.
                 Button {
-                    guard runnable else { return }
-                    store.expanded = item.id
-                    store.run(item)
+                    if store.isBusy(item) {
+                        store.stop(item)
+                    } else if runnable {
+                        store.expanded = item.id
+                        store.run(item)
+                    }
                 } label: {
-                    Mark(status: item.status, runnable: runnable)
+                    Mark(status: item.status, runnable: runnable, running: store.isBusy(item))
                 }
                 .buttonStyle(.plain)
-                .disabled(!runnable)
-                .help(runnable ? "Execute: hand this line to the agent" : "")
+                .disabled(!runnable && !store.isBusy(item))
+                .help(store.isBusy(item) ? "Stop the agent"
+                      : runnable ? "Execute: hand this line to the agent" : "")
 
                 VStack(alignment: .leading, spacing: 3) {
                     // A finished line goes grey and keeps its words. Crossing it out says it was
@@ -739,42 +743,39 @@ private struct Mark: View {
     let status: ActionsStore.Status
     /// A fresh line that can be handed over shows a play sign, because clicking it does that.
     var runnable = false
+    /// A line the agent is on right now shows a stop sign, because clicking it does that.
+    var running = false
 
+    /// SF Symbols throughout, at one size, so every mark is the same circle drawn by the same
+    /// hand and the glyph inside it sits where the type designer put it. A triangle placed by
+    /// eye inside a stroked circle never quite did.
     var body: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(colour, lineWidth: 1.4)
-                .frame(width: 14, height: 14)
-            switch status {
-            case .new:
-                if runnable {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 6.5, weight: .bold))
-                        .foregroundStyle(colour)
-                        .offset(x: 0.5)
-                }
-            case .wip: Circle().fill(colour).frame(width: 6, height: 6)
-            case .done:
-                Image(systemName: "checkmark")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(colour)
-            case .dismissed:
-                Image(systemName: "xmark")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(colour)
-            }
-        }
-        .frame(width: 16, height: 16)
-        .padding(.top, 1)
-        .contentShape(Rectangle())
+        Image(systemName: symbol)
+            .font(.system(size: 14, weight: .regular))
+            .foregroundStyle(colour)
+            .frame(width: 16, height: 16)
+            .padding(.top, 1)
+            .contentShape(Rectangle())
     }
 
-    /// Violet for what is in hand — it is the only thing on the list that is moving. Green for
-    /// what is finished, because a tick that is the same grey as an empty circle is not a tick
-    /// you can see from across the room. A line nobody has started is not news, and stays quiet.
-    private var colour: Color {
+    private var symbol: String {
+        if running { return "stop.circle" }
         switch status {
-        case .new: return runnable ? Ink.accent : .secondary
+        case .new: return runnable ? "play.circle" : "circle"
+        case .wip: return "circle.inset.filled"
+        case .done: return "checkmark.circle"
+        case .dismissed: return "xmark.circle"
+        }
+    }
+
+    /// Green for what is finished, violet for what is in hand — the only thing on the list that
+    /// is moving — and grey for everything else. The play and stop signs are grey too: what they
+    /// are is said by their shape, and a coloured button on every fresh line would be a list of
+    /// buttons rather than a list of lines.
+    private var colour: Color {
+        if running { return Ink.accent }
+        switch status {
+        case .new: return .secondary
         case .wip: return Ink.accent
         case .done: return Ink.done
         case .dismissed: return Color.secondary.opacity(0.5)

@@ -245,6 +245,12 @@ public final class ActionsStore: ObservableObject {
     }
 
     public func isBusy(_ item: Item) -> Bool { busy.contains(item.id) }
+
+    /// Stop a line that is running. The row is told when it has stopped, through the same
+    /// completion the run would have used.
+    public func stop(_ item: Item) {
+        processor?.stop(key: item.action.key)
+    }
     public func failure(_ item: Item) -> String? { failures[item.id] }
 
     // MARK: - What the agent is waiting to be allowed to do

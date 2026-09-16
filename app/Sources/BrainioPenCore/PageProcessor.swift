@@ -277,16 +277,28 @@ public final class PageProcessor {
         let desk = makeDesk(for: action)
         desks[action.key] = desk
         onChange?()
-        Task { [weak self] in
+        runs[action.key] = Task { [weak self] in
             guard let self else { return }
             var failure: Error?
-            do { try await carryOut(action, on: ref, say: say, desk: desk) } catch { failure = error }
+            do { try await carryOut(action, on: ref, say: say, desk: desk) } catch is CancellationError {
+                failure = ExecuteError.stopped
+            } catch {
+                failure = error
+            }
             await self.finishRun(action.key, failure, completion: completion)
         }
     }
 
+    /// Stop a line that is being carried out. The turn is told to cancel and the socket closed;
+    /// nothing the agent said in it is filed, because the run is what files it and the run has
+    /// been cut short. The line stays as it was, and can be sent again.
+    public func stop(key: String) {
+        runs[key]?.cancel()
+    }
+
     /// The lines being carried out right now, by key.
     public private(set) var running: Set<String> = []
+    private var runs: [String: Task<Void, Never>] = [:]
 
     // MARK: - Fixing the wording
 
@@ -416,9 +428,14 @@ public final class PageProcessor {
 
     public enum ExecuteError: Error, LocalizedError {
         case busy
+        /// Somebody pressed stop. Not a fault, so the row says it plainly and moves on.
+        case stopped
 
         public var errorDescription: String? {
-            "That one is already running. Wait for it to answer."
+            switch self {
+            case .busy: return "That one is already running. Wait for it to answer."
+            case .stopped: return "Stopped. Nothing from that turn was kept."
+            }
         }
     }
 
@@ -512,6 +529,7 @@ public final class PageProcessor {
     @MainActor
     private func finishRun(_ key: String, _ failure: Error?, completion: @escaping (Error?) -> Void) {
         running.remove(key)
+        runs.removeValue(forKey: key)
         desks.removeValue(forKey: key)?.closeUp()
         if let failure { Log.error("carrying out an action failed: \(failure)") }
         completion(failure)

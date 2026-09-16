@@ -558,6 +558,9 @@ private final class FakeRunner: DamPrompting, @unchecked Sendable {
     /// otherwise, which is the case worth asserting: a pod restarted under us.
     var sessionSurvives = true
 
+    /// An agent that never finishes the turn: the run ends only when somebody stops it.
+    var hangs = false
+
     func run(turn: @Sendable @escaping (_ resumed: Bool) -> DamTurn, resume: String?,
              timeout: TimeInterval, approvals: ApprovalDesk?) async throws -> DamRunResult {
         let carriedOn = resume != nil && lock.withLock { sessionSurvives }
@@ -572,6 +575,7 @@ private final class FakeRunner: DamPrompting, @unchecked Sendable {
             while approvals.isWaiting { try await Task.sleep(nanoseconds: 2_000_000) }
         }
         if let failure { throw failure }
+        if lock.withLock({ hangs }) { try await Task.sleep(nanoseconds: 60_000_000_000) }
         return DamRunResult(sessionId: "sess-1", text: reply, stopReason: "end_turn")
     }
 }
@@ -648,5 +652,34 @@ extension PageProcessorTests {
             p.execute(action: action, on: ref, say: nil) { continuation.resume(returning: $0) }
         }
         XCTAssertTrue(second is PageProcessor.ExecuteError)
+    }
+
+    /// Stop ends the run, says so, and files nothing from it: the line is exactly as it was and
+    /// can be sent again.
+    func testARunningLineCanBeStopped() async throws {
+        let (ref, books) = try writePage()
+        let fleet = FakeFleet()
+        fleet.runner.hangs = true
+        let p = processor(books, fleet: fleet)
+        let url = try XCTUnwrap(p.actionsURL(for: ref))
+        let action = PageAction(text: "CALL")
+        try PageActions.save([action], to: url)
+
+        let outcome: Error? = await withCheckedContinuation { continuation in
+            p.execute(action: action, on: ref, say: nil) { continuation.resume(returning: $0) }
+            XCTAssertTrue(p.running.contains(action.key))
+            // A moment later, from the row: stop.
+            Task {
+                try? await Task.sleep(nanoseconds: 20_000_000)
+                p.stop(key: action.key)
+            }
+        }
+        guard case PageProcessor.ExecuteError.stopped? = outcome else {
+            return XCTFail("expected stopped, got \(String(describing: outcome))")
+        }
+        XCTAssertFalse(p.running.contains(action.key))
+        let after = PageActions.load(url)
+        XCTAssertEqual(after.first?.thread.count, 0)
+        XCTAssertEqual(after.first?.done, false)
     }
 }

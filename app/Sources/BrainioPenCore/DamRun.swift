@@ -134,7 +134,28 @@ public final class DamRunner: DamPrompting {
             Task { await socket.close() }
         }
 
-        return try await withDeadline(timeout, while: approvals) {
+        // Kept outside the deadline so a stop can name the session it is stopping.
+        let opened = SessionBox()
+        do {
+            return try await withDeadline(timeout, while: approvals) {
+                try await self.turn(on: socket, turn: turn, resume: resume, opened: opened)
+            }
+        } catch is CancellationError {
+            // Somebody pressed stop. Hanging up alone leaves the agent working on a turn nobody is
+            // listening to; `session/cancel` is how ACP says "and stop what you are doing". Sent
+            // from a task of its own, because this one is the cancelled one.
+            if let sessionId = await opened.id {
+                await Task.detached { await socket.notify("session/cancel", ["sessionId": sessionId]) }.value
+            }
+            throw CancellationError()
+        }
+    }
+
+    /// The turn itself, once the socket is open: say hello, find or make the session, send the
+    /// prompt, wait for the end of the turn.
+    private func turn(on socket: AcpSocket, turn: @Sendable @escaping (_ resumed: Bool) -> DamTurn,
+                      resume: String?, opened: SessionBox) async throws -> DamRunResult {
+        do {
             _ = try await socket.request("initialize", [
                 "protocolVersion": 1,
                 "clientCapabilities": [:],
@@ -142,6 +163,7 @@ public final class DamRunner: DamPrompting {
             ])
 
             let (sessionId, resumed) = try await self.session(on: socket, resume: resume)
+            await opened.set(sessionId)
             // The load replays the old turns as notifications before it answers, and they land in
             // the same place this turn's words will. What we want back is what the agent says now.
             await socket.forgetWhatWasSaid()
@@ -231,6 +253,12 @@ public final class DamRunner: DamPrompting {
     }
 }
 
+/// The session id, once the agent has given one, for whoever needs it after the turn is over.
+actor SessionBox {
+    private(set) var id: String?
+    func set(_ id: String) { self.id = id }
+}
+
 /// The socket underneath, as little of it as the protocol needs — so the frame handling above can
 /// be tested against a scripted agent rather than a live one.
 protocol AcpTransport: Sendable {
@@ -307,6 +335,13 @@ actor AcpSocket {
         return try await withCheckedThrowingContinuation { continuation in
             pending[id] = continuation
         }
+    }
+
+    /// A notification: sent, not answered. A failure to send is nobody's business here — the
+    /// socket is about to be closed anyway.
+    func notify(_ method: String, _ params: [String: Any]) async {
+        guard !closed else { return }
+        try? await send(["jsonrpc": "2.0", "method": method, "params": params])
     }
 
     private func send(_ frame: [String: Any]) async throws {
