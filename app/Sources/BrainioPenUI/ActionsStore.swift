@@ -143,6 +143,15 @@ public final class ActionsStore: ObservableObject {
     /// says what it did, and you say whether that finished it.
     public func setDone(_ item: Item, _ done: Bool) {
         change(item) { $0.done = done; if done { $0.dismissed = false } }
+        if done { collapseIfDone(item.id) }
+    }
+
+    /// A line that has just been finished folds its conversation away. The exchange is over, and
+    /// an open transcript under a ticked line reads as something still going on. It is one click
+    /// to open again for anyone who wants to read how it ended.
+    private func collapseIfDone(_ id: String) {
+        guard expanded == id, items.first(where: { $0.id == id })?.status == .done else { return }
+        expanded = nil
     }
 
     public func setDismissed(_ item: Item, _ dismissed: Bool) {
@@ -168,6 +177,9 @@ public final class ActionsStore: ObservableObject {
             busy.remove(item.id)
             failures[item.id] = error?.localizedDescription
             reload()
+            // The agent may have ticked it: `STATUS: done` moves the line to Done, and Done is
+            // folded.
+            collapseIfDone(item.id)
         }
     }
 

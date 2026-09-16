@@ -4,10 +4,13 @@ import SwiftUI
 
 /// Violet ink. The resting state carries no colour at all — ink on paper is the "everything is
 /// fine" signal — so the accent only appears on work in flight, and red only when something wants
-/// fixing. No green anywhere: this is a pen, not a router.
+/// fixing. Green is for one thing: a line that has been carried out. Nowhere else — this is a
+/// pen, not a router.
 enum Ink {
     static let accent = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.357, green: 0.247, blue: 0.769, alpha: 1),
                                                dark: NSColor(srgbRed: 0.655, green: 0.592, blue: 0.941, alpha: 1)))
+    static let done = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.192, green: 0.545, blue: 0.290, alpha: 1),
+                                             dark: NSColor(srgbRed: 0.416, green: 0.780, blue: 0.470, alpha: 1)))
     static let critical = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.651, green: 0.227, blue: 0.196, alpha: 1),
                                                  dark: NSColor(srgbRed: 0.886, green: 0.478, blue: 0.439, alpha: 1)))
 
@@ -437,7 +440,7 @@ private struct ActionLine: View {
             // line of handwriting needs every one of them it can get.
             Menu {
                 if model.canRun, action.action.state == .open {
-                    Button("Ask the agent to do it") { model.run(action) }
+                    Button("Execute") { model.run(action) }
                 }
                 if action.action.done {
                     Button("Reopen") { model.setDone(action, false) }
@@ -477,7 +480,7 @@ private struct ActionLine: View {
     @ViewBuilder private var mark: some View {
         switch action.action.state {
         case .open: Image(systemName: "square").font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 15)
-        case .done: Image(systemName: "checkmark.square.fill").font(.system(size: 12)).foregroundStyle(Ink.accent).frame(width: 15)
+        case .done: Image(systemName: "checkmark.square.fill").font(.system(size: 12)).foregroundStyle(Ink.done).frame(width: 15)
         case .dismissed: Image(systemName: "xmark.square").font(.system(size: 12)).foregroundStyle(.tertiary).frame(width: 15)
         }
     }

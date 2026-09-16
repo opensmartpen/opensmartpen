@@ -236,11 +236,11 @@ private struct ActionCard: View {
                             // scratch" throws that away and puts the original line in front of a
                             // fresh agent — for when the first attempt went down the wrong road
                             // and no amount of saying more will bring it back.
-                            Button("Ask the agent") {
+                            Button("Execute") {
                                 store.expanded = item.id
                                 store.run(item)
                             }
-                            .help("Hand this line to the agent")
+                            .help("Hand this line to its assistant to carry out")
                         }
                         // Only once there is something to forget. Two ways: forget and send again,
                         // or forget and stop there.
@@ -365,7 +365,7 @@ private struct ActionCard: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(canSend ? Ink.accent : Color.secondary.opacity(0.4))
                     .disabled(!canSend)
-                    .help(item.action.thread.isEmpty ? "Ask the agent" : "Send")
+                    .help(item.action.thread.isEmpty ? "Execute" : "Send")
                 }
             }
         }
@@ -377,7 +377,7 @@ private struct ActionCard: View {
     /// The box says what saying something would do, which changes with where the line has got to.
     private var prompt: String {
         if item.action.needsYou { return "Answer it…" }
-        if item.action.thread.isEmpty { return "Ask the agent to do this…" }
+        if item.action.thread.isEmpty { return "Anything to add before it runs…" }
         return "Say more…"
     }
 
@@ -681,11 +681,11 @@ struct VerdictBadge: View {
         return status.label
     }
 
-    /// Violet for what is waiting on somebody, red for what is stuck, grey for the rest — the
-    /// same rule as the mark on the row.
+    /// Green for what is carried out, violet for what is waiting on somebody, red for what is
+    /// stuck, grey for the rest — the same rule as the mark on the row.
     private var colour: Color {
         switch status {
-        case .done: return .secondary
+        case .done: return Ink.done
         case .needsInfo: return Ink.accent
         case .blocked: return Ink.critical
         case .unclear: return Color.secondary.opacity(0.7)
@@ -752,13 +752,14 @@ private struct Mark: View {
         .contentShape(Rectangle())
     }
 
-    /// Violet for what is in hand — it is the only thing on the list that is moving. Everything
-    /// else is quiet: a finished line should not shout, and a line nobody has started is not news.
+    /// Violet for what is in hand — it is the only thing on the list that is moving. Green for
+    /// what is finished, because a tick that is the same grey as an empty circle is not a tick
+    /// you can see from across the room. A line nobody has started is not news, and stays quiet.
     private var colour: Color {
         switch status {
         case .new: return .secondary
         case .wip: return Ink.accent
-        case .done: return .secondary
+        case .done: return Ink.done
         case .dismissed: return Color.secondary.opacity(0.5)
         }
     }
