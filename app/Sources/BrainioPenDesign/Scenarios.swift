@@ -127,7 +127,7 @@ public enum Scenario: String, CaseIterable {
         s.lowPen = ("Red one", 14)
         s.pens = [
             PenRow(id: "a", name: "Everyday", ink: .black, width: .medium, mode: .writing,
-                   percent: 72, low: false, active: true, state: "Writing", awake: true),
+                   percent: 72, low: false, active: true, state: "Writing", awake: true, memory: 12),
             PenRow(id: "b", name: "Red one", ink: .red, width: .thin, mode: .accent,
                    percent: 14, low: true, active: false, state: "Pen off", awake: false),
         ]

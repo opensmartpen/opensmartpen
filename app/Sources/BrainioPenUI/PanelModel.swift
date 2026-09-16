@@ -123,9 +123,13 @@ public final class PanelModel: ObservableObject {
         /// with ink only for this: the fill says "you are writing with this", and a pen that went
         /// to sleep twenty minutes ago is not something you are doing.
         public let awake: Bool
+        /// How full the pen's own memory is, as a percentage — only while it is connected, for
+        /// the same reason as the charge: a figure read hours ago looks live and is not.
+        public let memory: Int?
 
         public init(id: String, name: String, ink: InkColor, width: LineWidth, mode: PenMode,
-                    percent: Int?, low: Bool, active: Bool, state: String, awake: Bool) {
+                    percent: Int?, low: Bool, active: Bool, state: String, awake: Bool,
+                    memory: Int? = nil) {
             self.id = id
             self.name = name
             self.ink = ink
@@ -136,6 +140,7 @@ public final class PanelModel: ObservableObject {
             self.active = active
             self.state = state
             self.awake = awake
+            self.memory = memory
         }
     }
     @Published public private(set) var pending: [PendingRow] = []
@@ -344,7 +349,8 @@ public final class PanelModel: ObservableObject {
             return PenRow(id: pen.mac, name: pen.name, ink: pen.ink, width: pen.width, mode: pen.mode,
                           percent: reading?.battery,
                           low: (reading.map { !$0.charging && $0.battery <= config.lowBatteryPercent }) ?? false,
-                          active: pen.mac == connected, state: state, awake: here)
+                          active: pen.mac == connected, state: state, awake: here,
+                          memory: here ? session.reading?.memoryUsedPercent : nil)
         }.sorted {
             // The one in your hand first, then by how recently each was seen.
             if $0.active != $1.active { return $0.active }

@@ -167,13 +167,24 @@ public struct StatusPanel: View {
                 // Not the name — the tile directly above already carries it, in that pen's own
                 // ink. What the tile cannot say is whether the pen is awake, so that is what goes
                 // here, with the charge on the other end of the same line.
+                // Two figures on the right, each with its word: a bare "73%" was the charge to
+                // anyone who knew, and the memory figure beside it would have made both a guess.
                 HStack(spacing: 6) {
                     Text(pen.state)
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
+                    if let memory = pen.memory {
+                        Text("Memory \(memory)%")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                        if pen.percent != nil {
+                            Text("·").font(.system(size: 11.5)).foregroundStyle(.tertiary)
+                        }
+                    }
                     if let percent = pen.percent {
-                        Text("\(percent)%")
+                        Text("Battery \(percent)%")
                             .font(.system(size: 11.5))
                             .foregroundStyle(pen.low ? Ink.critical : Color.secondary)
                             .monospacedDigit()
