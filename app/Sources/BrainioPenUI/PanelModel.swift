@@ -399,8 +399,12 @@ public final class PanelModel: ObservableObject {
         // because you wrote four pages in it says nothing you did not already know. A second copy
         // of one product is a second row, which is how a person learns the app decided there was
         // one (ADR-002).
+        // The control strip is a book to the pen and a keyboard to a person. It is written on all
+        // day and never read, so it is not a notebook to list.
+        let utility = Set(live?.config.controlBooks ?? [])
         var seen = Set<String>()
         recent = books.recentPages(limit: 60).compactMap { entry in
+            guard !utility.contains(entry.page.folder.surface) else { return nil }
             guard seen.insert(entry.page.folder.name).inserted else { return nil }
             let label = books.label(for: entry.page)
             return RecentBook(id: entry.page.folder.name,

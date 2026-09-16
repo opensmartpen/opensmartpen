@@ -39,6 +39,17 @@ public final class PageRouter {
         var out: [BookFolder: [Stroke]] = [:]
 
         for (surface, forSurface) in Dictionary(grouping: strokes, by: { $0.page.surface }) {
+            // A dot on paper the app has never seen is not a notebook. It happens: the pen wakes
+            // against the page, or misreads the pattern for an instant, and reports one sample on
+            // a book nobody owns — and a folder, a blank page and a commit followed, with a second
+            // "Notebook" in the panel for a sheet that does not exist. ADR-001 keeps what the pen
+            // saw, and this is the one exception: a speck with no book to belong to goes to the
+            // log and no further. On a book that exists, the same speck is kept — it is a full
+            // stop.
+            if books.current(for: surface) == nil, forSurface.allSatisfy(\.isSpeck) {
+                Log.info("ignored \(forSurface.count) speck(s) on \(surface), which has no notebook")
+                continue
+            }
             guard var folder = books.ensureRecord(for: forSurface[0].page)?.folder else {
                 Log.error("no book record for \(surface); \(forSurface.count) stroke(s) not filed")
                 continue
@@ -78,4 +89,11 @@ public final class PageRouter {
 
         return out.map { (folder: $0.key, strokes: $0.value) }
     }
+}
+
+private extension Stroke {
+    /// One sample and no time between pen-down and pen-up — the shape of the glitch, and of
+    /// nothing a hand does. The pen samples about 120 times a second, so even a full stop lasts
+    /// longer than that and has more in it.
+    var isSpeck: Bool { dots.count < 2 && end <= start }
 }

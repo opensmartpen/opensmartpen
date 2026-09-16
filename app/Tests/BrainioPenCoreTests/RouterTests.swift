@@ -41,6 +41,29 @@ final class RouterTests: XCTestCase {
         }
     }
 
+    /// One sample on a book nobody has, as the pen reports when it wakes against the page or
+    /// misreads the pattern for an instant.
+    private func speck(surface: (owner: Int, book: Int), page: Int, at ms: Int) -> Stroke {
+        Stroke(page: PageID(section: 3, owner: surface.owner, book: surface.book, page: page),
+               start: ms, end: ms, dots: [DotSample(x: 395.49, y: 119.42, force: 0.45, dt: 0)],
+               source: .live, penMac: "M", firmware: "F")
+    }
+
+    /// The failure that put a second, blank "Notebook" in the panel: one dot, decoded to a book
+    /// that was never on the desk, opened a folder and a page and was committed.
+    func testASpeckOnPaperNeverSeenIsNotANotebook() throws {
+        let routed = router.route([speck(surface: (1012, 4041), page: 55, at: 1_000)])
+        XCTAssertTrue(routed.isEmpty)
+        XCTAssertNil(books.current(for: "s3/o1012/b4041"))
+    }
+
+    func testASpeckOnANotebookThatExistsIsKept() throws {
+        // A full stop is a speck too, and on a page that is being written it is ink.
+        try write(page: 1, at: 0)
+        let routed = router.route([speck(surface: (27, 450), page: 1, at: 5_000)])
+        XCTAssertEqual(routed.flatMap(\.strokes).count, 1)
+    }
+
     /// The failure that made one A4 pad into five on a real Mac, twice. Handwriting is strokes
     /// landing on other strokes: letters in a word sit closer together than one Ncode cell.
     func testWritingOnOnePageAllAfternoonIsOnePad() throws {
@@ -165,9 +188,11 @@ final class RouterTests: XCTestCase {
 
     func testTwoProductsAreRoutedApartInOneBatch() throws {
         let lamy = PageID(section: 3, owner: 1012, book: 3017, page: 4)
+        // A stroke of writing, not one sample: a single sample on a book never seen is a speck,
+        // and specks open nothing.
         let mixed = strokes(page: 1, at: 0) + [
-            Stroke(page: lamy, start: 10, end: 20,
-                   dots: [DotSample(x: 1, y: 1, force: 0.5, dt: 0)],
+            Stroke(page: lamy, start: 10, end: 110,
+                   dots: (0..<20).map { DotSample(x: 1 + Double($0), y: 1, force: 0.5, dt: 5) },
                    source: .live, penMac: "M", firmware: "F")]
         for group in router.route(mixed) { try store.append(group.strokes, to: group.folder) }
         XCTAssertEqual(books.copies(of: pad).count, 1)

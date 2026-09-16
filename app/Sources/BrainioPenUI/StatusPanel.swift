@@ -103,9 +103,14 @@ public struct StatusPanel: View {
     // MARK: recent — click to open the rendered page
 
     private var recent: some View {
-        // No heading. The hairline above already says a new thing starts here, and a notebook
-        // with its own mark beside it does not need to be announced as recent.
+        // A heading, like the actions have: the two lists sit one above the other, and a list
+        // with a name over it next to one without looks like one list with a rule through it.
         VStack(alignment: .leading, spacing: 2) {
+            Text("Notebooks")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 9)
+                .padding(.bottom, 2)
             ForEach(model.recent) { book in
                 RecentRow(book: book) { model.open(book) }
             }
