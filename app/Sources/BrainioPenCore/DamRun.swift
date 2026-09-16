@@ -40,22 +40,40 @@ public struct DamImage: Equatable, Sendable {
     }
 }
 
+/// What to say on one turn: the words, and a picture when the agent has not been shown one already.
+public struct DamTurn: Sendable {
+    public let prompt: String
+    public let image: DamImage?
+
+    public init(prompt: String, image: DamImage? = nil) {
+        self.prompt = prompt
+        self.image = image
+    }
+}
+
 /// One prompt, waited on until the turn ends. A protocol so a test can answer it.
 public protocol DamPrompting: Sendable {
     /// `resume` continues an earlier session, so the agent still has what it worked out last time.
     ///
+    /// What to say is asked for *after* the session is settled, because the answer depends on it:
+    /// `resumed` is true when the agent still holds the earlier conversation, and false when that
+    /// session was gone and a new one had to be started. A caller that would otherwise send one
+    /// line — "and the second name is Jan" — can then send the whole errand instead, rather than
+    /// handing a stranger a pronoun.
+    ///
     /// `approvals` is where a request for permission is put while somebody decides. Without one the
     /// turn ends at the first such request, which is right when nobody is watching.
-    func run(prompt: String, image: DamImage?, resume: String?, timeout: TimeInterval,
-             approvals: ApprovalDesk?) async throws -> DamRunResult
+    func run(turn: @Sendable @escaping (_ resumed: Bool) -> DamTurn, resume: String?,
+             timeout: TimeInterval, approvals: ApprovalDesk?) async throws -> DamRunResult
 }
 
 public extension DamPrompting {
-    /// Unattended: no desk, so a permission request stalls the run rather than waiting for a
-    /// person who is not there.
+    /// The same thing said whether or not the session survived — what every caller wants except
+    /// the one carrying on a conversation.
     func run(prompt: String, image: DamImage? = nil, resume: String? = nil,
-             timeout: TimeInterval = 900) async throws -> DamRunResult {
-        try await run(prompt: prompt, image: image, resume: resume, timeout: timeout, approvals: nil)
+             timeout: TimeInterval = 900, approvals: ApprovalDesk? = nil) async throws -> DamRunResult {
+        try await run(turn: { _ in DamTurn(prompt: prompt, image: image) }, resume: resume,
+                      timeout: timeout, approvals: approvals)
     }
 }
 
@@ -104,7 +122,7 @@ public final class DamRunner: DamPrompting {
     }
 
     /// Run one prompt to completion, with a picture attached when there is one.
-    public func run(prompt: String, image: DamImage? = nil, resume: String? = nil,
+    public func run(turn: @Sendable @escaping (_ resumed: Bool) -> DamTurn, resume: String? = nil,
                     timeout: TimeInterval = 900,
                     approvals: ApprovalDesk? = nil) async throws -> DamRunResult {
         let socket = AcpSocket(transport: connect(url), approvals: approvals)
@@ -123,22 +141,24 @@ public final class DamRunner: DamPrompting {
                 "clientInfo": ["name": "brainio-pen", "version": "1.0.0"],
             ])
 
-            let sessionId = try await self.session(on: socket, resume: resume)
+            let (sessionId, resumed) = try await self.session(on: socket, resume: resume)
             // The load replays the old turns as notifications before it answers, and they land in
             // the same place this turn's words will. What we want back is what the agent says now.
             await socket.forgetWhatWasSaid()
 
+            // Now that the session is known, ask what to say into it.
+            let what = turn(resumed)
             let promptId = UUID().uuidString
             // The picture first, the instructions after it. An attached image is content the model
             // already has; a path is an errand, and an agent given an errand will run tools —
             // opening the file, and then cropping and magnifying it to read it better, which is
             // minutes of work for a picture it could simply have been shown.
             var blocks: [[String: Any]] = []
-            if let image {
+            if let image = what.image {
                 blocks.append(["type": "image", "data": image.data.base64EncodedString(),
                                "mimeType": image.mimeType])
             }
-            blocks.append(["type": "text", "text": prompt])
+            blocks.append(["type": "text", "text": what.prompt])
             let answer = try await socket.request("session/prompt", [
                 "sessionId": sessionId,
                 "prompt": blocks,
@@ -156,7 +176,8 @@ public final class DamRunner: DamPrompting {
     /// up the first time. A session that cannot be loaded is not an error worth showing anybody:
     /// the pod may have been restarted, and the app carries the exchange in its own file anyway,
     /// so it starts a fresh one and says so in the log.
-    private func session(on socket: AcpSocket, resume: String?) async throws -> String {
+    private func session(on socket: AcpSocket,
+                         resume: String?) async throws -> (id: String, resumed: Bool) {
         if let resume {
             do {
                 _ = try await socket.request("session/load", [
@@ -165,7 +186,7 @@ public final class DamRunner: DamPrompting {
                     "mcpServers": [],
                     "_meta": ["platform": ["tail": true]],
                 ])
-                return resume
+                return (resume, true)
             } catch {
                 Log.info("the agent could not carry on session \(resume) (\(error)); starting a new one")
             }
@@ -180,7 +201,7 @@ public final class DamRunner: DamPrompting {
         guard let sessionId = (created as? [String: Any])?["sessionId"] as? String else {
             throw DamRunError.refused("the agent returned no session id")
         }
-        return sessionId
+        return (sessionId, false)
     }
 
     /// Races the work against the clock. A turn that outlives the deadline is left running on the

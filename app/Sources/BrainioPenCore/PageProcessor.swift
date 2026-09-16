@@ -436,16 +436,39 @@ public final class PageProcessor {
         // The page goes to whoever is carrying the line out, not to the reader. That is the whole
         // point of the roster: the agent that looks at the paper has no connections, and the agent
         // with the connections is never shown a page it was not routed to.
-        let staged = try await stage(ref, agent: action.agent)
-        let text = PagePrompt.execute(action: action.text, thread: thread,
-                                      image: agentPath(for: ref, ext: "png"),
-                                      reading: agentPath(for: ref, ext: "md"),
-                                      label: books.label(for: ref).oneLine)
-        // Carried on where it left off, when there is a session to carry on from: the agent keeps
-        // what it worked out last time, and the exchange above is the part that survives a pod
-        // being restarted underneath us.
+        //
+        // The first turn puts the page in the agent's workspace. A later one does not: the files
+        // are already there under the same names, and uploading them again buys nothing.
+        let png: Data
+        if action.session == nil {
+            png = try await stage(ref, agent: action.agent).png
+        } else {
+            guard let drawn = imaging.png(for: ref) else { throw ReadError.nothingToDraw(ref) }
+            png = drawn
+        }
+
+        let whole = PagePrompt.execute(action: action.text, thread: thread,
+                                       image: agentPath(for: ref, ext: "png"),
+                                       reading: agentPath(for: ref, ext: "md"),
+                                       label: books.label(for: ref).oneLine)
+        let justThis = PagePrompt.carryOn(message: say)
+
+        // What is said depends on whether the agent still has the conversation, which is not known
+        // until the session is settled — so the runner asks for it then.
+        //
+        // Carried on: one line, because the agent already holds the errand, the page and every
+        // word either of us has said. Sending them again would have it read its own conversation
+        // twice, and it is paying for both copies.
+        //
+        // Started again: the whole errand, because the session is gone and this agent has never
+        // seen any of it. That happens when the pod restarts, and it is why the app keeps the
+        // exchange in its own file rather than trusting the agent to remember.
         let outcome = try await fleet.prompter(for: action.agent)
-            .run(prompt: text, image: DamImage(data: staged.png, mimeType: "image/png"),
+            .run(turn: { resumed in
+                     resumed ? DamTurn(prompt: justThis)
+                             : DamTurn(prompt: whole,
+                                       image: DamImage(data: png, mimeType: "image/png"))
+                 },
                  resume: action.session, timeout: 900, approvals: desk)
         let answer = ActionAnswer(outcome.text)
         Log.info("agent worked on \(ref): \(action.text) — \(answer.status) "
@@ -454,9 +477,11 @@ public final class PageProcessor {
         // A turn that ended with nothing said still has to say something here. It happens — the
         // agent writes only the status line, or stops without a word — and an empty message in the
         // thread reads on screen as a broken app rather than as a quiet agent.
-        let said = answer.text.isEmpty
-            ? "The agent finished without saying anything. Ask it again, or say more about what you want."
-            : answer.text
+        //
+        // When the harness says why it stopped, say that instead of guessing. `max_tokens` is the
+        // one worth naming: the turn was cut off at its limit, which is somebody else's setting to
+        // raise and nothing the person can fix by asking again more politely.
+        let said = answer.text.isEmpty ? Self.nothingSaid(outcome.stopReason) : answer.text
         try PageActions.update(url, key: action.key) {
             $0.thread.append(ActionMessage(from: .agent, text: said))
             $0.note = answer.summary ?? said
@@ -464,6 +489,22 @@ public final class PageProcessor {
             // Only the agent's own word for it, and only in one direction. It cannot un-tick
             // something, and it cannot call anything off.
             if answer.status == .done { $0.done = true }
+        }
+    }
+
+    /// What to put in the thread when the agent said nothing at all.
+    static func nothingSaid(_ stopReason: String?) -> String {
+        switch stopReason {
+        case "max_tokens":
+            return "The turn was cut off at its token limit before the agent said anything. "
+                + "The agent's output limit is too low for this — raise it in DAM."
+        case "refusal":
+            return "The agent declined to answer."
+        case "cancelled":
+            return "The turn was stopped before the agent said anything."
+        default:
+            return "The agent finished without saying anything. Ask it again, or say more about "
+                + "what you want."
         }
     }
 
@@ -665,4 +706,25 @@ public enum PagePrompt {
         """
     }
 
+    /// One more turn in a conversation the agent already holds.
+    ///
+    /// Almost nothing, on purpose. The errand, the page and everything said about it are already
+    /// in the session; the only new thing in the world is the sentence you just typed. The status
+    /// line is repeated because it is the one part the app reads, and a rule given several turns
+    /// ago is a rule a model may have stopped applying.
+    public static func carryOn(message: String?) -> String {
+        let said = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let opening = said.isEmpty
+            ? "Carry on with that same line. If you are waiting on something, say what it is."
+            : said
+        return """
+        \(opening)
+
+        End your reply with one line, exactly one of these and nothing after it:
+
+        STATUS: done — you carried it out, and the answer is above.
+        STATUS: needs-info — you need something only the person can tell you.
+        STATUS: blocked — it cannot be done from where you are.
+        """
+    }
 }

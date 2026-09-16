@@ -299,7 +299,8 @@ extension PageProcessorTests {
         XCTAssertFalse(after.done)
         XCTAssertTrue(after.needsYou)
 
-        // Answering carries the whole exchange back, so the agent needs no memory of its own.
+        // Answering says the new thing and nothing else: the agent is carrying on a conversation
+        // it still holds, and repeating the errand would have it read its own words twice.
         runner.reply = "Sent to Tomas Novak.\nSTATUS: done"
         let second = await executed(p, after, on: ref, say: "Tomas Novak")
         XCTAssertNil(second)
@@ -307,10 +308,50 @@ extension PageProcessorTests {
         XCTAssertEqual(after.thread.map(\.from), [.agent, .you, .agent])
         XCTAssertTrue(after.done)
         XCTAssertFalse(after.needsYou)
-        XCTAssertTrue(runner.prompts.last!.contains("Which Tomas?"))
         XCTAssertTrue(runner.prompts.last!.contains("Tomas Novak"))
-        // And it is the same session on the far side, so the agent still has what it found.
+        XCTAssertFalse(runner.prompts.last!.contains("Which Tomas?"))
+        XCTAssertFalse(runner.prompts.last!.contains("SEND THIS TO TOMAS"))
+        // The status line goes with it, because it is the one part the app reads.
+        XCTAssertTrue(runner.prompts.last!.contains("STATUS: done"))
+        // And the page is not sent a second time: the agent already has it.
+        XCTAssertEqual(runner.images.count, 1)
+        // It is the same session on the far side, so the agent still has what it found.
         XCTAssertEqual(runner.resumed, [nil, "sess-1"])
+    }
+
+    /// A pod restarted under us, so `session/load` failed and a new session started. The agent on
+    /// the other side has never seen any of this, and one bare sentence would be a pronoun handed
+    /// to a stranger.
+    func testALostSessionIsToldTheWholeErrandAgain() async throws {
+        let (ref, books) = try writePage()
+        let runner = FakeRunner()
+        runner.reply = "Which Tomas?\nSTATUS: needs-info"
+        let p = processor(books, runner: runner)
+        let url = try XCTUnwrap(p.actionsURL(for: ref))
+        let action = PageAction(text: "SEND THIS TO TOMAS")
+        try PageActions.save([action], to: url)
+
+        _ = await executed(p, action, on: ref)
+        let after = try XCTUnwrap(PageActions.load(url).first)
+
+        runner.sessionSurvives = false
+        runner.reply = "Sent to Tomas Novak.\nSTATUS: done"
+        _ = await executed(p, after, on: ref, say: "Tomas Novak")
+
+        let last = try XCTUnwrap(runner.prompts.last)
+        XCTAssertTrue(last.contains("SEND THIS TO TOMAS"))
+        XCTAssertTrue(last.contains("Which Tomas?"))
+        XCTAssertTrue(last.contains("Tomas Novak"))
+        // And the page goes with it, because this agent has not been shown it.
+        XCTAssertEqual(runner.images.count, 2)
+    }
+
+    /// A turn cut off at its token limit says so. "Said nothing" reads as a broken app, and sends
+    /// somebody looking in the wrong place — the limit is a setting on the far side.
+    func testATurnCutOffAtItsLimitSaysSo() {
+        XCTAssertTrue(PageProcessor.nothingSaid("max_tokens").contains("token limit"))
+        XCTAssertTrue(PageProcessor.nothingSaid("end_turn").contains("without saying anything"))
+        XCTAssertTrue(PageProcessor.nothingSaid(nil).contains("without saying anything"))
     }
 
     func testAnAnswerWithNoStatusNeverTicksTheBox() async throws {
@@ -503,12 +544,18 @@ private final class FakeRunner: DamPrompting, @unchecked Sendable {
     /// The turn then waits for it to be answered, which is the behaviour being tested.
     var heldUpBy: ApprovalAsk?
 
-    func run(prompt: String, image: DamImage?, resume: String?, timeout: TimeInterval,
-             approvals: ApprovalDesk?) async throws -> DamRunResult {
+    /// Whether the agent still holds the session it is asked to carry on. True unless a test says
+    /// otherwise, which is the case worth asserting: a pod restarted under us.
+    var sessionSurvives = true
+
+    func run(turn: @Sendable @escaping (_ resumed: Bool) -> DamTurn, resume: String?,
+             timeout: TimeInterval, approvals: ApprovalDesk?) async throws -> DamRunResult {
+        let carriedOn = resume != nil && lock.withLock { sessionSurvives }
+        let what = turn(carriedOn)
         lock.withLock {
-            prompts.append(prompt)
+            prompts.append(what.prompt)
             resumed.append(resume)
-            if let image { images.append(image) }
+            if let image = what.image { images.append(image) }
         }
         if let ask = lock.withLock({ heldUpBy }), let approvals {
             approvals.post(ask)
