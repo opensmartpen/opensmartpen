@@ -210,6 +210,60 @@ extension PageProcessorTests {
         }
     }
 
+    private func reworded(_ p: PageProcessor, _ ref: PageRef, _ instruction: String) async -> Error? {
+        await withCheckedContinuation { continuation in
+            p.reword(ref, instruction: instruction) { continuation.resume(returning: $0) }
+        }
+    }
+
+    func testTheReaderCanBeAskedToFixTheWording() async throws {
+        let (ref, books) = try writePage()
+        let runner = FakeRunner()
+        runner.reply = """
+        Here you go:
+        ["Find out who is Ondřej Široký from Apoco", "Send the pricing to Brainio"]
+        """
+        let p = processor(books, runner: runner)
+        let url = try XCTUnwrap(p.actionsURL(for: ref))
+        let said = [ActionMessage(from: .agent, text: "Which pricing?")]
+        try PageActions.save([PageAction(text: "FIND OUT WHO IS ONDREJ SIROKY FROM APOCO"),
+                              PageAction(text: "Send the pricing to Brainio", thread: said, session: "s-1",
+                                         agent: "mailer")], to: url)
+
+        let failure = await reworded(p, ref, "fix the name and the case")
+        XCTAssertNil(failure)
+        let after = PageActions.load(url)
+        XCTAssertEqual(after.map(\.text), ["Find out who is Ondřej Široký from Apoco", "Send the pricing to Brainio"])
+        // The fixed line remembers the paper's words; the untouched one has nothing to remember.
+        XCTAssertEqual(after[0].paper, "FIND OUT WHO IS ONDREJ SIROKY FROM APOCO")
+        XCTAssertNil(after[1].paper)
+        XCTAssertEqual(after[1].thread.map(\.text), ["Which pricing?"])
+        XCTAssertEqual(after[1].session, "s-1")
+        XCTAssertEqual(after[1].agent, "mailer")
+        // The reader was asked, with the page in view, and told what to change.
+        XCTAssertEqual(runner.images.count, 1)
+        XCTAssertTrue(runner.prompts[0].contains("fix the name and the case"))
+        XCTAssertTrue(runner.prompts[0].contains("FIND OUT WHO IS ONDREJ SIROKY FROM APOCO"))
+    }
+
+    func testAReplyThatIsNotTheLinesChangesNothing() async throws {
+        let (ref, books) = try writePage()
+        let runner = FakeRunner()
+        runner.reply = "I lowercased them for you."
+        let p = processor(books, runner: runner)
+        let url = try XCTUnwrap(p.actionsURL(for: ref))
+        try PageActions.save([PageAction(text: "CALL THE LANDLORD")], to: url)
+
+        let failure = await reworded(p, ref, "lowercase")
+        XCTAssertNotNil(failure)
+        XCTAssertEqual(PageActions.load(url).map(\.text), ["CALL THE LANDLORD"])
+
+        runner.reply = "[\"call the landlord\", \"and another\"]"
+        let wrongCount = await reworded(p, ref, "lowercase")
+        XCTAssertNotNil(wrongCount)
+        XCTAssertEqual(PageActions.load(url).map(\.text), ["CALL THE LANDLORD"])
+    }
+
     func testAnAnswerIsFiledBesideTheLineThatAskedForIt() async throws {
         let (ref, books) = try writePage()
         let runner = FakeRunner()

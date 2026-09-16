@@ -35,6 +35,33 @@ final class PageActionsTests: XCTestCase {
         XCTAssertTrue(merged.last!.done)
     }
 
+    func testARewrittenLineKeepsItsWordsAndItsRecordAcrossTheNextReading() {
+        // A person had the reader fix the case and the name. The next reading of the sheet says
+        // what the paper says, in capitals, as it always did.
+        let said = [ActionMessage(from: .agent, text: "He runs delivery.")]
+        let ours = [PageAction(text: "Find out who is Ondřej Široký", thread: said, session: "s-1",
+                               paper: "FIND OUT WHO IS ONDREJ SIROKY")]
+        let merged = PageActions.merge(ours: ours, theirs: [PageAction(text: "FIND OUT WHO IS ONDREJ SIROKY")])
+        XCTAssertEqual(merged.map(\.text), ["Find out who is Ondřej Široký"])
+        XCTAssertEqual(merged[0].paper, "FIND OUT WHO IS ONDREJ SIROKY")
+        XCTAssertEqual(merged[0].thread, said)
+        XCTAssertEqual(merged[0].session, "s-1")
+    }
+
+    func testAReaderThatKeptTheFixedWordingStillMatches() {
+        // Told to keep our entries "exactly as they are", the reader may hand the fixed text back,
+        // with or without the paper's version beside it. Both are the same line.
+        let ours = [PageAction(text: "Find out who is Ondřej Široký", done: true,
+                               paper: "FIND OUT WHO IS ONDREJ SIROKY")]
+        for theirs in [PageAction(text: "Find out who is Ondřej Široký"),
+                       PageAction(text: "Find out who is Ondřej Široký", paper: "FIND OUT WHO IS ONDREJ SIROKY")] {
+            let merged = PageActions.merge(ours: ours, theirs: [theirs])
+            XCTAssertEqual(merged.count, 1)
+            XCTAssertTrue(merged[0].done)
+            XCTAssertEqual(merged[0].paper, "FIND OUT WHO IS ONDREJ SIROKY")
+        }
+    }
+
     func testAnActionNeverCarriedOutIsDroppedWhenThePageNoLongerSaysIt() {
         let ours = [PageAction(text: "book the room")]
         let merged = PageActions.merge(ours: ours, theirs: [])

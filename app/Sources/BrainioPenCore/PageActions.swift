@@ -49,9 +49,18 @@ public struct PageAction: Codable, Equatable {
     /// changed by a person whenever the guess is wrong. Nil means the reader itself, which is the
     /// agent with no connections — so an action nobody has routed can do nothing surprising.
     public var agent: String?
+    /// What the paper says, once `text` no longer does.
+    ///
+    /// A line is matched between readings by its words, and the reader's words are the paper's:
+    /// "FIND OUT WHO IS ONDREJ SIROKY", capitals and all. When a person has the wording fixed —
+    /// the case, a name the reader got wrong — the fixed text is what is shown and sent, and this
+    /// is what the next reading of the same sheet is matched against. Without it the fix would
+    /// last until the page was next written on, and take the conversation with it.
+    public var paper: String?
 
     public init(text: String, done: Bool = false, dismissed: Bool = false, note: String? = nil,
-                thread: [ActionMessage] = [], session: String? = nil, agent: String? = nil) {
+                thread: [ActionMessage] = [], session: String? = nil, agent: String? = nil,
+                paper: String? = nil) {
         self.agent = agent
         self.text = text
         self.done = done
@@ -59,6 +68,7 @@ public struct PageAction: Codable, Equatable {
         self.note = note
         self.thread = thread
         self.session = session
+        self.paper = paper
     }
 
     /// Older files, and anything the agent writes without the field, have nothing dismissed.
@@ -71,6 +81,7 @@ public struct PageAction: Codable, Equatable {
         thread = try c.decodeIfPresent([ActionMessage].self, forKey: .thread) ?? []
         session = try c.decodeIfPresent(String.self, forKey: .session)
         agent = try c.decodeIfPresent(String.self, forKey: .agent)
+        paper = try c.decodeIfPresent(String.self, forKey: .paper)
     }
 
     /// Waiting on you: the agent asked something and nothing has been said back.
@@ -90,8 +101,13 @@ public struct PageAction: Codable, Equatable {
     /// Actions are matched between readings by what they say, with spacing and case ignored. No
     /// ids: the model would have to invent them and keep them stable, and this is the same join
     /// with nothing to go wrong in it. Two identical lines on one page count as one — a fair price.
-    public var key: String {
-        text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    ///
+    /// The paper's wording when the text has been rewritten, because the paper is what the next
+    /// reading will say.
+    public var key: String { Self.key(of: paper ?? text) }
+
+    static func key(of words: String) -> String {
+        words.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 }
 
@@ -149,6 +165,16 @@ public enum PageActions {
         return actions
     }
 
+    /// Change the whole list under the same lock — for an edit that touches several lines at once,
+    /// which `update` would do as several separate writes with a gap between each.
+    public static func revise(_ url: URL, _ change: (inout [PageAction]) -> Void) throws {
+        pen.lock()
+        defer { pen.unlock() }
+        var actions = load(url)
+        change(&actions)
+        try save(actions, to: url)
+    }
+
     public static func save(_ actions: [PageAction], to url: URL) throws {
         // Recursive, because `update` holds it across its own save.
         pen.lock()
@@ -164,10 +190,23 @@ public enum PageActions {
     /// Ours decides whether one is done, and nothing in a later reading can undo it: the agent is
     /// asked to carry the flags forward, and this is what happens when it does not.
     public static func merge(ours: [PageAction], theirs: [PageAction]) -> [PageAction] {
-        let known = Dictionary(ours.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+        // Ours, findable two ways: by the paper's wording, which is what a fresh reading proposes,
+        // and by the text as it is shown, which is what a reader that kept our entry "exactly as
+        // it is" hands back. A rewritten line has to answer to both.
+        var known: [String: PageAction] = [:]
+        for mine in ours.reversed() {
+            known[mine.key] = mine
+            known[PageAction.key(of: mine.text)] = mine
+        }
         var merged = theirs.map { action -> PageAction in
-            guard let mine = known[action.key] else { return action }
+            guard let mine = known[action.key] ?? known[PageAction.key(of: action.text)] else { return action }
             var kept = action
+            // The wording is the reading's, unless a person has had it fixed, in which case the fix
+            // stands and the paper's version is remembered beside it for the matching.
+            if let paper = mine.paper {
+                kept.text = mine.text
+                kept.paper = paper
+            }
             // What we know beats what the reading proposes, in one direction only. `done` and
             // `dismissed` are facts about the world and about your decisions; a reading is a
             // proposal about a piece of paper, and it cannot undo either. Undoing is a click,

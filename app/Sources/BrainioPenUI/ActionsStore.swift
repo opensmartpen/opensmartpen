@@ -171,6 +171,32 @@ public final class ActionsStore: ObservableObject {
         }
     }
 
+    // MARK: - Fixing the wording
+
+    /// The row whose box for telling the reader what to change is open. One at a time.
+    @Published public var rewordingFrom: String?
+    /// The pages the reader is rewording right now.
+    @Published public private(set) var rewording: Set<PageRef> = []
+
+    /// Ask the reader to change how this page's lines are worded — the case, a name it got wrong.
+    /// Every line on the page, because that is what "lowercase" means; the failure, if any, lands
+    /// on the row the box was opened from, since that is where you are looking.
+    public func reword(_ item: Item, _ instruction: String) {
+        let what = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let processor, !what.isEmpty, !rewording.contains(item.page) else { return }
+        rewording.insert(item.page)
+        rewordingFrom = nil
+        failures[item.id] = nil
+        processor.reword(item.page, instruction: what) { [weak self] error in
+            guard let self else { return }
+            rewording.remove(item.page)
+            failures[item.id] = error?.localizedDescription
+            reload()
+        }
+    }
+
+    public func isRewording(_ item: Item) -> Bool { rewording.contains(item.page) }
+
     /// Forget the whole exchange and send the line again as if for the first time.
     ///
     /// The conversation, the agent's summary and the session it ran in all go. The session is

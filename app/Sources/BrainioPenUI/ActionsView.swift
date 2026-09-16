@@ -167,7 +167,7 @@ private struct ActionCard: View {
     @State private var hovering = false
     @FocusState private var typing: Bool
 
-    private var busy: Bool { store.isBusy(item) }
+    private var busy: Bool { store.isBusy(item) || store.isRewording(item) }
     private var faded: Bool { item.status == .done || item.status == .dismissed }
 
     var body: some View {
@@ -268,6 +268,16 @@ private struct ActionCard: View {
                             Button("Delete") { store.setDismissed(item, true) }
                         }
                         Divider()
+                        // The wording, not the line: the reader gets the whole page, because "make
+                        // them lowercase" is about the page and "the name is Ondřej Široký" fixes
+                        // the line wherever it appears.
+                        if store.canRun {
+                            Button("Fix the wording…") {
+                                store.expanded = item.id
+                                store.rewordingFrom = item.id
+                            }
+                            .help("Tell the reader what to change in this page's lines")
+                        }
                         Button("Open the page") { store.onOpenPage?(item.page) }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -294,6 +304,10 @@ private struct ActionCard: View {
             // fails half an hour later.
             ForEach(store.waiting(item)) { ask in
                 Permission(store: store, item: item, ask: ask)
+            }
+
+            if store.rewordingFrom == item.id {
+                RewordBox(store: store, item: item)
             }
 
             if open { conversation }
@@ -440,6 +454,92 @@ private struct Permission: View {
         .padding(.horizontal, 12)
         .padding(.leading, 26)
         .padding(.bottom, 10)
+    }
+}
+
+/// Where you tell the reader what to change about the page's wording.
+///
+/// On the row rather than in a sheet, like the permission card, and for the same reason: the row
+/// says which page, and a sentence like "the name is Ondřej Široký" is written while looking at
+/// the line that got it wrong.
+private struct RewordBox: View {
+    @ObservedObject var store: ActionsStore
+    let item: ActionsStore.Item
+
+    @State private var instruction = ""
+    @FocusState private var typing: Bool
+
+    private var canSend: Bool {
+        !instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Fix the wording on page \(item.pageNumber)")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(Ink.accent)
+                    .textCase(.uppercase)
+                    .kerning(0.4)
+                Spacer(minLength: 0)
+                Button { store.rewordingFrom = nil } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.secondary.opacity(0.6))
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Never mind")
+            }
+            HStack(spacing: 7) {
+                TextField("Lowercase, or: the name is Ondřej Široký…", text: $instruction, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11.5))
+                    .lineLimit(1...4)
+                    .focused($typing)
+                    .onSubmit(send)
+                    .onExitCommand { store.rewordingFrom = nil }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(Color.primary.opacity(0.06))
+                            .overlay(RoundedRectangle(cornerRadius: 9)
+                                .strokeBorder(typing ? Ink.accent.opacity(0.55) : Color.primary.opacity(0.1)))
+                    )
+                Button(action: send) {
+                    Image(systemName: "arrow.up.circle.fill").font(.system(size: 17))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(canSend ? Ink.accent : Color.secondary.opacity(0.4))
+                .disabled(!canSend)
+                .help("Send to the reader")
+            }
+            // Every line on the page changes, not only this one: said here, once, rather than
+            // discovered.
+            Text("The reader gets the page and every line on it. Nothing is carried out.")
+                .font(.system(size: 10))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Ink.accent.opacity(0.08))
+                .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(Ink.accent.opacity(0.3)))
+        )
+        .padding(.horizontal, 12)
+        .padding(.leading, 26)
+        .padding(.bottom, 10)
+        .onAppear { typing = true }
+    }
+
+    private func send() {
+        guard canSend else { return }
+        store.reword(item, instruction)
+        instruction = ""
     }
 }
 
