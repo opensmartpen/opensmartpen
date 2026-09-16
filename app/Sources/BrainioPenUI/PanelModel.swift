@@ -60,53 +60,26 @@ public final class PanelModel: ObservableObject {
 
     /// The pens this Mac knows, newest reading first.
     @Published private(set) var pens: [PenRow] = []
-    /// A pen you opened by clicking, which overrides the one in your hand until you close it.
+    /// The pen whose settings you opened by clicking. Nothing else opens one: picking up a pen
+    /// or starting a notebook used to open it too, and that kept a panel you had closed
+    /// springing back open.
     @Published private(set) var chosenPen: String?
-    /// Set by clicking the open pen shut. Cleared the moment a different pen starts writing,
-    /// because that is a new question, not the one you dismissed.
-    @Published private(set) var penClosed = false
     /// The notebook the pen is writing in right now, by book key. Taken from the tracker rather
     /// than from the repo scan: the scan is what the panel was built from when it opened, and a
     /// notebook you switched to a minute ago is not in it yet.
     @Published private(set) var activeBook: String?
-    /// The pen that was writing last time we looked, to notice when it changes.
-    private var lastActivePen: String?
 
-    /// The pen whose ink and width are showing.
-    ///
-    /// Open by default, and open on the pen you are holding: picking up a pen is the clearest
-    /// statement of which pen you mean, and making you click for it afterwards asks you to say
-    /// it twice. A click still overrides, and a click on the open pen closes it.
-    var expandedPen: String? {
-        if let chosenPen { return chosenPen }
-        if penClosed { return nil }
-        return pens.first { $0.active }?.id
-    }
+    /// The pen whose ink and width are showing: the one you clicked, and only that one. Closed
+    /// by default, and a click on the open pen closes it again.
+    var expandedPen: String? { chosenPen }
 
     func toggleExpanded(_ mac: String) {
-        if expandedPen == mac {
-            chosenPen = nil
-            penClosed = true
-        } else {
-            chosenPen = mac
-            penClosed = false
-        }
+        chosenPen = chosenPen == mac ? nil : mac
     }
 
-    /// A pen picking up the writing re-opens the panel on it, whatever was open before. Called
-    /// from `refresh` once the rows are built.
-    private func followActivePen() {
-        let active = pens.first { $0.active }?.id
-        guard active != lastActivePen else { return }
-        lastActivePen = active
-        openTheActivePen()
-    }
-
-    /// Also on a new notebook: starting to write somewhere else is the same kind of event as
-    /// picking up a different pen, and the answer to both is "show me what I am writing with".
-    private func openTheActivePen() {
-        chosenPen = nil
-        penClosed = false
+    /// A pen that has left the list cannot stay open. Called from `refresh` once the rows are built.
+    private func dropExpandedIfGone() {
+        if let chosenPen, !pens.contains(where: { $0.id == chosenPen }) { self.chosenPen = nil }
     }
 
     /// The pen the open controls belong to.
@@ -328,12 +301,11 @@ public final class PanelModel: ObservableObject {
 
         // The notebook with the newest stroke in it, which is the one the mark belongs on. When
         // it changes, the repo scan behind the list is out of date — a notebook you have just
-        // started is not in it at all — so the list is rebuilt and the pen re-opened.
+        // started is not in it at all — so the list is rebuilt.
         if let newest = coordinator.tracker.pending.max(by: { $0.last < $1.last })?.page.folder.name,
            newest != activeBook {
             activeBook = newest
             refreshRecent()
-            openTheActivePen()
         }
         markActiveBook()
 
@@ -378,7 +350,7 @@ public final class PanelModel: ObservableObject {
             if $0.active != $1.active { return $0.active }
             return (readings[$0.id]?.at ?? .distantPast) > (readings[$1.id]?.at ?? .distantPast)
         }
-        followActivePen()
+        dropExpandedIfGone()
 
         // Any pen used in the last day, not just the connected one.
         if let worst = live.penState.lowBatteries(threshold: config.lowBatteryPercent, now: now).first {
@@ -620,6 +592,9 @@ public final class PanelModel: ObservableObject {
         public var ink: InkColor = .black
         public var width: LineWidth = .default
         public var palette = Palette()
+        /// The pen whose settings are open, by MAC, as if you had clicked its tile. Nil is the
+        /// resting state: nothing opens on its own.
+        public var openPen: String?
 
         public init() {}
     }
@@ -643,6 +618,7 @@ public final class PanelModel: ObservableObject {
         ink = snapshot.ink
         width = snapshot.width
         palette = snapshot.palette
+        chosenPen = snapshot.openPen
         markActiveBook()
     }
 }
