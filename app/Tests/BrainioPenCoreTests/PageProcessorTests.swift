@@ -210,9 +210,9 @@ extension PageProcessorTests {
         }
     }
 
-    private func reworded(_ p: PageProcessor, _ ref: PageRef, _ instruction: String) async -> Error? {
+    private func reworded(_ p: PageProcessor, _ ref: PageRef, _ key: String, _ instruction: String) async -> Error? {
         await withCheckedContinuation { continuation in
-            p.reword(ref, instruction: instruction) { continuation.resume(returning: $0) }
+            p.reword(ref, line: key, instruction: instruction) { continuation.resume(returning: $0) }
         }
     }
 
@@ -221,16 +221,17 @@ extension PageProcessorTests {
         let runner = FakeRunner()
         runner.reply = """
         Here you go:
-        ["Find out who is Ondřej Široký from Apoco", "Send the pricing to Brainio"]
+        ["Find out who is Ondřej Široký from Apoco"]
         """
         let p = processor(books, runner: runner)
         let url = try XCTUnwrap(p.actionsURL(for: ref))
         let said = [ActionMessage(from: .agent, text: "Which pricing?")]
-        try PageActions.save([PageAction(text: "FIND OUT WHO IS ONDREJ SIROKY FROM APOCO"),
+        let line = PageAction(text: "FIND OUT WHO IS ONDREJ SIROKY FROM APOCO")
+        try PageActions.save([line,
                               PageAction(text: "Send the pricing to Brainio", thread: said, session: "s-1",
                                          agent: "mailer")], to: url)
 
-        let failure = await reworded(p, ref, "fix the name and the case")
+        let failure = await reworded(p, ref, line.key, "fix the name and the case")
         XCTAssertNil(failure)
         let after = PageActions.load(url)
         XCTAssertEqual(after.map(\.text), ["Find out who is Ondřej Široký from Apoco", "Send the pricing to Brainio"])
@@ -240,10 +241,12 @@ extension PageProcessorTests {
         XCTAssertEqual(after[1].thread.map(\.text), ["Which pricing?"])
         XCTAssertEqual(after[1].session, "s-1")
         XCTAssertEqual(after[1].agent, "mailer")
-        // The transcriber was asked, with the page in view, and told what to change.
+        // The transcriber was asked, with the page in view, told what to change, and shown only
+        // the line it was asked about.
         XCTAssertEqual(runner.images.count, 1)
         XCTAssertTrue(runner.prompts[0].contains("fix the name and the case"))
         XCTAssertTrue(runner.prompts[0].contains("FIND OUT WHO IS ONDREJ SIROKY FROM APOCO"))
+        XCTAssertFalse(runner.prompts[0].contains("Send the pricing to Brainio"))
     }
 
     func testAReplyThatIsNotTheLinesChangesNothing() async throws {
@@ -252,14 +255,15 @@ extension PageProcessorTests {
         runner.reply = "I lowercased them for you."
         let p = processor(books, runner: runner)
         let url = try XCTUnwrap(p.actionsURL(for: ref))
-        try PageActions.save([PageAction(text: "CALL THE LANDLORD")], to: url)
+        let line = PageAction(text: "CALL THE LANDLORD")
+        try PageActions.save([line], to: url)
 
-        let failure = await reworded(p, ref, "lowercase")
+        let failure = await reworded(p, ref, line.key, "lowercase")
         XCTAssertNotNil(failure)
         XCTAssertEqual(PageActions.load(url).map(\.text), ["CALL THE LANDLORD"])
 
         runner.reply = "[\"call the landlord\", \"and another\"]"
-        let wrongCount = await reworded(p, ref, "lowercase")
+        let wrongCount = await reworded(p, ref, line.key, "lowercase")
         XCTAssertNotNil(wrongCount)
         XCTAssertEqual(PageActions.load(url).map(\.text), ["CALL THE LANDLORD"])
     }

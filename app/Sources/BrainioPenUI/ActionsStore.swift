@@ -175,27 +175,27 @@ public final class ActionsStore: ObservableObject {
 
     /// The row whose box for telling the transcriber what to change is open. One at a time.
     @Published public var rewordingFrom: String?
-    /// The pages the transcriber is rewording right now.
-    @Published public private(set) var rewording: Set<PageRef> = []
+    /// The rows whose line the transcriber is rewording right now.
+    @Published public private(set) var rewording: Set<String> = []
 
     /// Ask the transcriber to change how this page's lines are worded — the case, a name it got wrong.
     /// Every line on the page, because that is what "lowercase" means; the failure, if any, lands
     /// on the row the box was opened from, since that is where you are looking.
     public func reword(_ item: Item, _ instruction: String) {
         let what = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let processor, !what.isEmpty, !rewording.contains(item.page) else { return }
-        rewording.insert(item.page)
+        guard let processor, !what.isEmpty, !rewording.contains(item.id) else { return }
+        rewording.insert(item.id)
         rewordingFrom = nil
         failures[item.id] = nil
-        processor.reword(item.page, instruction: what) { [weak self] error in
+        processor.reword(item.page, line: item.action.key, instruction: what) { [weak self] error in
             guard let self else { return }
-            rewording.remove(item.page)
+            rewording.remove(item.id)
             failures[item.id] = error?.localizedDescription
             reload()
         }
     }
 
-    public func isRewording(_ item: Item) -> Bool { rewording.contains(item.page) }
+    public func isRewording(_ item: Item) -> Bool { rewording.contains(item.id) }
 
     /// Forget the whole exchange and send the line again as if for the first time.
     ///
@@ -209,6 +209,20 @@ public final class ActionsStore: ObservableObject {
     /// tick comes off, because a thing being started over is not finished.
     public func startOver(_ item: Item) {
         guard !busy.contains(item.id) else { return }
+        clearConversation(item)
+        // `change` reloaded, so the item the run is given is the emptied one, not the one the
+        // menu was opened on.
+        guard let fresh = items.first(where: { $0.id == item.id }) else { return }
+        run(fresh)
+    }
+
+    /// Forget the whole exchange and leave the line where it started, unsent.
+    ///
+    /// The same forgetting as `startOver` without the sending: for when the exchange is wrong but
+    /// the next move is yours — say more first, hand it to a different assistant, or just have a
+    /// clean row.
+    public func clearConversation(_ item: Item) {
+        guard !busy.contains(item.id) else { return }
         change(item) {
             $0.thread = []
             $0.note = nil
@@ -216,10 +230,6 @@ public final class ActionsStore: ObservableObject {
             $0.done = false
             $0.dismissed = false
         }
-        // `change` reloaded, so the item the run is given is the emptied one, not the one the
-        // menu was opened on.
-        guard let fresh = items.first(where: { $0.id == item.id }) else { return }
-        run(fresh)
     }
 
     public func isBusy(_ item: Item) -> Bool { busy.contains(item.id) }

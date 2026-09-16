@@ -236,21 +236,24 @@ private struct ActionCard: View {
                             // scratch" throws that away and puts the original line in front of a
                             // fresh agent — for when the first attempt went down the wrong road
                             // and no amount of saying more will bring it back.
-                            Button(item.action.thread.isEmpty ? "Ask the agent" : "Continue with the agent") {
+                            Button("Ask the agent") {
                                 store.expanded = item.id
                                 store.run(item)
                             }
-                            .help(item.action.thread.isEmpty
-                                  ? "Hand this line to the agent"
-                                  : "Send it back to the same agent, which keeps what it has already decided")
+                            .help("Hand this line to the agent")
                         }
-                        // Only once there is something to forget.
-                        if store.canRun, !item.action.thread.isEmpty || item.action.session != nil {
-                            Button("Retry from scratch") {
-                                store.expanded = item.id
-                                store.startOver(item)
+                        // Only once there is something to forget. Two ways: forget and send again,
+                        // or forget and stop there.
+                        if !item.action.thread.isEmpty || item.action.session != nil {
+                            if store.canRun {
+                                Button("Retry from scratch") {
+                                    store.expanded = item.id
+                                    store.startOver(item)
+                                }
+                                .help("Forget the conversation and give the line to a fresh agent")
                             }
-                            .help("Forget the conversation and give the line to a fresh agent")
+                            Button("Clear the conversation") { store.clearConversation(item) }
+                                .help("Forget the conversation and leave the line unsent")
                         }
                         if item.status == .done {
                             Button("Reopen") { store.setDone(item, false) }
@@ -267,11 +270,11 @@ private struct ActionCard: View {
                         // "make them lowercase" is about the page and "the name is Ondřej Široký"
                         // fixes the line wherever it appears.
                         if store.canRun {
-                            Button("Fix the transcript…") {
+                            Button("Edit the action…") {
                                 store.expanded = item.id
                                 store.rewordingFrom = item.id
                             }
-                            .help("Tell the transcriber what it misread on this page")
+                            .help("Tell the transcriber what to change in this line")
                         }
                         Button("Reveal in notebook") { store.onOpenPage?(item.page) }
                     } label: {
@@ -479,7 +482,7 @@ private struct RewordBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("Fix the transcript of page \(item.pageNumber)")
+                Text("Edit the action")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(Ink.accent)
                     .textCase(.uppercase)
@@ -519,9 +522,8 @@ private struct RewordBox: View {
                 .disabled(!canSend)
                 .help("Send to the transcriber")
             }
-            // Every line on the page changes, not only this one: said here, once, rather than
-            // discovered.
-            Text("The transcriber gets the page and every line on it. Nothing is carried out.")
+            // Only the words change, and only on this line: said here, once, rather than discovered.
+            Text("The transcriber rewrites this line with the page in view. Nothing is carried out.")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
         }
