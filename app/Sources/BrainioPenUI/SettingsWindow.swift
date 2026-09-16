@@ -248,7 +248,7 @@ public struct SettingsView: View {
             .padding(.top, 8)
         }
         .padding(16)
-        .frame(width: 480, height: 430)
+        .frame(width: 560, height: 600)
     }
 }
 
@@ -529,35 +529,42 @@ private struct AgentsTab: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Row("DAM") {
-                TextField("https://dam.example.com", text: Binding(
-                    get: { store.config.damHost ?? "" },
-                    set: { store.config.damHost = $0.isEmpty ? nil : $0; store.saveSoon() }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .frame(maxWidth: 260)
-            }
-            Row("Key") {
-                SecureField("pk_…", text: $store.damApiKey)
+        VStack(alignment: .leading, spacing: 12) {
+            // Three cards, like the pens tab: each thing you set up has its own ground, and the
+            // one that sees your paper is not on the same list as the ones that act on it.
+            Card {
+                Row("DAM") {
+                    TextField("https://dam.example.com", text: Binding(
+                        get: { store.config.damHost ?? "" },
+                        set: { store.config.damHost = $0.isEmpty ? nil : $0; store.saveSoon() }
+                    ))
                     .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 180)
-                    .onChange(of: store.damApiKey) { _ in store.saveKeySoon() }
-                Button(checking ? "Checking…" : "Check") {
-                    checking = true
-                    Task {
-                        store.saveDamKey()
-                        await store.checkDam()
-                        checking = false
-                    }
                 }
-                .disabled(checking)
+                Row("Key") {
+                    SecureField("pk_…", text: $store.damApiKey)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: store.damApiKey) { _ in store.saveKeySoon() }
+                    Button(checking ? "Checking…" : "Check") {
+                        checking = true
+                        Task {
+                            store.saveDamKey()
+                            await store.checkDam()
+                            checking = false
+                        }
+                    }
+                    .disabled(checking)
+                }
+                // Its own line, under the key. Beside the button it fought the field for width
+                // and lost, and a status you have to guess the end of is no status.
                 if let status = store.damStatus {
-                    Text(status).font(.system(size: 10.5)).foregroundStyle(.tertiary).lineLimit(1)
+                    Row("") {
+                        Text(status).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
 
-            Block("Transcriber", note: "sees everything you write") {
+            Card(title: "Transcriber", note: "the one agent that sees everything you write") {
                 Row("Agent") {
                     Picker("", selection: Binding(
                         get: { transcriberId },
@@ -569,7 +576,6 @@ private struct AgentsTab: View {
                         }
                     }
                     .labelsHidden()
-                    .frame(maxWidth: 260)
                     .disabled(transcriberChoices.isEmpty)
                 }
                 Row("Wait") {
@@ -583,7 +589,7 @@ private struct AgentsTab: View {
                      + "document. It also proposes which assistant carries out each line a page asks for.")
             }
 
-            Block("Assistants", note: "switch one on to hand it lines") {
+            Card(title: "Assistants", note: "switch one on to hand it lines", fills: true) {
                 // Scrolls, and keeps everything above it on screen. Eight agents used to push the
                 // host and the key off both ends of the window.
                 ScrollView {
@@ -598,12 +604,11 @@ private struct AgentsTab: View {
                             Text(emptyNote)
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
-                                .padding(10)
+                                .padding(.vertical, 10)
                         }
                     }
                 }
                 .frame(maxHeight: .infinity)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.04)))
                 Hint("An assistant is asked what it does and what it can reach when it is switched on. "
                      + "Until it has answered, no line is offered to it.")
             }
@@ -620,27 +625,37 @@ private struct AgentsTab: View {
     }
 }
 
-/// A titled block of the tab, with a quiet note beside the title saying what the block is for.
-private struct Block<Content: View>: View {
-    let title: String
-    let note: String
+/// One block of the tab on its own ground, the way a pen has its card. An optional title, with a
+/// quiet note beside it saying what the block is for; `fills` lets one card take the height left.
+private struct Card<Content: View>: View {
+    let title: String?
+    let note: String?
+    let fills: Bool
     @ViewBuilder let content: () -> Content
 
-    init(_ title: String, note: String, @ViewBuilder content: @escaping () -> Content) {
+    init(title: String? = nil, note: String? = nil, fills: Bool = false,
+         @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self.note = note
+        self.fills = fills
         self.content = content
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text(title).font(.system(size: 11, weight: .semibold))
-                Text("· \(note)").font(.system(size: 10.5)).foregroundStyle(.tertiary)
+        VStack(alignment: .leading, spacing: 10) {
+            if let title {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(title).font(.system(size: 12, weight: .semibold))
+                    if let note {
+                        Text(note).font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                    }
+                }
             }
-            .padding(.top, 4)
             content()
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: fills ? .infinity : nil, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
     }
 }
 
@@ -662,7 +677,7 @@ private struct AssistantRow: View {
     private var isOn: Bool { profile != nil }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .top, spacing: 10) {
             Toggle("", isOn: Binding(
                 get: { isOn },
                 set: { on in
@@ -670,58 +685,67 @@ private struct AssistantRow: View {
                 }
             ))
             .toggleStyle(.switch)
-            .controlSize(.mini)
+            .controlSize(.small)
             .labelsHidden()
             .disabled(asking || (!seen && !isOn))
             .help(isOn ? "Switch it off: no line is handed to it" : "Switch it on and ask what it does")
+            .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 5) {
-                    Text(agent.name).font(.system(size: 11.5, weight: .medium))
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(agent.name).font(.system(size: 12, weight: .medium))
                         .foregroundStyle(isOn || seen ? .primary : .secondary)
                     if !seen {
                         Text("not seen by this key").font(.system(size: 9.5)).foregroundStyle(.tertiary)
                     }
+                    Spacer(minLength: 4)
+                    // Quiet until wanted. Eight rows each shouting a button is a wall of buttons.
+                    if isOn, seen {
+                        Button(store.failures[agent.id] == nil ? "Ask again" : "Retry") {
+                            Task { await store.ask(agent.id) }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(asking ? Color.secondary : Ink.accent)
+                        .disabled(asking)
+                        .opacity(store.failures[agent.id] != nil || hovering ? 1 : 0)
+                        .help("Ask it again what it does and what it can reach")
+                    }
                 }
                 if let failure = store.failures[agent.id] {
                     Text(failure)
-                        .font(.system(size: 10))
+                        .font(.system(size: 10.5))
                         .foregroundStyle(Ink.critical)
-                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if asking {
-                    Text("setting up — asking what it does…")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small).scaleEffect(0.6)
+                        Text("setting up — asking what it does…")
+                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    }
                 } else if let profile {
                     Text(profile.summary ?? "did not say what it does")
-                        .font(.system(size: 10))
+                        .font(.system(size: 10.5))
                         .foregroundStyle(profile.summary == nil ? .tertiary : .secondary)
-                        .lineLimit(2)
+                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                     if !profile.systems.isEmpty {
                         Text(profile.systems.joined(separator: " · "))
-                            .font(.system(size: 9.5))
+                            .font(.system(size: 10))
                             .foregroundStyle(.tertiary)
-                            .lineLimit(1)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
+                } else {
+                    Text("off — no line is handed to it")
+                        .font(.system(size: 10.5)).foregroundStyle(.tertiary)
                 }
-            }
-            Spacer(minLength: 4)
-            // Quiet until wanted. Eight rows each shouting a button is a wall of buttons.
-            if isOn, seen {
-                Button(store.failures[agent.id] == nil ? "Ask again" : "Retry") {
-                    Task { await store.ask(agent.id) }
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 10.5))
-                .foregroundStyle(asking ? Color.secondary : Ink.accent)
-                .disabled(asking)
-                .opacity(store.failures[agent.id] != nil || hovering ? 1 : 0)
-                .help("Ask it again what it does and what it can reach")
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
+        // Room on the right for the scroll bar, which otherwise sits on the row's own button.
+        .padding(.leading, 2)
+        .padding(.trailing, 14)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
@@ -766,7 +790,7 @@ public final class SettingsWindowController: NSWindowController {
 
     public init(store: SettingsStore, tab: SettingsView.Tab = .pens) {
         self.store = store
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 470),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
         window.title = "Brainio Pen Settings"
