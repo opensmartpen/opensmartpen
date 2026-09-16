@@ -169,16 +169,25 @@ private struct ActionCard: View {
 
     private var busy: Bool { store.isBusy(item) || store.isRewording(item) }
     private var faded: Bool { item.status == .done || item.status == .dismissed }
+    /// A line nobody has started, with an agent to start it. The mark is a play button only then.
+    private var runnable: Bool { store.canRun && item.status == .new && !busy }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
-                // The mark is the button, as it is on any checklist: the agent says what it did,
-                // and this is where you say whether that finished it. It outranks the agent both
-                // ways — you can tick what it left open and re-open what it ticked.
-                Button { store.setDone(item, item.status != .done) } label: { Mark(status: item.status) }
-                    .buttonStyle(.plain)
-                    .help(item.status == .done ? "Reopen" : "Mark as done")
+                // The mark is a play button on a line nobody has started, and a mark on every
+                // other: the one thing you do with a fresh line is hand it over, so that is the
+                // click. Ticking and re-opening are in the menu, where a considered answer belongs.
+                Button {
+                    guard runnable else { return }
+                    store.expanded = item.id
+                    store.run(item)
+                } label: {
+                    Mark(status: item.status, runnable: runnable)
+                }
+                .buttonStyle(.plain)
+                .disabled(!runnable)
+                .help(runnable ? "Execute: hand this line to the agent" : "")
 
                 VStack(alignment: .leading, spacing: 3) {
                     // A finished line goes grey and keeps its words. Crossing it out says it was
@@ -728,6 +737,8 @@ private struct PillToggle: ToggleStyle {
 /// agree and the ring is the same ring in all four.
 private struct Mark: View {
     let status: ActionsStore.Status
+    /// A fresh line that can be handed over shows a play sign, because clicking it does that.
+    var runnable = false
 
     var body: some View {
         ZStack {
@@ -735,7 +746,13 @@ private struct Mark: View {
                 .strokeBorder(colour, lineWidth: 1.4)
                 .frame(width: 14, height: 14)
             switch status {
-            case .new: EmptyView()
+            case .new:
+                if runnable {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 6.5, weight: .bold))
+                        .foregroundStyle(colour)
+                        .offset(x: 0.5)
+                }
             case .wip: Circle().fill(colour).frame(width: 6, height: 6)
             case .done:
                 Image(systemName: "checkmark")
@@ -757,7 +774,7 @@ private struct Mark: View {
     /// you can see from across the room. A line nobody has started is not news, and stays quiet.
     private var colour: Color {
         switch status {
-        case .new: return .secondary
+        case .new: return runnable ? Ink.accent : .secondary
         case .wip: return Ink.accent
         case .done: return Ink.done
         case .dismissed: return Color.secondary.opacity(0.5)
