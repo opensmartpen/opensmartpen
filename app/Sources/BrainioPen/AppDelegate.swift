@@ -221,12 +221,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // connected: with more than one pen those are different pens most of the time.
         let battery = model.lowPen.map { (percent: $0.percent, low: true) }
             ?? model.battery.map { (percent: $0.percent, low: $0.low) }
-        // A dimmed icon means Brainio Pen cannot work, not that the pen is asleep: the A1 powers
-        // itself off after five minutes, so a sleeping pen is the normal state and dimming for it
-        // would leave the menubar permanently faint.
+        // A dimmed icon means no pen is talking to this Mac, for whatever reason — asleep, out of
+        // reach, or Bluetooth off. It used to mean only the last, on the argument that the A1
+        // sleeps after five minutes and a sleeping pen is the normal state. Decided 2026-09-16
+        // that one rule beats two looks: dim is "not connected", and the tooltip says why.
         let usable: Bool
         if case .bluetoothOff = model.status { usable = false } else { usable = true }
-        let look = StatusIcon.make(pendingPages: model.pending.count, battery: battery, working: usable)
+        let look = StatusIcon.make(pendingPages: model.pending.count, battery: battery, working: usable,
+                                   connected: session.isConnected)
         button.image = look.image
         button.attributedTitle = look.title
         button.appearsDisabled = look.dimmed

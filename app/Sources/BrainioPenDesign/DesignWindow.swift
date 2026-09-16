@@ -152,13 +152,19 @@ final class DesignWindowController: NSWindowController, NSWindowDelegate {
     /// The menubar mark in each of its looks, at the size it is actually seen.
     private func iconStrip() -> NSView {
         let looks: [(String, StatusIcon.Appearance)] = [
-            ("rest", .init(pending: 0, battery: (72, false), working: true)),
-            ("waiting", .init(pending: 2, battery: (72, false), working: true)),
-            ("low", .init(pending: 0, battery: (14, true), working: true)),
-            ("bt off", .init(pending: 0, battery: nil, working: false)),
+            ("asleep", .init(pending: 0, battery: (72, false), working: true, connected: false)),
+            ("connected", .init(pending: 0, battery: (72, false), working: true, connected: true)),
+            ("asleep, waiting", .init(pending: 2, battery: (72, false), working: true, connected: false)),
+            ("connected, waiting", .init(pending: 2, battery: (72, false), working: true, connected: true)),
+            ("low", .init(pending: 0, battery: (14, true), working: true, connected: true)),
+            ("bt off", .init(pending: 0, battery: nil, working: false, connected: false)),
         ]
         let cells: [NSView] = looks.map { name, look in
             let image = NSImageView(image: look.image)
+            // The menubar draws a template mark in full label colour. A bare NSImageView draws it
+            // in a grey tint instead, which made every template pencil look dimmed next to the
+            // one non-template mark (the red battery, drawn as-is). Same ink here as there.
+            image.contentTintColor = .labelColor
             image.alphaValue = look.dimmed ? 0.4 : 1
             let label = NSTextField(labelWithString: name)
             label.font = .systemFont(ofSize: 9.5)
@@ -209,7 +215,7 @@ final class DesignWindowController: NSWindowController, NSWindowDelegate {
 }
 
 private extension StatusIcon.Appearance {
-    init(pending: Int, battery: (percent: Int, low: Bool)?, working: Bool) {
-        self = StatusIcon.make(pendingPages: pending, battery: battery, working: working)
+    init(pending: Int, battery: (percent: Int, low: Bool)?, working: Bool, connected: Bool) {
+        self = StatusIcon.make(pendingPages: pending, battery: battery, working: working, connected: connected)
     }
 }

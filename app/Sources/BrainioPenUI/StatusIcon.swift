@@ -4,10 +4,12 @@ import AppKit
 /// symbol when the battery is low disappears exactly when you go looking for it. State is carried
 /// by what is added to the pencil, not by replacing it:
 ///
-/// - plain pencil          connected, nothing waiting
+/// - pencil                pen connected and talking
+/// - dimmed pencil         no pen talking to this Mac — asleep, out of reach, or Bluetooth off.
+///                         One look for all of them; the tooltip says which. The A1 sleeps five
+///                         minutes after the last stroke, so dim is the everyday state.
 /// - pencil with a drop    ink not yet synced: pages are waiting
 /// - red pencil + percent  battery at or below the configured level, not charging
-/// - dimmed pencil         Brainio Pen cannot work: Bluetooth off, or no permission for it
 public enum StatusIcon {
     public struct Appearance {
         public let image: NSImage
@@ -16,7 +18,8 @@ public enum StatusIcon {
         public let tooltip: String
     }
 
-    public static func make(pendingPages: Int, battery: (percent: Int, low: Bool)?, working: Bool) -> Appearance {
+    public static func make(pendingPages: Int, battery: (percent: Int, low: Bool)?, working: Bool,
+                            connected: Bool) -> Appearance {
         if let battery, battery.low {
             return Appearance(
                 image: pencil(drop: pendingPages > 0, tint: .systemRed),
@@ -27,15 +30,21 @@ public enum StatusIcon {
                 tooltip: "Pen battery \(battery.percent)% — charge it")
         }
         let tip: String
-        switch (working, pendingPages) {
-        case (false, _): tip = "Brainio Pen — Bluetooth is off or not permitted"
-        case (_, 0): tip = "Brainio Pen — everything synced"
-        case (_, 1): tip = "Brainio Pen — 1 page waiting to sync"
-        case let (_, n): tip = "Brainio Pen — \(n) pages waiting to sync"
+        if working {
+            let link = connected ? "pen connected" : "pen asleep"
+            let pages: String
+            switch pendingPages {
+            case 0: pages = "everything synced"
+            case 1: pages = "1 page waiting to sync"
+            case let n: pages = "\(n) pages waiting to sync"
+            }
+            tip = "Brainio Pen — \(link), \(pages)"
+        } else {
+            tip = "Brainio Pen — Bluetooth is off or not permitted"
         }
         return Appearance(image: pencil(drop: pendingPages > 0, tint: nil),
                           title: NSAttributedString(string: ""),
-                          dimmed: !working,
+                          dimmed: !connected,
                           tooltip: tip)
     }
 

@@ -314,3 +314,21 @@ DAM holds an agent in two places, and until now both of them looked the same fro
 - **"Always" writes a standing rule in DAM** for that agent and that host — the one answer here that outlives the line, so it says so in the tooltip. "No" is deny-this-once and writes nothing down; denying forever is a thing to do while looking at a list of rules, not while half-way through a page.
 - **A reading has no desk on purpose.** Nobody is watching a page being read, so a request for permission there ends the turn as it always did — the request is in DAM's queue either way, where a person can deal with it.
 - **The panel says which line is stopped**, with a hand beside it, and a notification says so when every window is shut. An agent stopped at the gate with nobody told is a job that fails silently half an hour later.
+
+## 2026-09-16 — Retest of the A1 power settings, firmware 3.00
+
+- Reported: the pen does not wake when the tip is pressed, and notes written away from the Mac are lost. One cause, not two. The pen slept after 5 min and nothing on the page can wake it, so strokes written afterwards were never captured. The log shows every offline drain in four days succeeded, and tonight's drain pulled 154 strokes on 5 pages intact — nothing was lost in sync. The loss is only ever strokes the pen never recorded.
+- Retested all three power writes, one per connection, each proved by the read-back in `applyPowerSettings`:
+  - `AutoPowerOffTime` 5 → 120 min: **accepted**. Read-back shows 120, and it survived a disconnect and reconnect — the pen stores it.
+  - `AutoPowerOn` (wake on tip press): the pen says accepted, the read-back keeps Off. Refused, as recorded on 2026-09-11, and still refused on fw 3.00.
+  - `PenCapOff`: the same silent refusal. The A1 has a cap; it controls nothing.
+- The 2026-09-11 conclusion "a five-minute sleep therefore stays a real way to lose strokes" rested on an assumption the test disproved: a refusal of one power command says nothing about another. They are separate commands (`AutoPowerOffTime = 2`, `AutoPowerOn = 4`) and the pen treats them differently.
+- Live config now has `penAutoPowerOffMinutes: 120`. The button is the only wake path on this pen. Open: the firmware's ceiling for the timeout (UInt16 on the wire, untested above 120), and whether two idle hours cost battery worth caring about.
+- Harness note: a freshly started app instance failed to find the awake pen for 2.5 min, while a restart found it in 8 s. Not chased. Scanning was silent because `Log.debug` is gated on `BRAINIO_PEN_VERBOSE=1`, an environment variable the LaunchAgent does not set — there is no config key for it.
+
+## 2026-09-16 — The menubar pencil says whether a pen is connected
+
+- Asked for: the menubar icon should tell a connected pen from one that is not. Until now `StatusIcon.make` knew pages waiting, battery and whether Bluetooth was usable — nothing about the link. A sleeping pen and a connected one drew the same mark.
+- First try was a filled shaft for "connected". Rejected while looking at it in the design window: a solid area in the strip's grey tint read as *dimmed*, the opposite of what it meant, and it added a second look to learn. The strip itself was also lying — a bare `NSImageView` draws template marks in a grey tint while the one non-template mark (red battery) drew at full strength; fixed with `contentTintColor = .labelColor` so the strip shows the marks as the menubar does.
+- Decided: **one rule — dim means no pen is talking to this Mac, full means one is.** Asleep, out of reach and Bluetooth off all look the same; the tooltip says which. This reverses the earlier reasoning that dimming was reserved for "cannot work" because a sleeping A1 would leave the menubar faint most of the day. It will, and that is the honest picture: with the 5-minute sleep back, most of the day there is no pen to talk to.
+- Low battery is never dimmed — a warning does not fade.
