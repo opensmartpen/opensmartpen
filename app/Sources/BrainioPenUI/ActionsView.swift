@@ -750,11 +750,12 @@ private struct Mark: View {
     /// hand and the glyph inside it sits where the type designer put it. A triangle placed by
     /// eye inside a stroked circle never quite did.
     var body: some View {
+        // A little bigger than the type beside it, and a hit area bigger again: it is the one
+        // thing on the row you click, and a 14-point target is a target you miss.
         Image(systemName: symbol)
-            .font(.system(size: 14, weight: .regular))
+            .font(.system(size: 16, weight: .regular))
             .foregroundStyle(colour)
-            .frame(width: 16, height: 16)
-            .padding(.top, 1)
+            .frame(width: 22, height: 22)
             .contentShape(Rectangle())
     }
 

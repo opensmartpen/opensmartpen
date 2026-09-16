@@ -329,12 +329,25 @@ actor AcpSocket {
 
     func request(_ method: String, _ params: [String: Any]) async throws -> Any? {
         if let ended { throw ended }
+        try Task.checkCancellation()
         let id = nextId
         nextId += 1
         try await send(["jsonrpc": "2.0", "id": id, "method": method, "params": params])
-        return try await withCheckedThrowingContinuation { continuation in
-            pending[id] = continuation
+        // A stop has to reach the wait itself. A continuation knows nothing about cancellation,
+        // so a cancelled run used to sit here until the agent answered or the socket died — which
+        // is why stop took as long as the turn. Now the wait is given up the moment the task is.
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                pending[id] = continuation
+            }
+        } onCancel: {
+            Task { await self.abandon(id) }
         }
+    }
+
+    /// Stop waiting for one answer. Whatever the agent says to it later is dropped.
+    private func abandon(_ id: Int) {
+        pending.removeValue(forKey: id)?.resume(throwing: CancellationError())
     }
 
     /// A notification: sent, not answered. A failure to send is nobody's business here — the

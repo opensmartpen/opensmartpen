@@ -207,6 +207,30 @@ final class DamRunTests: XCTestCase {
         XCTAssertEqual(outcome?["optionId"] as? String, "yes")
     }
 
+    /// Stop, mid-turn: the run ends at once, not when the agent gets round to answering, and the
+    /// agent is told to stop as well.
+    func testAStoppedRunEndsAtOnceAndTellsTheAgent() async throws {
+        let agent = ScriptedAgent()
+        agent.answer("initialize") { _ in ["protocolVersion": 1] }
+        agent.answer("session/new") { _ in ["sessionId": "sess-1"] }
+        // No answer to the prompt: the agent is working, for as long as it likes.
+        let runner = try DamRunner(account: account, connect: { _ in agent })
+
+        let run = Task { try await runner.run(prompt: "go", timeout: 600) }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        let started = Date()
+        run.cancel()
+        let outcome = await run.result
+        XCTAssertLessThan(Date().timeIntervalSince(started), 2, "stop took as long as the turn")
+        guard case .failure(let error) = outcome, error is CancellationError else {
+            return XCTFail("expected a cancelled run, got \(outcome)")
+        }
+        // Wait a beat for the notification, which is sent from a task of its own.
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let cancel = agent.sent.first { $0["method"] as? String == "session/cancel" }
+        XCTAssertEqual((cancel?["params"] as? [String: Any])?["sessionId"] as? String, "sess-1")
+    }
+
     func testADeadSocketFailsWhatIsWaitingAndWhatComesAfter() async throws {
         let agent = ScriptedAgent()
         agent.hangUpOn("session/prompt")
