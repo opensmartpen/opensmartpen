@@ -71,7 +71,7 @@ public extension DamPrompting {
     /// The same thing said whether or not the session survived — what every caller wants except
     /// the one carrying on a conversation.
     func run(prompt: String, image: DamImage? = nil, resume: String? = nil,
-             timeout: TimeInterval = 900, approvals: ApprovalDesk? = nil) async throws -> DamRunResult {
+             timeout: TimeInterval = 3600, approvals: ApprovalDesk? = nil) async throws -> DamRunResult {
         try await run(turn: { _ in DamTurn(prompt: prompt, image: image) }, resume: resume,
                       timeout: timeout, approvals: approvals)
     }
@@ -123,7 +123,7 @@ public final class DamRunner: DamPrompting {
 
     /// Run one prompt to completion, with a picture attached when there is one.
     public func run(turn: @Sendable @escaping (_ resumed: Bool) -> DamTurn, resume: String? = nil,
-                    timeout: TimeInterval = 900,
+                    timeout: TimeInterval = 3600,
                     approvals: ApprovalDesk? = nil) async throws -> DamRunResult {
         let socket = AcpSocket(transport: connect(url), approvals: approvals)
         await socket.start()
@@ -230,9 +230,11 @@ public final class DamRunner: DamPrompting {
     /// agent: its output is a file, and the file is picked up whenever it appears.
     ///
     /// The clock stops while a question is on the desk. A person deciding is not the agent hanging,
-    /// and DAM holds an egress request for half an hour — longer than the turn's own deadline — so
-    /// counting a person's thinking against it would time the run out while the dialog was still
-    /// on screen.
+    /// and DAM holds an egress request for half an hour, so counting a person's thinking against
+    /// the deadline would eat most of it while the dialog was still on screen.
+    ///
+    /// An hour, because an action line can be a video render or a long research errand, and the
+    /// fifteen minutes it used to be ran out under exactly those.
     private func withDeadline<T: Sendable>(_ seconds: TimeInterval, while desk: ApprovalDesk? = nil,
                                            _ work: @escaping @Sendable () async throws -> T) async throws -> T {
         try await withThrowingTaskGroup(of: T.self) { group in

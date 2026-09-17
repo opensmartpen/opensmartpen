@@ -487,7 +487,7 @@ public final class PageProcessor {
                              : DamTurn(prompt: whole,
                                        image: DamImage(data: png, mimeType: "image/png"))
                  },
-                 resume: action.session, timeout: 900, approvals: desk)
+                 resume: action.session, timeout: 3600, approvals: desk)
         let answer = ActionAnswer(outcome.text)
         Log.info("agent worked on \(ref): \(action.text) — \(answer.status) "
                  + "(\(outcome.stopReason ?? "no stop reason"))")
