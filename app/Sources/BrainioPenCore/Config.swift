@@ -14,10 +14,10 @@ public struct Config: Codable, Equatable {
     public var legacyRepoPath: String?
     /// Minutes without strokes before a page is published.
     public var quietMinutes: Double = 10
-    /// Bluetooth MAC of the paired pen. Nil until the first pen is paired automatically.
-    public var penMac: String?
-    /// CoreBluetooth identifier of the paired pen, for reconnects where the MAC is not advertised.
-    public var penPeripheralId: String?
+    /// The pens this Mac accepts. Empty until the first pen is paired automatically; every pen
+    /// after that is added in Settings, so a pen on the next desk is never taken by accident.
+    /// An older config's single `penMac` and `penPeripheralId` are read into this list.
+    public var pairedPens: [PairedPen] = []
     /// PIN for a password-protected pen. Nil means no PIN.
     public var penPassword: String?
     /// Delete a notebook from pen memory once its strokes are committed.
@@ -79,6 +79,15 @@ public struct Config: Codable, Equatable {
 
     public init() {}
 
+    /// Whether this pen is one of ours, by MAC or, when the advertisement carried no MAC, by the
+    /// identifier CoreBluetooth gave it.
+    public func isPaired(mac: String, peripheralId: String?) -> Bool {
+        let mac = PenRecord.normalise(mac)
+        return pairedPens.contains { pen in
+            (!mac.isEmpty && pen.mac == mac) || (peripheralId != nil && pen.peripheralId == peripheralId)
+        }
+    }
+
     /// Missing keys take their defaults, so an older or hand-edited file keeps loading.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -86,8 +95,13 @@ public struct Config: Codable, Equatable {
         dataPath = try c.decodeIfPresent(String.self, forKey: .dataPath) ?? d.dataPath
         legacyRepoPath = try c.decodeIfPresent(String.self, forKey: .repoPath)
         quietMinutes = try c.decodeIfPresent(Double.self, forKey: .quietMinutes) ?? d.quietMinutes
-        penMac = try c.decodeIfPresent(String.self, forKey: .penMac)
-        penPeripheralId = try c.decodeIfPresent(String.self, forKey: .penPeripheralId)
+        if let list = try c.decodeIfPresent([PairedPen].self, forKey: .pairedPens) {
+            pairedPens = list
+        } else {
+            let mac = try c.decodeIfPresent(String.self, forKey: .penMac)
+            let id = try c.decodeIfPresent(String.self, forKey: .penPeripheralId)
+            if mac != nil || id != nil { pairedPens = [PairedPen(mac: mac ?? "", peripheralId: id)] }
+        }
         penPassword = try c.decodeIfPresent(String.self, forKey: .penPassword)
         deleteFromPenAfterPublish = try c.decodeIfPresent(Bool.self, forKey: .deleteFromPenAfterPublish) ?? d.deleteFromPenAfterPublish
         penAutoPowerOn = try c.decodeIfPresent(Bool.self, forKey: .penAutoPowerOn)
@@ -126,10 +140,10 @@ public struct Config: Codable, Equatable {
         return FileManager.default.fileExists(atPath: old.path) ? old : nil
     }
 
-    /// `repoPath` is decoded but never encoded, so adopting an old config does not carry the old
-    /// location forward once the move is done.
+    /// `repoPath`, `penMac` and `penPeripheralId` are decoded but never encoded, so adopting an
+    /// old config does not carry the old shape forward once it has been read.
     private enum CodingKeys: String, CodingKey {
-        case dataPath, repoPath, quietMinutes, penMac, penPeripheralId, penPassword
+        case dataPath, repoPath, quietMinutes, pairedPens, penMac, penPeripheralId, penPassword
         case deleteFromPenAfterPublish, gitPush, penAutoPowerOn, penAutoPowerOffMinutes
         case penCapPowerOff, controlBooks, lowBatteryPercent, memoryWarnPercent, sdkDebugLog
         case damHost, damAgentId, damRoster, damQuietMinutes
@@ -139,8 +153,7 @@ public struct Config: Codable, Equatable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(dataPath, forKey: .dataPath)
         try c.encode(quietMinutes, forKey: .quietMinutes)
-        try c.encodeIfPresent(penMac, forKey: .penMac)
-        try c.encodeIfPresent(penPeripheralId, forKey: .penPeripheralId)
+        try c.encode(pairedPens, forKey: .pairedPens)
         try c.encodeIfPresent(penPassword, forKey: .penPassword)
         try c.encode(deleteFromPenAfterPublish, forKey: .deleteFromPenAfterPublish)
         try c.encode(gitPush, forKey: .gitPush)
@@ -240,5 +253,26 @@ public struct Config: Codable, Equatable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(self).write(to: url, options: .atomic)
+    }
+}
+
+/// One pen this Mac accepts.
+public struct PairedPen: Codable, Equatable {
+    /// Bluetooth MAC, lowercase and unpunctuated, as `PenRecord.mac`. Empty when only the
+    /// peripheral identifier is known.
+    public var mac: String
+    /// CoreBluetooth identifier, for reconnects where the MAC is not advertised.
+    public var peripheralId: String?
+
+    public init(mac: String, peripheralId: String? = nil) {
+        self.mac = PenRecord.normalise(mac)
+        self.peripheralId = peripheralId
+    }
+
+    /// A MAC typed in by hand, colons and capitals included, still matches the pen.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(mac: try c.decodeIfPresent(String.self, forKey: .mac) ?? "",
+                  peripheralId: try c.decodeIfPresent(String.self, forKey: .peripheralId))
     }
 }

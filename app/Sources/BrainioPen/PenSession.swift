@@ -1,66 +1,59 @@
+import AppKit
 import CoreBluetooth
 import Foundation
 import NISDK3
 import BrainioPenCore
 import BrainioPenUI
 
-/// Keeps one pen connected and drained. Scans whenever no pen is connected, connects to the paired pen
-/// (or pairs with the first pen seen), authorises, drains offline memory notebook by notebook, and
-/// forwards live strokes. All SDK callbacks are marshalled onto the main queue.
+/// Finds pens and decides which ones to keep. Scans whenever a paired pen is missing or a new one
+/// is being added, connects to one pen at a time, and hands each connected pen to a
+/// `PenConnection` of its own — so every paired pen can be connected, writing and draining at once.
+/// All SDK callbacks are marshalled onto the main queue.
 final class PenSession: NSObject {
-    /// Both of these are declared in the UI layer, where the panel needs them, and used here under
-    /// their old names. The SDK stops at this file: nothing above it ever sees a `PenSettingStruct`.
-    typealias State = PenLinkState
-    typealias Drain = DrainProgress
-
-    private(set) var state: State = .scanning { didSet { if state != oldValue { onChange?() } } }
-
-    /// The pen is here and talking. Readings taken from it are current only while this is true.
-    var isConnected: Bool {
-        switch state {
-        case .ready, .draining: return true
-        default: return false
-        }
-    }
-    private(set) var drain: Drain? { didSet { if drain != oldValue { onChange?() } } }
-    private(set) var setting: PenSettingStruct?
-    private(set) var penName = ""
     var onChange: (() -> Void)?
-    /// Every dot as it arrives, before assembly. The live view draws from this; the assembler
-    /// only emits a stroke on pen-up, which is a whole word too late to watch.
+    /// Every dot as it arrives, before assembly, from whichever pen. The live view draws from
+    /// this; the assembler only emits a stroke on pen-up, which is a whole word too late to watch.
     var onDot: ((PageID, DotSample, DotEvent) -> Void)?
+
+    private(set) var bluetoothOff = false { didSet { if bluetoothOff != oldValue { onChange?() } } }
+    /// Looking for a new pen, after "Add pen…" in Settings. Stops by itself after a while, so a
+    /// pen switched on next week is not paired because somebody once opened the dialog.
+    private(set) var adding = false { didSet { if adding != oldValue { onChange?() } } }
 
     private var config: Config
     private let configURL: URL
     private let coordinator: SyncCoordinator
     private let notifier: DedupingNotifier
 
-    private var pen: PenController?
-    private var connecting: CBPeripheral?
+    /// Every pen Bluetooth has linked, keyed by peripheral, whether or not it has authorised yet.
+    private var links: [UUID: PenConnection] = [:]
+    /// The one pen being linked right now. One at a time, because a fresh scan empties the SDK's
+    /// list of what it has seen, and that list is where a pen's MAC is found when it connects.
+    private var connecting: (peripheral: CBPeripheral, name: String, mac: String)?
+    private var connectTimer: Timer?
     private var scanning = false
     private var scanTimer: Timer?
-    private var stepTimer: Timer?
-    private var settingTimer: Timer?
-    private var passwordTried = false
+    private var addingTimer: Timer?
+    /// How long "Add pen…" keeps looking.
+    private static let addingWindow: TimeInterval = 120
 
-    private var powerWriteAttempted = false
+    /// From the Mac going to sleep until a person wakes it. No pen is connected in between.
+    ///
+    /// A sleeping Mac's Bluetooth chip keeps a pen's link open, and macOS tells the app only that
+    /// Bluetooth is off. The pen, still linked, sends what you write as live strokes — it stores
+    /// nothing, because as far as it knows it is connected — and the strokes wake the Mac and
+    /// reach nobody. A café meeting written with the lid shut was lost this way on 2026-10-07
+    /// ("AP wakeup by LE Data bundleID=com.brainio.pen" in bluetoothd's log). Let go of every pen
+    /// before sleep and the pen keeps its own copy, which is drained on wake like any other.
+    /// Background wakes in the night must not reconnect, or the next sleep is the same trap.
+    private(set) var systemAsleep = false
+
     /// When Bluetooth was first seen unavailable, and whether we have said so. Together these keep
     /// the startup flicker quiet and stop a persistent fault repeating on every scan tick.
     private var bluetoothOffSince: Date?
     private var reportedBluetoothProblem = false
-    private var assembler = StrokeAssembler()
-    private var penMac = ""
-    private var firmware = ""
     /// Ink hexes from the notes repo, for the LED. Read once; the file changes rarely.
     private var palette = Palette()
-
-    private struct Note { let section: UInt8; let owner: UInt32; let note: UInt32 }
-    private var drainQueue: [Note] = []
-    private var draining: Note?
-    private var drainedPages: Set<PageRef> = []
-    private var drainedStrokes = 0
-    /// Books in this drain, fixed when the list arrives so "2 of 3" does not renumber as it empties.
-    private var drainTotal = 0
 
     init(config: Config, configURL: URL, coordinator: SyncCoordinator, notifier: DedupingNotifier) {
         self.config = config
@@ -76,40 +69,119 @@ final class PenSession: NSObject {
         coordinator.modeLog?.onChange = { [weak self] ink, _ in self?.showOnLED(ink) }
     }
 
-    /// Put the chosen ink on the pen's LED, as near as its eight fixed colours allow. An ink with
-    /// no measured hex leaves the LED alone rather than guessing at it.
+    /// Put the chosen ink on every connected pen's LED, as near as its eight fixed colours allow.
+    /// An ink with no measured hex leaves the LEDs alone rather than guessing at it.
     private func showOnLED(_ ink: InkColor) {
-        guard let pen, let rgb = palette.components(for: ink) else { return }
-        pen.requestSetPenLEDColor(SDKMapping.led(nearest: rgb))
+        guard let rgb = palette.components(for: ink) else { return }
+        for connection in links.values { connection.showOnLED(rgb) }
     }
 
-    var isPaired: Bool { config.penMac != nil || config.penPeripheralId != nil }
+    /// With no pen paired at all, the first pen seen is paired — the app works with no setup.
+    /// After that a new pen is only taken while somebody is adding one.
+    private var pairingOpen: Bool { adding || (autoPair && config.pairedPens.isEmpty) }
+    /// Off once a pen has been forgotten in this launch. Forgetting the last pen empties the list,
+    /// and without this the pen just forgotten would be paired again the moment it reconnects.
+    private var autoPair = true
+
+    var isAnyConnected: Bool { links.values.contains { $0.isConnected } }
 
     func start() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.willSleep()
+        }
+        workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.didWake()
+        }
         PenFinder.shared.delegate = self
         scanTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.scanIfNeeded() }
         scanIfNeeded()
     }
 
-    /// Forget the paired pen and pair with the next one seen.
-    func forgetPen() {
-        config.penMac = nil
-        config.penPeripheralId = nil
-        saveConfig()
-        pen?.disConnect()
-        notifier.post(Notice(key: "pairing", title: "Brainio Pen is looking for a pen",
-                             body: "Turn on the pen you want to use. The first pen found will be paired."))
+    /// Pair the next unknown pen that turns up.
+    func addPen() {
+        adding = true
+        Log.info("looking for a new pen to pair")
+        addingTimer?.invalidate()
+        addingTimer = Timer.scheduledTimer(withTimeInterval: Self.addingWindow, repeats: false) { [weak self] _ in
+            guard let self, self.adding else { return }
+            Log.info("no new pen found; stopped looking")
+            self.adding = false
+            self.scanIfNeeded()
+        }
+        // A pen already switched on was seen by this scan and ignored, and it is not reported
+        // twice. Starting the scan again is what lets it be seen as a candidate.
+        restartScan()
     }
 
-    func requestSettingRefresh() { pen?.requestPenSettingInfo() }
+    func cancelAdding() {
+        addingTimer?.invalidate()
+        addingTimer = nil
+        adding = false
+        scanIfNeeded()
+    }
+
+    /// Stop accepting a pen. Its `pens/` record stays: strokes it already wrote still name it.
+    func forgetPen(mac: String) {
+        let mac = PenRecord.normalise(mac)
+        guard !mac.isEmpty else { return }
+        let gone = links.values.filter { $0.mac == mac }
+        config.pairedPens.removeAll { pen in
+            pen.mac == mac || gone.contains { $0.peripheral.identifier.uuidString == pen.peripheralId }
+        }
+        autoPair = false
+        savePairedPens()
+        Log.info("forgot pen \(mac)")
+        for connection in gone { connection.disconnect() }
+        onChange?()
+    }
+
+    private func willSleep() {
+        systemAsleep = true
+        Log.info("Mac is going to sleep; letting \(links.count) pen(s) go so they store what is written")
+        if scanning {
+            PenFinder.shared.scanStop()
+            scanning = false
+        }
+        // Sent now, not after the SDK's half-second courtesy delay: by then the Mac is asleep.
+        for connection in links.values { connection.disconnect() }
+        if let p = connecting { PenFinder.shared.disConnect(p.peripheral) }
+    }
+
+    private func didWake() {
+        systemAsleep = false
+        Log.info("Mac woke; looking for pens")
+        scanIfNeeded()
+    }
+
+    func requestSettingRefresh() {
+        for connection in links.values where connection.isConnected { connection.requestSettingRefresh() }
+    }
 
     // MARK: scanning and connecting
 
     /// Whether this launch has already put the permission question to macOS.
     private var askedForBluetooth = false
 
+    /// A paired pen that is not linked. While there is one, the scan runs.
+    private var missingPairedPen: Bool {
+        config.pairedPens.contains { pen in
+            !links.values.contains { c in
+                (!pen.mac.isEmpty && c.mac == pen.mac) || c.peripheral.identifier.uuidString == pen.peripheralId
+            }
+        }
+    }
+
+    private func restartScan() {
+        if scanning {
+            PenFinder.shared.scanStop()
+            scanning = false
+        }
+        scanIfNeeded()
+    }
+
     private func scanIfNeeded() {
-        guard pen == nil, connecting == nil else { return }
+        guard connecting == nil, !systemAsleep else { return }
         guard PenFinder.shared.bluetoothOn else {
             // macOS asks for Bluetooth when an app uses Bluetooth, and not before. Waiting for a
             // grant we never request is therefore a deadlock, and a silent one: the radio is on,
@@ -145,17 +217,22 @@ final class PenSession: NSObject {
                                          body: problem))
                 }
             }
-            state = .bluetoothOff
+            bluetoothOff = true
             return
         }
         // Bluetooth is back, so a later outage is news again.
         bluetoothOffSince = nil
         reportedBluetoothProblem = false
-        state = .scanning
-        if !scanning {
+        bluetoothOff = false
+        let wanted = pairingOpen || missingPairedPen
+        if wanted, !scanning {
             scanning = true
             PenFinder.shared.scan(0)
             Log.debug("scanning for pens")
+        } else if !wanted, scanning {
+            // Every paired pen is here. Nothing left to look for.
+            PenFinder.shared.scanStop()
+            scanning = false
         }
     }
 
@@ -183,246 +260,91 @@ final class PenSession: NSObject {
         }
     }
 
-    private func matches(_ peripheral: CBPeripheral, _ ad: PenAdvertisementStruct) -> Bool {
-        if !isPaired { return true }
-        if let mac = config.penMac, !mac.isEmpty, mac.caseInsensitiveCompare(ad.mac) == .orderedSame { return true }
-        if let id = config.penPeripheralId, id == peripheral.identifier.uuidString { return true }
-        return false
+    /// Whether a pen just seen is one to connect to: a paired pen, or any pen while pairing is
+    /// open — but only one new pen at a time, so two strangers are never both taken.
+    private func wants(_ peripheral: CBPeripheral, _ ad: PenAdvertisementStruct) -> Bool {
+        if config.isPaired(mac: ad.mac, peripheralId: peripheral.identifier.uuidString) { return true }
+        guard pairingOpen else { return false }
+        return !links.values.contains { !isPaired($0) }
+    }
+
+    private func isPaired(_ c: PenConnection) -> Bool {
+        config.isPaired(mac: c.mac, peripheralId: c.peripheral.identifier.uuidString)
     }
 
     private func connect(_ peripheral: CBPeripheral, _ ad: PenAdvertisementStruct) {
         PenFinder.shared.scanStop()
         scanning = false
-        connecting = peripheral
-        penName = peripheral.name ?? (ad.subName.isEmpty ? "" : ad.subName)
-        state = .connecting
-        Log.info("connecting to \(penName.isEmpty ? "pen" : penName) [\(ad.mac)]")
+        let name = peripheral.name ?? (ad.subName.isEmpty ? "" : ad.subName)
+        connecting = (peripheral, name, ad.mac)
+        Log.info("connecting to \(name.isEmpty ? "pen" : name) [\(ad.mac)]")
         PenFinder.shared.connectPeripheral(peripheral)
-        armStep(20) { [weak self] in
-            guard let self, self.pen == nil, let p = self.connecting else { return }
+        onChange?()
+        connectTimer?.invalidate()
+        connectTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self] _ in
+            guard let self, let p = self.connecting, p.peripheral.identifier == peripheral.identifier else { return }
             Log.warn("connect timed out")
-            PenFinder.shared.disConnect(p)
+            PenFinder.shared.disConnect(p.peripheral)
             self.connecting = nil
+            self.onChange?()
             self.scanIfNeeded()
         }
     }
 
-    private func armStep(_ seconds: TimeInterval, _ block: @escaping () -> Void) {
-        stepTimer?.invalidate()
-        stepTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { _ in block() }
+    /// The pen has accepted us. A new pen is paired here, and an unknown pen that is no longer
+    /// wanted — adding was cancelled while it connected — is let go.
+    private func authorised(_ connection: PenConnection) {
+        let id = connection.peripheral.identifier.uuidString
+        if let i = config.pairedPens.firstIndex(where: {
+            (!connection.mac.isEmpty && $0.mac == connection.mac) || $0.peripheralId == id
+        }) {
+            // A known pen. Fill in whichever half of its identity was missing.
+            let updated = PairedPen(mac: connection.mac.isEmpty ? config.pairedPens[i].mac : connection.mac,
+                                    peripheralId: id)
+            if updated != config.pairedPens[i] {
+                config.pairedPens[i] = updated
+                savePairedPens()
+            }
+        } else if pairingOpen {
+            config.pairedPens.append(PairedPen(mac: connection.mac, peripheralId: id))
+            savePairedPens()
+            addingTimer?.invalidate()
+            adding = false
+            Log.info("paired \(connection.name) [\(connection.mac)]")
+            notifier.post(Notice(key: "paired-\(connection.mac)", title: "Brainio Pen paired with \(connection.name)",
+                                 body: "Notes from it will be synced automatically from now on."))
+        } else {
+            Log.info("\(connection.name) is not paired and no pen is being added; letting it go")
+            connection.reject()
+            return
+        }
+        onChange?()
+        scanIfNeeded()
     }
 
-    private func disarmStep() {
-        stepTimer?.invalidate()
-        stepTimer = nil
-    }
-
-    /// Write back only the two fields this object owns: which pen is paired.
+    /// Write back only the field this object owns: which pens are paired.
     ///
     /// Two things save this file — the settings window and this — and each held its own copy of
     /// the whole config. Whichever wrote last won, so pairing a pen quietly threw away an agent
     /// roster somebody had just typed in. The file is re-read here so that everything this object
     /// knows nothing about survives it.
-    private func saveConfig() {
+    private func savePairedPens() {
         do {
             var latest = (try? Config.loadOrCreate(at: configURL)) ?? config
-            latest.penMac = config.penMac
-            latest.penPeripheralId = config.penPeripheralId
+            latest.pairedPens = config.pairedPens
             try latest.save(to: configURL)
         } catch {
             Log.error("saving config failed: \(error)")
         }
     }
 
-    // MARK: authorised
-
-    private func authorised() {
-        guard let pen else { return }
-        disarmStep()
-        passwordTried = false
-        penMac = pen.macAddress
-        let version = pen.requestPenVersionInfo()
-        firmware = version?.firmwareVersion ?? ""
-        if penName.isEmpty {
-            penName = [version?.deviceName, version?.subName].compactMap { $0 }.first { !$0.isEmpty } ?? "Neo smartpen"
+    private func dropConnection(_ peripheral: CBPeripheral) {
+        if connecting?.peripheral.identifier == peripheral.identifier {
+            connectTimer?.invalidate()
+            connecting = nil
         }
-        if config.penMac != pen.macAddress || config.penPeripheralId != pen.peripheral?.identifier.uuidString {
-            let firstPairing = !isPaired
-            config.penMac = pen.macAddress
-            config.penPeripheralId = pen.peripheral?.identifier.uuidString
-            saveConfig()
-            if firstPairing {
-                notifier.post(Notice(key: "paired", title: "Brainio Pen paired with \(penName)",
-                                     body: "Notes will be synced automatically from now on."))
-            }
-        }
-        state = .ready
-        powerWriteAttempted = false
-        Log.info("authorised: \(penName) fw \(firmware)")
-        pen.requestSetPenTime()
-        pen.requestPenSettingInfo()
-        pen.requestUsingAllNote()
-        settingTimer?.invalidate()
-        settingTimer = Timer.scheduledTimer(withTimeInterval: 10 * 60, repeats: true) { [weak self] _ in
-            self?.pen?.requestPenSettingInfo()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.startDrain() }
-    }
-
-    private func handleSetting(_ s: PenSettingStruct) {
-        setting = s
+        links.removeValue(forKey: peripheral.identifier)?.reset()
         onChange?()
-        Log.info("pen status: battery \(s.battLevel)%\(s.charging == .On ? " (charging)" : ""), memory \(s.memoryUsed)% used")
-        Log.info("pen power: auto-off \(s.autoPwrOffTime) min, auto-on-by-tip \(s.usePenTipOnOff), cap-power-off \(s.usePenCapOff), offline-save \(s.offlineOnOff), hover \(s.useHover), beep \(s.beepOnOff)")
-        applyPowerSettings(s)
-        if s.offlineOnOff == .Off {
-            notifier.post(Notice(key: "offline-save-off", title: "Pen is not storing notes offline",
-                                 body: "Anything written away from this Mac would be lost. Turning it back on now."))
-            pen?.requestSetPenOfflineSave(.On)
-        }
-        if Int(s.battLevel) <= config.lowBatteryPercent && s.charging == .Off {
-            notifier.post(Notice(key: "battery", title: "Pen battery at \(s.battLevel)%", body: "Charge \(penName) soon."))
-        } else {
-            notifier.reset("battery")
-        }
-        if Int(s.memoryUsed) >= config.memoryWarnPercent {
-            notifier.post(Notice(key: "memory", title: "Pen memory \(s.memoryUsed)% full",
-                                 body: "Keep the pen near this Mac so it can be drained."))
-        } else {
-            notifier.reset("memory")
-        }
-    }
-
-    /// Push the configured power settings onto the pen, but only the ones that actually differ,
-    /// so a connect costs no writes once the pen already matches the config.
-    /// Push the configured power settings onto the pen, but only the ones that differ, and only
-    /// once per connection: the settings are read back afterwards, and a pen that kept its own
-    /// values has refused them, so repeating the write would just loop.
-    private func applyPowerSettings(_ s: PenSettingStruct) {
-        guard let pen else { return }
-        var pending: [(String, () -> Void)] = []
-        if let want = config.penAutoPowerOn, (s.usePenTipOnOff == .On) != want {
-            pending.append(("auto-power-on=\(want)", { pen.requestSetPenAutoPowerOn(want ? .On : .Off) }))
-        }
-        if let want = config.penAutoPowerOffMinutes, Int(s.autoPwrOffTime) != want {
-            pending.append(("auto-power-off=\(want)min", { pen.requestSetPenAutoPowerOffTime(UInt16(want)) }))
-        }
-        if let want = config.penCapPowerOff, (s.usePenCapOff == .On) != want {
-            pending.append(("cap-power-off=\(want)", { pen.requestSetPenCapOff(want ? .On : .Off) }))
-        }
-        guard !pending.isEmpty else { return }
-        let names = pending.map(\.0).joined(separator: ", ")
-
-        if powerWriteAttempted {
-            Log.warn("pen kept its own values after being asked for \(names); it does not accept these settings")
-            notifier.post(Notice(key: "power-settings-refused", title: "Pen refused a settings change",
-                                 body: "\(penName) would not accept \(names). Its own values stay in force."))
-            return
-        }
-        powerWriteAttempted = true
-        Log.info("setting \(names)")
-        for (_, apply) in pending { apply() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            Log.info("reading pen settings back to check they took")
-            self?.pen?.requestPenSettingInfo()
-        }
-    }
-
-    // MARK: offline drain
-
-    private func startDrain() {
-        guard let pen, draining == nil else { return }
-        Log.info("requesting offline note list")
-        pen.requestOfflineNoteList()
-        armStep(15) { [weak self] in
-            guard let self, self.draining == nil else { return }
-            Log.warn("no offline note list received; will retry on next connection")
-            self.state = .ready
-        }
-    }
-
-    private func drainNext() {
-        disarmStep()
-        guard let pen else { return }
-        guard let next = drainQueue.first else {
-            draining = nil
-            drain = nil
-            drainTotal = 0
-            state = .ready
-            Log.info("offline memory drained")
-            return
-        }
-        drainQueue.removeFirst()
-        draining = next
-        drainedPages = []
-        drainedStrokes = 0
-        drainTotal = max(drainTotal, drainQueue.count + 1)
-        drain = Drain(index: drainTotal - drainQueue.count, count: drainTotal, percent: 0)
-        state = .draining(remaining: drainQueue.count + 1)
-        Log.info("draining book s\(next.section)/o\(next.owner)/b\(next.note)")
-        pen.requestOfflineData(next.section, next.owner, next.note, false)
-        armProgress()
-    }
-
-    private func armProgress() {
-        armStep(60) { [weak self] in
-            guard let self, let n = self.draining else { return }
-            Log.warn("offline transfer stalled for book b\(n.note)")
-            self.notifier.post(Notice(key: "drain-stalled", title: "Pen sync stalled",
-                                      body: "Transfer from \(self.penName) stopped mid-way. It will be retried next time the pen connects."))
-            self.draining = nil
-            self.drainNext()
-        }
-    }
-
-    private func noteDrained() {
-        disarmStep()
-        guard let note = draining else { return }
-        let pages = Array(drainedPages)
-        let strokes = drainedStrokes
-        Log.info("book b\(note.note): \(strokes) stroke(s) on \(pages.count) page(s)")
-        guard strokes > 0 else {
-            draining = nil
-            drainNext()
-            return
-        }
-        coordinator.publish(pages: pages, reason: "offline drain of book \(note.note)") { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success:
-                if self.config.deleteFromPenAfterPublish, let pen = self.pen {
-                    Log.info("deleting book b\(note.note) from pen")
-                    pen.requestDeleteOfflineDataNote(note.section, note.owner, [note.note])
-                    self.armStep(15) { [weak self] in
-                        Log.warn("no delete confirmation; moving on")
-                        self?.draining = nil
-                        self?.drainNext()
-                    }
-                    return
-                }
-            case let .failure(error):
-                Log.error("publish after drain failed, keeping data on pen: \(error)")
-            }
-            self.draining = nil
-            self.drainNext()
-        }
-    }
-
-    private func resetConnection() {
-        disarmStep()
-        settingTimer?.invalidate()
-        settingTimer = nil
-        if let s = assembler.flush() { coordinator.ingestLive([s]) }
-        assembler = StrokeAssembler()
-        pen = nil
-        connecting = nil
-        draining = nil
-        drain = nil
-        drainTotal = 0
-        drainQueue = []
-        // `setting` is deliberately kept: a sleeping pen's last known battery is still the
-        // best thing to show, and clearing it would hide a low-battery warning exactly when
-        // the pen has powered itself off.
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.scanIfNeeded() }
     }
 }
@@ -432,9 +354,9 @@ final class PenSession: NSObject {
 extension PenSession: PenFinderDelegate {
     func discoverPen(_ peripheral: CBPeripheral, _ pen: PenAdvertisementStruct, _ rssi: Int) {
         DispatchQueue.main.async { [self] in
-            guard self.pen == nil, connecting == nil else { return }
+            guard connecting == nil, !systemAsleep, links[peripheral.identifier] == nil else { return }
             Log.debug("found \(peripheral.name ?? "?") mac=\(pen.mac) rssi=\(rssi)")
-            guard matches(peripheral, pen) else { return }
+            guard wants(peripheral, pen) else { return }
             connect(peripheral, pen)
         }
     }
@@ -445,137 +367,76 @@ extension PenSession: PenFinderDelegate {
 
     func didConnect(_ pencontroller: PenController) {
         DispatchQueue.main.async { [self] in
-            connecting = nil
-            pen = pencontroller
-            pencontroller.setPenDelegate(self)
-            pencontroller.showSDKLog(config.sdkDebugLog)
-            state = .authorizing
-            armStep(20) { [weak self] in
-                guard let self, self.state == .authorizing else { return }
-                Log.warn("authorisation timed out; disconnecting")
-                self.pen?.disConnect()
+            guard let peripheral = pencontroller.peripheral else { return }
+            if systemAsleep {
+                // A connect that was already under way when sleep began. Not now.
+                connectTimer?.invalidate()
+                connecting = nil
+                pencontroller.disConnect()
+                return
             }
+            let pending = connecting?.peripheral.identifier == peripheral.identifier ? connecting : nil
+            connectTimer?.invalidate()
+            connecting = nil
+            let mac = pencontroller.macAddress.isEmpty ? (pending?.mac ?? "") : pencontroller.macAddress
+            let connection = PenConnection(pen: pencontroller, peripheral: peripheral,
+                                           name: pending?.name ?? peripheral.name ?? "", mac: mac,
+                                           config: config, configURL: configURL,
+                                           coordinator: coordinator, notifier: notifier)
+            connection.onChange = { [weak self] in self?.onChange?() }
+            connection.onDot = { [weak self] page, dot, event in self?.onDot?(page, dot, event) }
+            connection.onAuthorised = { [weak self] c in self?.authorised(c) }
+            links[peripheral.identifier] = connection
+            connection.start()
+            onChange?()
+            // Another paired pen may be waiting its turn.
+            scanIfNeeded()
         }
     }
 
     func didFailToConnect(_ peripheral: CBPeripheral, _ error: Error?) {
         DispatchQueue.main.async { [self] in
             Log.warn("connect failed: \(error?.localizedDescription ?? "unknown")")
-            resetConnection()
+            dropConnection(peripheral)
         }
     }
 
     func didDisconnect(_ central: CBCentralManager, _ peripheral: CBPeripheral?, _ error: Error?) {
         DispatchQueue.main.async { [self] in
-            if peripheral == nil && !PenFinder.shared.bluetoothOn {
+            guard let peripheral else {
+                // Bluetooth itself went away, and every pen with it.
                 Log.warn("bluetooth powered off")
                 scanning = false
-            } else {
-                Log.info("disconnected\(error.map { ": \($0.localizedDescription)" } ?? "")")
+                connectTimer?.invalidate()
+                connecting = nil
+                for connection in links.values { connection.reset() }
+                links = [:]
+                onChange?()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.scanIfNeeded() }
+                return
             }
-            resetConnection()
+            let name = links[peripheral.identifier]?.name ?? peripheral.name ?? "pen"
+            Log.info("\(name) disconnected\(error.map { ": \($0.localizedDescription)" } ?? "")")
+            dropConnection(peripheral)
         }
     }
 }
-
-// MARK: - PenDelegate
-
-extension PenSession: PenDelegate {
-    func penData(_ sender: PenController, _ dot: Dot) {
-        DispatchQueue.main.async { [self] in
-            let ctx = StrokeAssembler.Context(tip: SDKMapping.tip(dot.penTipType), color: SDKMapping.hex(dot.penTipColor),
-                                              penMac: penMac, firmware: firmware)
-            let page = SDKMapping.page(dot.pageInfo)
-            let sample = SDKMapping.sample(dot)
-            let event = SDKMapping.event(dot.dotType)
-            onDot?(page, sample, event)
-            if let stroke = assembler.feed(event: event, page: page, sample: sample,
-                                           timeMs: dot.time, context: ctx) {
-                coordinator.ingestLive([stroke])
-            }
-        }
-    }
-
-    func hoverData(_ sender: PenController, _ dot: Dot) {}
-
-    func penMessage(_ sender: PenController, _ msg: PenMessage) {
-        DispatchQueue.main.async { [self] in handle(msg) }
-    }
-
-    private func handle(_ msg: PenMessage) {
-        switch msg {
-        case .PEN_AUTHORIZED:
-            authorised()
-        case let .PEN_PASSWORD_REQUEST(req):
-            guard req.status == .NeedPassword else { return }
-            if let pin = config.penPassword, !passwordTried {
-                passwordTried = true
-                Log.info("pen asked for PIN; sending configured one (\(req.retryCount)/\(req.resetCount) attempts used)")
-                pen?.requestComparePassword(pin)
-            } else {
-                notifier.post(Notice(key: "password", title: "Pen needs a PIN",
-                                     body: "Set penPassword in \(configURL.path) or remove the PIN in the pen's own app. Not retrying, since repeated failures reset the pen."))
-                pen?.disConnect()
-            }
-        case let .PEN_SETTING_INFO(s):
-            handleSetting(s)
-        case let .PEN_SETUP_SUCCESS(type):
-            Log.info("pen accepted setting: \(type)")
-        case let .PEN_SETUP_FAILURE(code):
-            Log.warn("pen rejected a setting: \(code)")
-        case let .EVENT_LOW_BATTERY(pct):
-            notifier.post(Notice(key: "battery", title: "Pen battery at \(pct)%", body: "Charge \(penName) soon."))
-        case let .EVENT_POWER_OFF(reason):
-            Log.info("pen powered off: \(reason)")
-        case .PEN_CONNECTION_FAILURE_BTDUPLICATE:
-            notifier.post(Notice(key: "duplicate", title: "Pen is connected elsewhere",
-                                 body: "\(penName) is already connected to another device. Disconnect it there to sync here."))
-        case let .OFFLINE_DATA_NOTE_LIST(list):
-            drainQueue = list.notes.map { Note(section: $0.section, owner: $0.owner, note: $0.note) }
-            Log.info("offline memory holds \(drainQueue.count) book(s)")
-            drainNext()
-        case .OFFLINE_DATA_SEND_START:
-            armProgress()
-        case let .OFFLINE_DATA_SEND_STATUS(pct):
-            armProgress()
-            if let d = drain { drain = Drain(index: d.index, count: d.count, percent: min(100, Int(pct))) }
-            if pct >= 100 { noteDrained() }
-        case let .OFFLINE_DATA_SEND_SUCCESS(data):
-            let strokes = SDKMapping.strokes(from: data, penMac: penMac, firmware: firmware)
-            drainedStrokes += strokes.count
-            drainedPages.formUnion(coordinator.ingestOffline(strokes))
-        case .OFFLINE_DATA_SEND_FAILURE:
-            Log.error("offline transfer failed for book \(draining.map { "b\($0.note)" } ?? "?")")
-            notifier.post(Notice(key: "drain-failed", title: "Pen sync failed",
-                                 body: "Transfer from \(penName) failed. Data stays on the pen and will be retried."))
-            draining = nil
-            drainNext()
-        case .OFFLINE_DATA_NOTE_DELETE_RES:
-            Log.info("pen confirmed deletion")
-            draining = nil
-            drainNext()
-        case let .PEN_PACKET_ERROR(err):
-            Log.warn("packet error: \(err)")
-        case let .EVENT_DOT_ERROR(err):
-            Log.debug("dot error: \(err)")
-        default:
-            Log.debug("pen message: \(msg)")
-        }
-    }
-}
-
 
 // MARK: - PenLink
 
-/// The panel's view of the pen. Everything the SDK reports is turned into plain numbers here, so
+/// The UI's view of the pens. Everything the SDK reports is turned into plain numbers here, so
 /// that `BrainioPenUI` builds and runs with no pen and no SDK behind it.
 extension PenSession: PenLink {
-    var linkState: PenLinkState { state }
-    var drainProgress: DrainProgress? { drain }
+    var isAdding: Bool { adding }
 
-    var reading: PenReport? {
-        guard let s = setting else { return nil }
-        return PenReport(battery: Int(s.battLevel), charging: s.charging == .On,
-                          memoryUsedPercent: Int(s.memoryUsed))
+    var pairedMacs: [String] { config.pairedPens.map(\.mac).filter { !$0.isEmpty } }
+
+    var connections: [PenConnectionInfo] {
+        var list = links.values.map(\.info)
+        if let p = connecting {
+            list.append(PenConnectionInfo(mac: PenRecord.normalise(p.mac), name: p.name, state: .connecting,
+                                          drain: nil, reading: nil, lastDot: nil))
+        }
+        return list
     }
 }

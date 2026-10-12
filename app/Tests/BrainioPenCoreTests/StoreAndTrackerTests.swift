@@ -103,7 +103,7 @@ final class StoreAndTrackerTests: XCTestCase {
         XCTAssertEqual(created, Config())
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         var edited = created
-        edited.penMac = "9C:7B:D2:00:00:01"
+        edited.pairedPens = [PairedPen(mac: "9C:7B:D2:00:00:01")]
         edited.quietMinutes = 3
         try edited.save(to: url)
         XCTAssertEqual(try Config.loadOrCreate(at: url), edited)
@@ -113,6 +113,24 @@ final class StoreAndTrackerTests: XCTestCase {
         XCTAssertEqual(try Config.loadOrCreate(at: url).gitPush, false)
     }
 
+    /// A config from before pens were a list names one pen. It must come back as a list of one,
+    /// or upgrading unpairs the pen somebody is writing with.
+    func testSinglePairedPenIsReadIntoTheList() throws {
+        let url = root.appendingPathComponent("config.json")
+        try Data("{\"penMac\": \"9C:7B:D2:48:33:D9\", \"penPeripheralId\": \"P-1\"}".utf8).write(to: url)
+        let config = try Config.loadOrCreate(at: url)
+        XCTAssertEqual(config.pairedPens, [PairedPen(mac: "9c7bd24833d9", peripheralId: "P-1")])
+        XCTAssertTrue(config.isPaired(mac: "9c:7b:d2:48:33:d9", peripheralId: nil))
+        XCTAssertTrue(config.isPaired(mac: "", peripheralId: "P-1"))
+        XCTAssertFalse(config.isPaired(mac: "aabbccddeeff", peripheralId: "P-2"))
+
+        // Written back as the list only, so the old keys do not linger and disagree with it.
+        try config.save(to: url)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(text.contains("penMac"))
+        XCTAssertEqual(try Config.loadOrCreate(at: url).pairedPens, config.pairedPens)
+    }
+
     /// The rename must not cost the paired pen. A PenBridge-era config directory is adopted whole,
     /// because `pen-state.json` sits beside `config.json` and half of it is not worth having.
     func testLegacyConfigDirectoryIsAdopted() throws {
@@ -120,7 +138,7 @@ final class StoreAndTrackerTests: XCTestCase {
         let new = root.appendingPathComponent("brainio-pen")
         try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
         var saved = Config()
-        saved.penMac = "9c7bd24833d9"
+        saved.pairedPens = [PairedPen(mac: "9c7bd24833d9")]
         saved.lowBatteryPercent = 15
         try saved.save(to: old.appendingPathComponent("config.json"))
         try Data("{\"9c7bd24833d9\":{}}".utf8).write(to: old.appendingPathComponent("pen-state.json"))
@@ -144,7 +162,7 @@ final class StoreAndTrackerTests: XCTestCase {
         // The directory is already there — what a pre-migration launch leaves behind.
         try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
         var saved = Config()
-        saved.penMac = "9c7bd24833d9"
+        saved.pairedPens = [PairedPen(mac: "9c7bd24833d9")]
         try saved.save(to: old.appendingPathComponent("config.json"))
         try Data("{}".utf8).write(to: old.appendingPathComponent("pen-state.json"))
 
@@ -207,7 +225,7 @@ final class StoreAndTrackerTests: XCTestCase {
         setenv("XDG_CONFIG_HOME", root.path, 1)
         defer { unsetenv("XDG_CONFIG_HOME") }
         var old = Config()
-        old.penMac = "9c7bd24833d9"
+        old.pairedPens = [PairedPen(mac: "9c7bd24833d9")]
         old.deleteFromPenAfterPublish = false
         try old.save(to: Config.legacyLocation)
 

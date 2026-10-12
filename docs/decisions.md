@@ -349,3 +349,20 @@ DAM holds an agent in two places, and until now both of them looked the same fro
 - **Every mark is an SF Symbol now** — `play.circle`, `stop.circle`, `circle`, `circle.inset.filled`, `checkmark.circle`, `xmark.circle` — at one size. A triangle placed by eye inside a stroked circle was never quite centred.
 - **Green is for done.** The palette said no green anywhere; a tick the same grey as an empty circle was not a tick you could see, so green has one job: a line that has been carried out, on the row, the status pill and the panel. The play and stop signs stay grey: their shape says what they are, and a violet button on every fresh line is a list of buttons.
 - **A line that is finished folds its conversation.** By your tick or the agent's `STATUS: done`. An open transcript under a ticked line read as something still going on.
+
+## 2026-10-07 — Several pens, added in Settings
+
+- Asked for: pair a second pen. The app kept one paired pen (`penMac`) and ignored every other pen. The UI already drew one tile per pen in `pens/`, so only the session and the config were single-pen.
+- **Every paired pen connects at the same time.** `PenSession` now finds pens and decides which to keep; a new `PenConnection` holds one linked pen — auth, drain, strokes, battery. The SDK allows this: each link gets its own `PenController`. Connects are made one at a time, because a fresh scan empties the SDK's list of seen pens, and that list is where a pen's MAC comes from when it connects.
+- **A new pen is only taken while somebody is adding one.** "Add pen…" in Settings → Pens looks for two minutes and pairs the first unknown pen it sees. With no pen paired at all, the first pen seen is still paired with no setup. "Forget…" unpairs a pen and keeps its `pens/` record.
+- **Config:** `pairedPens` is a list. An older config's `penMac` and `penPeripheralId` are read into it and are not written back. The settings window no longer saves its own copy of the list over the session's.
+- **Ink mode is still one for all pens.** The colour strip sets the mode for every pen, and the LED shows it on every connected pen. Per-pen modes are not part of this change.
+- **Not seen with two pens.** It builds and the tests pass. The new pairing path was not run against hardware.
+
+
+## 2026-10-08 — Pens are let go before the Mac sleeps
+
+- **Lost:** half a page written in a café on 2026-10-07 with the LAMY, lid shut. Only what was written after the lid was opened arrived. The pen reported 0 books in memory on the next connect, so nothing was waiting to be drained.
+- **Cause, from bluetoothd's log:** a sleeping Mac's Bluetooth chip kept the LE link to the pen open (`AP wakeup by LE Data bundleID=com.brainio.pen, uuid=<the LAMY>`, several times between 16:13 and 16:17). macOS told the app only that Bluetooth was off, and the app dropped the connection. The pen, still linked, sent the strokes live and stored nothing; they woke the Mac and reached nobody. The A1 shows the same pattern of power-off events on 2026-09-14 and 09-15.
+- **Fix:** on `NSWorkspace.willSleepNotification` the session disconnects every pen and stops scanning, and it connects nothing until `didWakeNotification`, so the Mac's background wakes in the night cannot link a pen again before the next sleep. A pen without a link stores what is written, and the drain on wake copies it like any other offline notebook.
+- **Not yet proven on hardware:** whether the disconnect always reaches the pen before the Mac is asleep. The check is to write with the lid shut, open it, and find `draining book` in the log.

@@ -4,8 +4,9 @@ macOS menubar app that keeps a Neo smartpen's strokes flowing into `~/Brainio/pe
 
 ## What it does
 
-- Scans for the pen whenever none is connected. The first pen ever seen is paired and remembered; after that only that pen is accepted.
-- On connect: authorises (sends the configured PIN once if the pen asks), sets the pen clock, subscribes to all notebooks, then drains offline memory one notebook at a time.
+- Accepts several pens, all connected at once. The first pen ever seen is paired automatically; every pen after that is added in Settings → Pens ("Add pen…", then switch the pen on), so a pen on the next desk is never taken by accident. "Forget…" on a pen stops syncing from it and keeps its record, because the strokes it wrote still name it.
+- Scans whenever a paired pen is not connected, and connects one pen at a time. Each connected pen authorises, drains and streams on its own.
+- On connect, per pen: authorises (sends the configured PIN once if the pen asks), sets the pen clock, subscribes to all notebooks, then drains offline memory one notebook at a time.
 - Live strokes are appended to `books/<copy>/raw/p{page}.jsonl` as they finish. Each physical copy of a notebook is one folder (ADR-002).
 - A page is published when it has been quiet for `quietMinutes` (default 10): its file is committed. Only quiet pages are committed, so a half-written page never lands in git.
 - Offline strokes are published as soon as a notebook has been fully transferred. Only after the commit succeeds is that notebook deleted from the pen.

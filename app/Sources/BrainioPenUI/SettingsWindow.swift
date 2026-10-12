@@ -13,22 +13,59 @@ public final class SettingsStore: ObservableObject {
     @Published var config: Config
     @Published var palette = Palette()
 
+    /// Looking for a new pen, after "Add pen…".
+    @Published var adding = false
+    /// MACs of the pens connected right now.
+    @Published var connected: Set<String> = []
+
     private let penRegistry: PenRegistry
     private let bookRegistry: BookRegistry
     private let configURL: URL
+    /// The running pens, for pairing. Nil in the design window, which has no pens.
+    private weak var link: PenLink?
+    private var pairedMacs: [String] = []
     /// Told when a setting that the running app cares about has changed.
     public var onConfigChange: ((Config) -> Void)?
 
-    public init(pens: PenRegistry, books: BookRegistry, config: Config, configURL: URL) {
+    public init(pens: PenRegistry, books: BookRegistry, config: Config, configURL: URL,
+                link: PenLink? = nil) {
         penRegistry = pens
         bookRegistry = books
         self.config = config
         self.configURL = configURL
+        self.link = link
+        readLink()
         reload()
     }
 
-    func reload() {
-        pens = penRegistry.pens
+    /// The app calls this on every change from the pens. Cheap unless something moved.
+    public func linkChanged() {
+        let before = pairedMacs
+        readLink()
+        if pairedMacs != before { reload() }
+    }
+
+    private func readLink() {
+        guard let link else { return }
+        pairedMacs = link.pairedMacs
+        if adding != link.isAdding { adding = link.isAdding }
+        let now = Set(link.connections.filter(\.isConnected).map(\.mac))
+        if connected != now { connected = now }
+    }
+
+    func addPen() { link?.addPen(); readLink() }
+    func cancelAdding() { link?.cancelAdding(); readLink() }
+
+    func forget(_ pen: PenRecord) {
+        link?.forgetPen(mac: pen.mac)
+        linkChanged()
+    }
+
+    public func reload() {
+        // Only the pens this Mac accepts. A forgotten pen's record stays in the repo for the
+        // strokes it already wrote, but there is nothing left to set on it here.
+        let paired = Set(pairedMacs)
+        pens = link == nil ? penRegistry.pens : penRegistry.pens.filter { paired.contains($0.mac) }
         books = bookRegistry.books.sorted { $0.title < $1.title }
         palette = Palette.load(root: config.dataURL)
         // The agents tab is a list of what the key can see, so the list is fetched when the window
@@ -179,6 +216,11 @@ public final class SettingsStore: ObservableObject {
 
     func saveConfig() {
         do {
+            // Which pens are paired is the pen session's to write, and it can change while this
+            // window is open. The file's list wins over the copy this window opened with.
+            if let onDisk = try? Config.loadOrCreate(at: configURL) {
+                config.pairedPens = onDisk.pairedPens
+            }
             try config.save(to: configURL)
             onConfigChange?(config)
             noteSaved()
@@ -260,12 +302,14 @@ private struct PensTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                AddPen(store: store)
                 if store.pens.isEmpty {
                     Hint("No pen has connected yet. A pen names itself the first time it does, and "
                          + "you can change that name here.")
                 }
                 ForEach(store.pens, id: \.slug) { pen in
-                    PenCard(pen: pen, palette: store.palette) { store.save($0) }
+                    PenCard(pen: pen, palette: store.palette, connected: store.connected.contains(pen.mac),
+                            save: { store.save($0) }, forget: { store.forget(pen) })
                 }
             }
             .padding(.top, 4)
@@ -273,11 +317,36 @@ private struct PensTab: View {
     }
 }
 
+/// Pairing a pen is the one thing here that waits on the hardware, so it says what it is waiting
+/// for: a pen that is switched on. Only one new pen is taken, and only while this is looking.
+private struct AddPen: View {
+    @ObservedObject var store: SettingsStore
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if store.adding {
+                ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 14, height: 14)
+                Text("Looking for a new pen. Switch it on near this Mac.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel") { store.cancelAdding() }
+            } else {
+                Spacer()
+                Button("Add pen…") { store.addPen() }
+            }
+        }
+        .frame(minHeight: 22)
+    }
+}
+
 private struct PenCard: View {
     let pen: PenRecord
     let palette: Palette
+    let connected: Bool
     let save: (PenRecord) -> Void
+    let forget: () -> Void
     @State private var name: String = ""
+    @State private var confirmingForget = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -307,9 +376,16 @@ private struct PenCard: View {
             }
             Row("Hardware") {
                 Text(pen.mac).font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary)
+                Text(connected ? "connected" : "not connected").font(.system(size: 10)).foregroundStyle(.quaternary)
                 Spacer()
-                Text("fixed").font(.system(size: 10)).foregroundStyle(.quaternary)
+                Button("Forget…") { confirmingForget = true }
+                    .controlSize(.small)
             }
+        }
+        .confirmationDialog("Forget \(pen.name)?", isPresented: $confirmingForget) {
+            Button("Forget", role: .destructive, action: forget)
+        } message: {
+            Text("This Mac stops syncing from it. Notes it already wrote stay. Add it again to use it.")
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))

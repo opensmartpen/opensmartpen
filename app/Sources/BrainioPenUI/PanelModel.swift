@@ -258,9 +258,13 @@ public final class PanelModel: ObservableObject {
         guard let live else { return }   // design mode: the published values are the source
         let session = live.session, coordinator = live.coordinator
         let config = live.config, books = live.books
-        penName = session.penName.isEmpty ? "Pen" : session.penName
-        if session.isConnected { lastSeen = now }
-        penDisplayName = live.pens.name(mac: config.penMac ?? "")
+        let links = session.connections
+        let awake = links.filter(\.isConnected)
+        // The pen in your hand: of the connected ones, the one that wrote last.
+        let current = awake.max { ($0.lastDot ?? .distantPast) < ($1.lastDot ?? .distantPast) }
+        penName = current.map { $0.name.isEmpty ? "Pen" : $0.name } ?? "Pen"
+        if current != nil { lastSeen = now }
+        penDisplayName = live.pens.name(mac: current?.mac ?? "")
 
         // The palette is a file in the repo that a person edits by hand; re-reading it once a
         // second would be wasteful and once a launch would make an edit invisible.
@@ -281,15 +285,19 @@ public final class PanelModel: ObservableObject {
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
         // and the macOS Bluetooth menu sets the convention: a battery for what is connected,
         // nothing at all for the rest.
-        if let s = session.reading, session.isConnected {
+        for link in awake where !link.mac.isEmpty {
+            if let s = link.reading {
+                live.penState.record(mac: link.mac, battery: s.battery, charging: s.charging, at: now)
+            }
+        }
+        if let s = current?.reading {
             let pct = s.battery
             battery = Battery(percent: pct, charging: s.charging,
                               low: pct <= config.lowBatteryPercent && !s.charging)
-            let held = PenMemory.pages(usedPercent: s.memoryUsedPercent)
+            // Memory is a backlog to be drained, and every connected pen drains, so the panel
+            // counts what all of them still hold.
+            let held = awake.compactMap(\.reading).map { PenMemory.pages(usedPercent: $0.memoryUsedPercent) }.reduce(0, +)
             pagesOnPen = held > 0 ? held : nil
-            if let mac = config.penMac {
-                live.penState.record(mac: mac, battery: pct, charging: s.charging, at: now)
-            }
         } else {
             battery = nil
             pagesOnPen = nil
@@ -321,23 +329,27 @@ public final class PanelModel: ObservableObject {
         let readings = live.penState.all
         // Connected wins; otherwise the most recent reading. A pen sleeps after five minutes, so
         // insisting on a live connection would leave no pen marked for most of the day.
-        let connected = session.isConnected
-            ? PenRecord.normalise(config.penMac ?? "")
-            : readings.max(by: { $0.value.at < $1.value.at })?.key
-        let writingNow = coordinator.tracker.pending
-            .contains { now.timeIntervalSince($0.last) < Self.liveWindow }
-        pens = live.pens.pens.map { pen in
+        let connected = current?.mac
+            ?? readings.max(by: { $0.value.at < $1.value.at })?.key
+        // Only the pens this Mac accepts. A forgotten pen keeps its record, for the strokes it
+        // already wrote, but it is not a pen you can pick up here any more.
+        let paired = Set(session.pairedMacs)
+        pens = live.pens.pens.filter { paired.contains($0.mac) }.map { pen in
             let reading = readings[pen.mac]
-            let here = session.isConnected && pen.mac == connected
+            let link = links.first { $0.mac == pen.mac }
+            let here = link?.isConnected == true
+            let writingNow = link?.lastDot.map { now.timeIntervalSince($0) < Self.liveWindow } ?? false
             let state: String
             if !here {
                 // The header used to carry this, above everything, in bold. It belongs to the
                 // pen: the reason you cannot see your writing is a fact about this pen, and
                 // Bluetooth being off is a different reason from the pen being asleep.
-                switch session.linkState {
-                case .bluetoothOff: state = "Bluetooth off"
-                case .connecting, .authorizing: state = "Connecting"
-                default: state = "Pen off"
+                if session.bluetoothOff {
+                    state = "Bluetooth off"
+                } else if link != nil {
+                    state = "Connecting"
+                } else {
+                    state = "Pen off"
                 }
             } else if reading?.charging == true {
                 state = "Charging"
@@ -350,7 +362,7 @@ public final class PanelModel: ObservableObject {
                           percent: reading?.battery,
                           low: (reading.map { !$0.charging && $0.battery <= config.lowBatteryPercent }) ?? false,
                           active: pen.mac == connected, state: state, awake: here,
-                          memory: here ? session.reading?.memoryUsedPercent : nil)
+                          memory: here ? link?.reading?.memoryUsedPercent : nil)
         }.sorted {
             // The one in your hand first, then by how recently each was seen.
             if $0.active != $1.active { return $0.active }
@@ -377,24 +389,24 @@ public final class PanelModel: ObservableObject {
             return .failing(attempts: coordinator.consecutiveFailures, nextTry: coordinator.nextRetryAt,
                             error: error)
         }
-        switch session.linkState {
-        case .bluetoothOff:
-            return .bluetoothOff
-        case .scanning:
-            return .asleep
-        case .connecting, .authorizing:
-            return .connecting
-        case .draining:
-            if let d = session.drainProgress {
+        if session.bluetoothOff { return .bluetoothOff }
+        // With several pens the most urgent wins: a pen being copied from says more than one that
+        // is merely connected, and one connected says more than one still connecting.
+        let links = session.connections
+        if let copying = links.first(where: { if case .draining = $0.state { return true } else { return false } }) {
+            if let d = copying.drain {
                 return .copying(book: d.index, of: d.count, percent: d.percent)
             }
             return .copying(book: 1, of: 1, percent: 0)
-        case .ready:
+        }
+        if links.contains(where: \.isConnected) {
             if let live = pending.first(where: \.isLive) {
                 return .writing(page: live.label)
             }
             return .connected
         }
+        if !links.isEmpty { return .connecting }
+        return .asleep
     }
 
     /// Scanning the repo is too much for the one-second tick, so the recent list is rebuilt only
@@ -576,10 +588,6 @@ public final class PanelModel: ObservableObject {
     /// The inks with a colour behind them, in the strip's own order. The paper has ten buttons;
     /// which of them mean anything is decided by palette.json, not here.
     var inks: [InkColor] { palette.offered }
-
-    func pairDifferentPen() {
-        live?.session.forgetPen()
-    }
 
     // MARK: - a model with nothing behind it
 

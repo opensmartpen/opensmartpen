@@ -38,6 +38,9 @@ public final class SyncCoordinator {
     public private(set) var lastError: String?
     /// Fired on the main queue after every publish attempt.
     public var onChange: (() -> Void)?
+    /// Fired after strokes from pen memory are on disk, with the pages they landed on. Anything
+    /// that read those pages earlier is now short of them.
+    public var onOfflineStored: ((Set<PageRef>) -> Void)?
 
     private let workQueue = DispatchQueue(label: "com.brainio.pen.publish")
     private var nextRetry: Date = .distantPast
@@ -99,6 +102,7 @@ public final class SyncCoordinator {
             let pages = Set(admit(try write(strokes, now: now)))
             tracker.markQuiet(pages)
             Log.info("offline: \(strokes.count) stroke(s) on \(pages.count) page(s)")
+            onOfflineStored?(pages)
             return pages
         } catch {
             Log.error("writing offline strokes failed: \(error)")

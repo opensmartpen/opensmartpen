@@ -320,6 +320,18 @@ public final class Viewer: ObservableObject {
         loadVisible()
     }
 
+    /// Read these pages from disk again. A page loaded before a drain lacks the strokes the pen
+    /// kept while it had no link: they arrive after the first live ones, and only on disk.
+    public func reload(_ refs: Set<PageRef>) {
+        guard let folder, let book else { return }
+        for ref in refs where ref.folder == folder {
+            let human = book.humanPage(ref.page.page)
+            guard strokes[human] != nil else { continue }
+            strokes[human] = nil
+            if isOnScreen(human) { loadIfNeeded(human) }
+        }
+    }
+
     /// Load every sheet the current layout puts on screen.
     private func loadVisible() {
         for sheet in visible.compactMap({ $0 }) { loadIfNeeded(sheet) }

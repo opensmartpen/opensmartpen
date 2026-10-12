@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pens: PenRegistry!
     private var penState: PenState!
     private var settingsWindow: SettingsWindowController?
+    private var settingsStore: SettingsStore?
     /// So a new notebook is only looked up when the pen moves to a different one, rather than on
     /// every dot.
     private var lastSeenBook: String?
@@ -133,6 +134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onOpenAction = { [weak self] id in self?.showActions(expanding: id.isEmpty ? nil : id) }
         viewer.onShowActions = { [weak self] in self?.showActions() }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
+        coordinator.onOfflineStored = { [weak self] pages in
+            DispatchQueue.main.async { self?.viewer.reload(pages) }
+        }
         session.onChange = { [weak self] in self?.stateChanged() }
 
         // Nothing on screen: it is what makes ⌘C and ⌘V work in the settings fields. An app with
@@ -208,6 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the menubar icon. Cheap enough to do on every stroke batch.
     private func stateChanged() {
         adoptPenIfNew()
+        settingsStore?.linkChanged()
         model.refresh(now: Date())
         // The pinned window has no "opened" moment to rebuild the recent list on, and a state
         // change is exactly when that list can have changed.
@@ -228,7 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let usable: Bool
         if case .bluetoothOff = model.status { usable = false } else { usable = true }
         let look = StatusIcon.make(pendingPages: model.pending.count, battery: battery, working: usable,
-                                   connected: session.isConnected)
+                                   connected: session.isAnyConnected)
         button.image = look.image
         button.attributedTitle = look.title
         button.appearsDisabled = look.dimmed
@@ -239,12 +244,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// moment rather than showing as a MAC address. The name is a guess — the SDK's device name,
     /// or simply "Pen" — and the point of writing it down is that it is now yours to change.
     private func adoptPenIfNew() {
-        guard session.isConnected, let mac = config.penMac, pens.record(mac: mac) == nil else { return }
-        let suggested = session.penName.isEmpty ? "Pen" : session.penName
-        guard let record = pens.create(mac: mac, name: suggested) else { return }
-        Log.info("adopted pen \(record.mac) as \(record.name) (pens/\(record.slug).json)")
-        notifier.post(Notice(key: "new-pen", title: "New pen: \(record.name)",
-                             body: "Give it a name in Brainio Pen settings."))
+        let paired = Set(session.pairedMacs)
+        for link in session.connections where link.isConnected && paired.contains(link.mac) {
+            guard pens.record(mac: link.mac) == nil else { continue }
+            let suggested = link.name.isEmpty ? "Pen" : link.name
+            guard let record = pens.create(mac: link.mac, name: suggested) else { continue }
+            Log.info("adopted pen \(record.mac) as \(record.name) (pens/\(record.slug).json)")
+            notifier.post(Notice(key: "new-pen-\(record.mac)", title: "New pen: \(record.name)",
+                                 body: "Give it a name in Brainio Pen settings."))
+            settingsStore?.reload()
+        }
     }
 
     /// Wire up page transcription, or leave it off.
@@ -294,7 +303,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showSettings(tab: SettingsView.Tab = .pens) {
         panel?.dismiss()
         if settingsWindow == nil {
-            let store = SettingsStore(pens: pens, books: books, config: config, configURL: configURL)
+            let store = SettingsStore(pens: pens, books: books, config: config, configURL: configURL,
+                                      link: session)
+            settingsStore = store
             store.onConfigChange = { [weak self] updated in
                 guard let self else { return }
                 config = updated
