@@ -17,8 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var config = Config()
     private let configURL = Config.defaultLocation
     private var coordinator: SyncCoordinator!
-    /// Hands quiet pages to a DAM agent to be transcribed. Nil until one is configured.
-    private var processor: PageProcessor?
+    /// Copies quiet pages to the bucket. Does nothing, successfully, until one is connected.
+    private var sync: S3Sync!
     private var session: PenSession!
     private var notifier: DedupingNotifier!
     private var model: PanelModel!
@@ -32,8 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastSeenBook: String?
     private var viewer: Viewer!
     private var viewerWindow: ViewerWindowController?
-    private var actions: ActionsStore!
-    private var actionsWindow: ActionsWindowController?
     private var pinnedPanel: PinnedPanelController?
     private var tickTimer: Timer?
     /// Runs only while the panel is open; drives the per-page countdowns.
@@ -61,21 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DataMigration.adoptLegacyRepo(from: legacy, to: config.dataURL)
         }
 
-        // Git is a record of what changed, not where the notes live. Every reader goes to the
-        // files themselves; a commit is there so a drain or a render can be seen as a diff.
-        let publisher = GitPublisher(repo: config.dataURL, push: config.gitPush)
-        do {
-            let hasRemote = try publisher.ensureRepository()
-            if !hasRemote && config.gitPush {
-                publisher.push = false
-                notifier.post(Notice(key: "no-remote", title: "Notes history has no remote",
-                                     body: "Commits are local only. Add an origin in \(config.dataURL.path) and restart Brainio Pen to push."))
-            }
-        } catch {
-            Log.error("repository setup failed: \(error)")
-            notifier.post(Notice(key: "repo", title: "Brainio Pen cannot keep a history of the notes",
-                                 body: "\(config.dataURL.path): \(error)"))
-        }
+        // The notes live in the folder. The bucket is a copy of it, made as pages go quiet, and
+        // the list of what has been copied sits beside the config: it is a fact about this Mac.
+        sync = S3Sync(root: config.dataURL,
+                      ledger: configURL.deletingLastPathComponent().appendingPathComponent("s3-uploaded.json"))
 
         let store = RawStore(root: config.dataURL, app: Self.clientID, sdk: Self.sdkVersion)
         // Notebook names, page numbering and the readable-file paths all come from
@@ -84,13 +71,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let router = PageRouter(books: books, store: store)
         router.adoptExisting()
         coordinator = SyncCoordinator(store: store, router: router, tracker: QuietTracker(),
-                                      publisher: publisher, notifier: notifier,
-                                      quietWindow: config.quietMinutes * 60)
+                                      publisher: sync, notifier: notifier,
+                                      quietWindow: config.quietSeconds)
         coordinator.controlBooks = Set(config.controlBooks)
         coordinator.modeLog = ModeLog(root: config.dataURL, app: Self.clientID, sdk: Self.sdkVersion)
-        coordinator.recoverPending()
-
-        makeProcessor()
+        // The page's picture is drawn the way the viewer draws it, from the same strokes.
+        sync.imaging = PageImager(books: books, root: config.dataURL, modeLog: coordinator.modeLog,
+                                  controlBooks: Set(config.controlBooks))
+        connectBucket()
 
         session = PenSession(config: config, configURL: configURL, coordinator: coordinator, notifier: notifier)
 
@@ -100,19 +88,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // an edit to one file in the repo, not a code change.
         coordinator.modeLog?.offered = Set(Palette.load(root: config.dataURL).offered)
         viewer = Viewer(books: books, repo: config.dataURL)
-        // One list of what the pages ask for, read by the window that shows all of it and by the
-        // menubar panel that shows the first few.
-        actions = ActionsStore(books: books, root: config.dataURL)
-        actions.processor = processor
-        actions.roster = config.assistants
-        actions.onOpenPage = { [weak self] page in self?.showViewer(page) }
-        actions.onOpenSettings = { [weak self] in self?.showSettings(tab: .agents) }
+        // The one thing read from the bucket: the transcript of the page on screen, which
+        // whatever reads the bucket wrote there. The app still transcribes nothing.
+        viewer.transcripts = TranscriptStore(root: config.dataURL) { [sync] in sync?.connection }
         // Paper we capture from but never read back. The coordinator still stores every tap and
         // decodes it as a command; what stops here is everything that treats a book as a
         // notebook — a record of its own and the live page in the viewer.
         let controlBooks = Set(config.controlBooks)
         session.onDot = { [weak self] page, dot, event in
             guard let self else { return }
+            // Every dot, the control strip's included: the upload waits for the pen to go
+            // quiet, and a pen that is tapping is not quiet.
+            coordinator.penActive()
             guard !controlBooks.contains(page.surface) else { return }
             // A notebook Brainio Pen has never met gets a record the moment a page arrives from it,
             // so its pages stop being anonymous and start being rendered. Silent on purpose:
@@ -125,14 +112,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model = PanelModel(session: session, coordinator: coordinator, config: config,
                            books: books, pens: pens, penState: penState)
-        model.processor = processor
-        model.actionsStore = actions
         model.onShowLive = { [weak self] in self?.showViewer(nil) }
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.onOpenPage = { [weak self] page in self?.showViewer(page) }
-        model.onOpenAction = { [weak self] id in self?.showActions(expanding: id.isEmpty ? nil : id) }
-        viewer.onShowActions = { [weak self] in self?.showActions() }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         coordinator.onOfflineStored = { [weak self] pages in
             DispatchQueue.main.async { self?.viewer.reload(pages) }
@@ -147,38 +130,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // For working on the window itself: there is no way to click a menubar item from a script,
         // and a design pass that cannot open the thing being designed is a design pass done blind.
-        if CommandLine.arguments.contains("--show-settings") { showSettings(tab: .agents) }
-        if CommandLine.arguments.contains("--show-actions") {
-            // Open it on something with a conversation in it, because the shut row and the open
-            // row are two different designs and only one of them can be seen at a time.
-            actions.reload()
-            // And, when asked, with a question on it: the card that appears when DAM stops an
-            // agent at the gate cannot be reached by clicking, so this is the only way to look at
-            // it before shipping it.
-            if CommandLine.arguments.contains("--show-approval") {
-                // On an open row and a shut one, because they are two different pictures: the
-                // question has to read as urgent in a list somebody is scanning, not only in the
-                // conversation they happen to have open.
-                let egress = ApprovalAsk(id: "rehearsal-1",
-                                         kind: .egress(method: "POST", host: "slack.com",
-                                                       path: "/api/chat.postMessage"),
-                                         approvalId: "rehearsal-1")
-                let tool = ApprovalAsk(id: "rehearsal-2", kind: .tool("Bash(git push origin main)"))
-                for row in actions.items.prefix(2) {
-                    actions.rehearsed[row.id] = [row.action.thread.isEmpty ? tool : egress]
-                }
-            }
-            showActions(expanding: actions.items.first { !$0.action.thread.isEmpty }?.id)
+        // `--show-settings=sync` opens it on that tab, so each one can be looked at in turn.
+        if let flag = CommandLine.arguments.first(where: { $0.hasPrefix("--show-settings") }) {
+            let named = flag.split(separator: "=").dropFirst().first.map(String.init)
+            showSettings(tab: SettingsTab.allCases.first { "\($0)" == named } ?? .sync)
         }
         model.refresh()
         refreshStatusButton()
 
         session.start()
-        tickTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        // Often, because the wait before a page is uploaded is counted in seconds. A tick with
+        // nothing quiet is a dictionary scan, so it costs nothing to ask.
+        tickTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.coordinator.tick()
-            // Transcribing a page is a separate errand from committing one, and a much shorter wait, so
-            // it is asked on every tick rather than only when a commit happens.
-            self?.processor?.tick()
             self?.stateChanged()
         }
     }
@@ -213,6 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stateChanged() {
         adoptPenIfNew()
         settingsStore?.linkChanged()
+        pushSyncStatus()
         model.refresh(now: Date())
         // The pinned window has no "opened" moment to rebuild the recent list on, and a state
         // change is exactly when that list can have changed.
@@ -256,66 +221,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Wire up page transcription, or leave it off.
+    /// Point the uploads at the bucket in the config, or at nothing.
     ///
-    /// All three of host, agent and key are needed, and the key is in a file of its own, so a
-    /// config carried to another Mac starts with transcription off rather than with a broken connection.
-    /// Nothing else changes when it is off: pages are captured and committed exactly as before.
-    ///
-    /// Read straight through, on the main thread. While the key was in the Keychain this ran on a
-    /// background queue, because that read could stop and wait for a person to answer a dialog —
-    /// and one launch did, for forty minutes. Reading a file cannot.
-    private func makeProcessor() {
-        processor = nil
-        guard let account = config.damAccount() else {
-            Log.info("no DAM agent configured; pages are captured but not transcribed")
-            return
+    /// Every part is needed — the bucket, the key id, and the secret, which is in a file of its
+    /// own — so a config carried to another Mac starts with no bucket rather than a broken one.
+    /// Whatever is on disk and not in that bucket is then found and queued: on a first connection
+    /// that is every page there is.
+    private func connectBucket() {
+        if let account = config.s3Account() {
+            sync.connect(S3Client(account: account))
+            Log.info("pages go to \(account.destination) after \(Int(config.quietSeconds)) s of quiet")
+        } else {
+            sync.connect(nil)
+            Log.info("no bucket connected; pages stay on this Mac")
         }
-        do {
-            // One key, several agents. The transcriber is the account above; anything routed elsewhere
-            // gets its own connection out of the same key.
-            let fleet = try DamAgents(transcriber: account)
-            let imager = PageImager(books: books, root: config.dataURL, modeLog: coordinator.modeLog)
-            let processor = PageProcessor(books: books, root: config.dataURL, imaging: imager,
-                                          fleet: fleet, notifier: notifier,
-                                          quietWindow: config.damQuietMinutes * 60)
-            processor.controlBooks = Set(config.controlBooks)
-            // Only the assistants that are switched on and have said what they do. The transcriber
-            // is not among them: it has no connections, which is why it is the transcriber.
-            processor.roster = config.assistants
-            processor.onChange = { [weak self] in self?.stateChanged() }
-            self.processor = processor
-            // The panel offers to send a page at once, and the viewer hands single actions over,
-            // so both need the same object the timer ticks.
-            model?.processor = processor
-            actions?.processor = processor
-            actions?.roster = config.assistants
-            Log.info("pages go to \(account.agentId) at \(account.host) after \(Int(config.damQuietMinutes)) min of quiet")
-        } catch {
-            Log.error("the DAM agent could not be set up: \(error)")
-            notifier.post(Notice(key: "dam-setup", title: "Brainio Pen cannot reach the transcribing agent",
-                                 body: error.localizedDescription))
-        }
+        coordinator.recoverPending()
+    }
+
+    /// What the Sync tab shows. Only while the window exists, and only when something moved.
+    private func pushSyncStatus() {
+        guard let store = settingsStore else { return }
+        var status = SyncStatus()
+        status.uploading = coordinator.isPublishing
+        status.pending = coordinator.pendingPages.count
+        status.lastUpload = coordinator.lastPublish?.date
+        status.lastFiles = coordinator.lastPublish?.files ?? 0
+        status.error = coordinator.lastError
+        if store.sync != status { store.sync = status }
     }
 
     /// Everything with a name or a number in it. The panel carries almost no words, which only
     /// works because this exists.
-    private func showSettings(tab: SettingsView.Tab = .pens) {
+    private func showSettings(tab: SettingsTab? = nil) {
         panel?.dismiss()
         if settingsWindow == nil {
+            let log = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Logs/BrainioPen/brainio-pen.log")
+            let info = AppInfo(version: Self.version, sdk: Self.sdkVersion.replacingOccurrences(of: "/", with: " "),
+                               configURL: configURL, logURL: log)
             let store = SettingsStore(pens: pens, books: books, config: config, configURL: configURL,
-                                      link: session)
+                                      info: info, link: session)
             settingsStore = store
             store.onConfigChange = { [weak self] updated in
                 guard let self else { return }
+                let bucketChanged = updated.s3 != config.s3 || sync.isConnected != (updated.s3Account() != nil)
                 config = updated
-                coordinator.quietWindow = updated.quietMinutes * 60
-                // The agent, the key or the window may all have changed; rebuilding is cheaper to
-                // reason about than patching each field.
-                makeProcessor()
+                coordinator.quietWindow = updated.quietSeconds
+                if bucketChanged { connectBucket() }
                 stateChanged()
             }
-            settingsWindow = SettingsWindowController(store: store, tab: tab)
+            // A new title is a changed file with no page to carry it, so it is sent now.
+            store.onRecordsChange = { [weak self] in self?.coordinator.publishAll() }
+            store.onSyncNow = { [weak self] in
+                self?.coordinator.publishAll()
+                self?.stateChanged()
+            }
+            settingsWindow = SettingsWindowController(store: store, tab: tab ?? .pens)
+            pushSyncStatus()
+        } else if let tab {
+            settingsWindow?.select(tab)
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.showWindow(nil)
@@ -360,18 +324,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         viewerWindow?.showWindow(nil)
         viewerWindow?.retitle()
         viewerWindow?.window?.makeKeyAndOrderFront(nil)
-    }
-
-    /// The actions, down the right-hand edge. One window, kept open as long as somebody wants it:
-    /// an answer arrives while you are doing something else, and it should arrive somewhere you
-    /// can see.
-    private func showActions(expanding id: String? = nil) {
-        panel?.dismiss()
-        if actionsWindow == nil {
-            actionsWindow = ActionsWindowController(store: actions)
-            actionsWindow?.onClose = { [weak self] in self?.actionsWindow = nil }
-        }
-        actionsWindow?.show(expanding: id)
     }
 
     // MARK: panel

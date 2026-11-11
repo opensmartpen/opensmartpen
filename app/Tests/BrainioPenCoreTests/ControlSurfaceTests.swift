@@ -220,8 +220,13 @@ final class ControlSurfaceTests: XCTestCase {
     // MARK: the coordinator
 
     func makeCoordinator() throws -> (SyncCoordinator, BookRegistry, RawStore) {
-        let publisher = GitPublisher(repo: root, push: false)
-        _ = try publisher.ensureRepository()
+        // A bucket that is a dictionary. One has to be connected for anything to be owed to it.
+        let publisher = S3Sync(root: root, ledger: root.appendingPathComponent("uploaded.json"))
+        var settings = S3Settings()
+        settings.bucket = "notes"
+        settings.accessKeyId = "AKIAEXAMPLE"
+        publisher.connect(S3Client(account: try XCTUnwrap(S3Account(settings: settings, secret: "s")),
+                                   transport: FakeBucket()))
         let store = RawStore(root: root, app: "c", sdk: "s")
         let books = BookRegistry(root: root)
         let c = SyncCoordinator(store: store, router: PageRouter(books: books, store: store),

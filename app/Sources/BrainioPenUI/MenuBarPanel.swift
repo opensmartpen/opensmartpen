@@ -13,6 +13,21 @@ public final class MenuBarPanel: NSPanel {
     /// Never closer than this to the edge of the screen.
     private static let margin: CGFloat = 8
 
+    private static let radius: CGFloat = 10
+
+    /// A rounded rectangle that stretches from its middle, so one small image fits any size.
+    private static func mask(radius: CGFloat) -> NSImage {
+        let side = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
+    }
+
     private var outsideClick: Any?
     private var onClose: (() -> Void)?
 
@@ -35,10 +50,11 @@ public final class MenuBarPanel: NSPanel {
         blur.material = .menu
         blur.blendingMode = .behindWindow
         blur.state = .active
-        blur.wantsLayer = true
-        blur.layer?.cornerRadius = 10
-        blur.layer?.cornerCurve = .continuous
-        blur.layer?.masksToBounds = true
+        // A mask image, not a rounded layer. The material is drawn by the window server behind
+        // the window, where a layer's corner radius does not reach: the layer clips the content
+        // and leaves a few pixels of unclipped material showing in each corner. The mask is what
+        // the window server itself cuts the material, and the shadow, to.
+        blur.maskImage = Self.mask(radius: Self.radius)
 
         let view = content.view
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -78,6 +94,9 @@ public final class MenuBarPanel: NSPanel {
         setFrameOrigin(NSPoint(x: x, y: onScreen.minY - size.height - Self.gap))
 
         orderFrontRegardless()
+        // The shadow is cut to the window's shape when it is first drawn, and kept. A panel that
+        // has changed size since then would otherwise wear the outline of the size it was.
+        invalidateShadow()
         makeKey()
         watchForOutsideClick()
     }
@@ -128,5 +147,6 @@ public final class MenuBarPanel: NSPanel {
         let top = frame.maxY
         setContentSize(size)
         setFrameOrigin(NSPoint(x: frame.minX, y: top - size.height))
+        invalidateShadow()
     }
 }

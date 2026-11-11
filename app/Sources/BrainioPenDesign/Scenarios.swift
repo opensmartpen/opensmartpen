@@ -6,7 +6,6 @@ private typealias Snapshot = PanelModel.Snapshot
 private typealias PenRow = PanelModel.PenRow
 private typealias PendingRow = PanelModel.PendingRow
 private typealias RecentBook = PanelModel.RecentBook
-private typealias ActionItem = PanelModel.ActionItem
 private typealias Battery = PanelModel.Battery
 private typealias Publish = PanelModel.Publish
 
@@ -17,7 +16,7 @@ private typealias Publish = PanelModel.Publish
 /// menubar by accident.
 ///
 /// They exist at all because several of these states are hard to reach on demand with real
-/// hardware: a failing push, a pen memory drain and a first run each take deliberate setup to
+/// hardware: a failing upload, a pen memory drain and a first run each take deliberate setup to
 /// see even once.
 public enum Scenario: String, CaseIterable {
     case synced, writing, waiting, copying, failing, asleep, bluetoothOff, firstRun
@@ -45,7 +44,7 @@ public enum Scenario: String, CaseIterable {
         case .writing: return "strokes arriving now"
         case .waiting: return "in the quiet window"
         case .copying: return "draining pen memory"
-        case .failing: return "3+ push failures"
+        case .failing: return "3+ upload failures"
         case .asleep: return "the usual state"
         case .bluetoothOff: return "the one real blocker"
         case .firstRun: return "never paired"
@@ -81,7 +80,7 @@ public enum Scenario: String, CaseIterable {
                          PendingRow(id: "p2", label: pad, deadline: now, isLive: false)]
             s.recent = []
             s.status = .failing(attempts: 4, nextTry: now.addingTimeInterval(120),
-                                error: "fatal: could not read from remote repository")
+                                error: "The bucket cannot be reached: the Internet connection appears to be offline.")
         case .asleep:
             s.status = .asleep
         case .bluetoothOff:
@@ -136,7 +135,7 @@ public enum Scenario: String, CaseIterable {
         s.ink = .red
         s.width = .medium
         s.battery = Battery(percent: 16, charging: false, low: true)
-        s.lastPublish = Publish(date: now.addingTimeInterval(-260), commit: "4e35b96", pages: 2)
+        s.lastPublish = Publish(date: now.addingTimeInterval(-260), files: 4, pages: 2)
         s.recent = [
             Self.book("s3-o1012-b3017-2b81e4", "LAMY digital paper",
                       PageID(section: 3, owner: 1012, book: 3017, page: 6),
@@ -144,52 +143,7 @@ public enum Scenario: String, CaseIterable {
             Self.book("s3-o27-b450-7f3a9c", "Ncode A4 pad",
                       PageID(section: 3, owner: 27, book: 450, page: 3), binding: .pad),
         ]
-        s.actions = [
-            Self.action("1", "Find out who is Ondrej Siroky from Apoco", done: false),
-            Self.action("2", "Send the pricing to Brainio", done: false),
-            Self.action("3", "Call the landlord back", done: true),
-        ]
         return s
-    }
-
-    /// The actions column with one of everything on it: a line nobody has touched, one the agent
-    /// is on and has come back with a question, two finished, one thrown out. Static, because
-    /// the column is not what changes between scenarios; the panel is.
-    static var actionsColumn: [ActionsStore.Item] {
-        let page = PageRef(folder: BookFolder(name: "s3-o1012-b3017-2b81e4")!,
-                           page: PageID(section: 3, owner: 1012, book: 3017, page: 6))
-        let now = Date()
-        func item(_ id: String, _ action: PageAction, page number: Int = 6, ago: TimeInterval = 0,
-                  status: ActionsStore.Status) -> ActionsStore.Item {
-            ActionsStore.Item(id: id, page: page, book: "LAMY digital paper", pageNumber: number,
-                       written: now.addingTimeInterval(-ago), action: action, status: status)
-        }
-        return [
-            item("1", PageAction(text: "Find out who is Ondřej Široký from Apoco"), status: .new),
-            item("2", PageAction(text: "Send the pricing to Brainio",
-                                 note: "Which pricing — the seat plan or the API rates?",
-                                 thread: [
-                                     ActionMessage(from: .agent,
-                                                   text: "I found two price lists in the drive. Which pricing — the **seat plan** or the **API rates**?",
-                                                   status: .needsInfo),
-                                 ]), status: .wip),
-            item("3", PageAction(text: "Book the dentist for the week after next"),
-                 page: 5, ago: 86_400, status: .new),
-            item("4", PageAction(text: "Call the landlord back", done: true), page: 4, ago: 2 * 86_400,
-                 status: .done),
-            item("5", PageAction(text: "Renew the domain", done: true), page: 4, ago: 2 * 86_400,
-                 status: .done),
-            item("6", PageAction(text: "Try the new coffee place", dismissed: true), page: 3,
-                 ago: 3 * 86_400, status: .dismissed),
-        ]
-    }
-
-    private static func action(_ id: String, _ text: String, done: Bool) -> ActionItem {
-        ActionItem(id: id,
-                   page: PageRef(folder: BookFolder(name: "s3-o1012-b3017-2b81e4")!,
-                                 page: PageID(section: 3, owner: 1012, book: 3017, page: 6)),
-                   book: "LAMY digital paper", pageNumber: 6, written: Date(),
-                   action: PageAction(text: text, done: done), status: done ? .done : .new)
     }
 
     private static func book(_ folder: String, _ title: String, _ page: PageID,

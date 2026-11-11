@@ -12,19 +12,23 @@ public struct Config: Codable, Equatable {
     /// Where the notes were before ADR-002 moved them. Read from an older config file so the
     /// move can find them once; never written.
     public var legacyRepoPath: String?
-    /// Minutes without strokes before a page is published.
-    public var quietMinutes: Double = 10
+    /// Seconds with no event at all from any pen before the waiting pages are uploaded. Short,
+    /// because whatever reads the bucket should see a page soon after the pen is put down; long
+    /// enough that a page in the middle of a sentence is not sent once per word.
+    public var quietSeconds: Double = 30
     /// The pens this Mac accepts. Empty until the first pen is paired automatically; every pen
     /// after that is added in Settings, so a pen on the next desk is never taken by accident.
     /// An older config's single `penMac` and `penPeripheralId` are read into this list.
     public var pairedPens: [PairedPen] = []
     /// PIN for a password-protected pen. Nil means no PIN.
     public var penPassword: String?
-    /// Delete a notebook from pen memory once its strokes are committed.
+    /// Delete a notebook from pen memory once its strokes are synced: uploaded when a bucket is
+    /// connected, on this Mac's disk when none is.
     public var deleteFromPenAfterPublish: Bool = true
-    /// Push after every commit. Off by default: the repository is a record of what changed, not
-    /// the place the notes live. Add an `origin` remote and turn this on to send them somewhere.
-    public var gitPush: Bool = false
+    /// The bucket everything is copied to. Empty until one is connected in Settings, and until
+    /// then the notes simply stay on this Mac. The secret key is not here: it is in `s3-secret`
+    /// beside this file (`S3Secret`).
+    public var s3 = S3Settings()
     /// Pen power settings, applied on every connect when set. Nil leaves the pen's own value alone.
     /// `penAutoPowerOn` wakes the pen when the tip is pressed or the cap comes off, which is what
     /// stops strokes being lost to a sleeping pen. `penAutoPowerOffMinutes` is the inactivity timeout.
@@ -37,38 +41,6 @@ public struct Config: Codable, Equatable {
     /// colour strip that came with the LAMY pad. Taps on these are commands, not notes, so they
     /// are logged and discarded instead of being filed as pages.
     public var controlBooks: [String] = ["s3/o1013/b1"]
-
-    /// The DAM agent that transcribes a page once it has gone quiet, as `https://dam.example.com` and an
-    /// `agent-…` id. Both nil leaves transcription off, and the app behaves exactly as it did before.
-    /// The API key is not here: it is in `dam-key` beside this file (`DamKey`).
-    public var damHost: String?
-    public var damAgentId: String?
-    /// Every assistant that has been switched on, with what each says it does.
-    ///
-    /// `damAgentId` is the transcriber, and it is deliberately the one with nothing confidential
-    /// behind it: transcribing means looking at whatever somebody wrote on paper, and a page is an
-    /// untrusted document. The assistants are the ones with the connections, and a page cannot
-    /// reach them — it can only have one proposed for it, which a person can change.
-    ///
-    /// An entry here is an assistant somebody switched on. Its summary arrives a moment later,
-    /// from the agent itself, and until it has the entry is not offered anywhere: see `assistants`.
-    public var damRoster: [DamAgentProfile] = []
-
-    /// The assistants an action may be handed to: switched on, answered, and not the transcriber.
-    ///
-    /// The transcriber is left out because it has no connections, so proposing it says nothing.
-    /// An agent that has not answered is left out because the transcriber chooses by what each
-    /// one says it can reach, and "no description" gives it nothing to choose by.
-    public var assistants: [DamAgentProfile] {
-        damRoster.filter { $0.id != damAgentId && $0.summary != nil }
-    }
-    /// Minutes without strokes before a page is sent to DAM to be transcribed.
-    ///
-    /// Much shorter than `quietMinutes`, and for a different reason. A commit is a record and can
-    /// wait; a transcript is what a person looks at, so it should be there when they put the pen down.
-    /// A page written on again is simply sent again — the text is derived, and regenerating it
-    /// costs nothing but a turn.
-    public var damQuietMinutes: Double = 1
 
     /// Notify when battery falls to or below this percentage.
     public var lowBatteryPercent: Int = 20
@@ -94,7 +66,7 @@ public struct Config: Codable, Equatable {
         let d = Config()
         dataPath = try c.decodeIfPresent(String.self, forKey: .dataPath) ?? d.dataPath
         legacyRepoPath = try c.decodeIfPresent(String.self, forKey: .repoPath)
-        quietMinutes = try c.decodeIfPresent(Double.self, forKey: .quietMinutes) ?? d.quietMinutes
+        quietSeconds = try c.decodeIfPresent(Double.self, forKey: .quietSeconds) ?? d.quietSeconds
         if let list = try c.decodeIfPresent([PairedPen].self, forKey: .pairedPens) {
             pairedPens = list
         } else {
@@ -108,21 +80,16 @@ public struct Config: Codable, Equatable {
         penAutoPowerOffMinutes = try c.decodeIfPresent(Int.self, forKey: .penAutoPowerOffMinutes)
         penCapPowerOff = try c.decodeIfPresent(Bool.self, forKey: .penCapPowerOff)
         controlBooks = try c.decodeIfPresent([String].self, forKey: .controlBooks) ?? d.controlBooks
-        damHost = try c.decodeIfPresent(String.self, forKey: .damHost)
-        damAgentId = try c.decodeIfPresent(String.self, forKey: .damAgentId)
-        damRoster = try c.decodeIfPresent([DamAgentProfile].self, forKey: .damRoster) ?? []
-        damQuietMinutes = try c.decodeIfPresent(Double.self, forKey: .damQuietMinutes) ?? d.damQuietMinutes
-        gitPush = try c.decodeIfPresent(Bool.self, forKey: .gitPush) ?? d.gitPush
+        s3 = try c.decodeIfPresent(S3Settings.self, forKey: .s3) ?? d.s3
         lowBatteryPercent = try c.decodeIfPresent(Int.self, forKey: .lowBatteryPercent) ?? d.lowBatteryPercent
         memoryWarnPercent = try c.decodeIfPresent(Int.self, forKey: .memoryWarnPercent) ?? d.memoryWarnPercent
         sdkDebugLog = try c.decodeIfPresent(Bool.self, forKey: .sdkDebugLog) ?? d.sdkDebugLog
     }
 
-    /// The DAM agent to hand pages to, or nil when transcription is not set up. Asking for the key here
-    /// rather than storing it keeps one answer to "is this configured": all three parts, or none.
-    public func damAccount(key: String? = DamKey.read()) -> DamAccount? {
-        guard let damHost, let damAgentId, let key, !key.isEmpty else { return nil }
-        return DamAccount(host: damHost, agentId: damAgentId, apiKey: key)
+    /// The bucket to upload to, or nil when one is not connected. Asking for the secret here
+    /// rather than storing it keeps one answer to "is this configured": every part, or none.
+    public func s3Account(secret: String? = S3Secret.read()) -> S3Account? {
+        S3Account(settings: s3, secret: secret)
     }
 
     public var dataURL: URL {
@@ -141,30 +108,27 @@ public struct Config: Codable, Equatable {
     }
 
     /// `repoPath`, `penMac` and `penPeripheralId` are decoded but never encoded, so adopting an
-    /// old config does not carry the old shape forward once it has been read.
+    /// old config does not carry the old shape forward once it has been read. Keys from before
+    /// the bucket — the git push, the DAM agents, the wait in minutes — are not read at all, and
+    /// fall out of the file the next time it is saved.
     private enum CodingKeys: String, CodingKey {
-        case dataPath, repoPath, quietMinutes, pairedPens, penMac, penPeripheralId, penPassword
-        case deleteFromPenAfterPublish, gitPush, penAutoPowerOn, penAutoPowerOffMinutes
+        case dataPath, repoPath, quietSeconds, pairedPens, penMac, penPeripheralId, penPassword
+        case deleteFromPenAfterPublish, s3, penAutoPowerOn, penAutoPowerOffMinutes
         case penCapPowerOff, controlBooks, lowBatteryPercent, memoryWarnPercent, sdkDebugLog
-        case damHost, damAgentId, damRoster, damQuietMinutes
     }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(dataPath, forKey: .dataPath)
-        try c.encode(quietMinutes, forKey: .quietMinutes)
+        try c.encode(quietSeconds, forKey: .quietSeconds)
         try c.encode(pairedPens, forKey: .pairedPens)
         try c.encodeIfPresent(penPassword, forKey: .penPassword)
         try c.encode(deleteFromPenAfterPublish, forKey: .deleteFromPenAfterPublish)
-        try c.encode(gitPush, forKey: .gitPush)
+        if !s3.isEmpty { try c.encode(s3, forKey: .s3) }
         try c.encodeIfPresent(penAutoPowerOn, forKey: .penAutoPowerOn)
         try c.encodeIfPresent(penAutoPowerOffMinutes, forKey: .penAutoPowerOffMinutes)
         try c.encodeIfPresent(penCapPowerOff, forKey: .penCapPowerOff)
         try c.encode(controlBooks, forKey: .controlBooks)
-        try c.encodeIfPresent(damHost, forKey: .damHost)
-        try c.encodeIfPresent(damAgentId, forKey: .damAgentId)
-        if !damRoster.isEmpty { try c.encode(damRoster, forKey: .damRoster) }
-        try c.encode(damQuietMinutes, forKey: .damQuietMinutes)
         try c.encode(lowBatteryPercent, forKey: .lowBatteryPercent)
         try c.encode(memoryWarnPercent, forKey: .memoryWarnPercent)
         try c.encode(sdkDebugLog, forKey: .sdkDebugLog)

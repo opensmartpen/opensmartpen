@@ -4,8 +4,8 @@ import SwiftUI
 
 /// Violet ink. The resting state carries no colour at all — ink on paper is the "everything is
 /// fine" signal — so the accent only appears on work in flight, and red only when something wants
-/// fixing. Green is for one thing: a line that has been carried out. Nowhere else — this is a
-/// pen, not a router.
+/// fixing. Green is for one thing: something that has been checked and works. Nowhere else —
+/// this is a pen, not a router.
 enum Ink {
     static let accent = Color(nsColor: dynamic(light: NSColor(srgbRed: 0.357, green: 0.247, blue: 0.769, alpha: 1),
                                                dark: NSColor(srgbRed: 0.655, green: 0.592, blue: 0.941, alpha: 1)))
@@ -71,7 +71,6 @@ public struct StatusPanel: View {
                 if case let .failing(_, _, error) = model.status { section { failure(error) } }
                 if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
                 if !model.recent.isEmpty { section(inset: 5) { recent } }
-                if !model.actions.isEmpty { section(inset: 5) { actions } }
                 footer
             }
             // Over the panel rather than in a row of its own. It acts on the window, not on
@@ -106,8 +105,7 @@ public struct StatusPanel: View {
     // MARK: recent — click to open the rendered page
 
     private var recent: some View {
-        // A heading, like the actions have: the two lists sit one above the other, and a list
-        // with a name over it next to one without looks like one list with a rule through it.
+        // A heading, so that a short list of titles under a row of pens says what it is.
         VStack(alignment: .leading, spacing: 2) {
             Text("Notebooks")
                 .font(.system(size: 10.5, weight: .medium))
@@ -116,35 +114,6 @@ public struct StatusPanel: View {
                 .padding(.bottom, 2)
             ForEach(model.recent) { book in
                 RecentRow(book: book) { model.open(book) }
-            }
-        }
-    }
-
-    // MARK: actions — the lines written for an assistant, click to open the page
-
-    private var actions: some View {
-        // A heading here where the notebooks have none: a notebook row looks like a notebook, and
-        // a line of handwriting copied out of a page looks like nothing in particular until it is
-        // named.
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Text("Actions")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
-                // The rest of them, and the conversations, in the window down the side.
-                Button { model.showAllActions() } label: {
-                    Text("All")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.tertiary)
-                }
-                .buttonStyle(.plain)
-                .help("Every action, in a window of its own")
-            }
-            .padding(.horizontal, 9)
-            .padding(.bottom, 2)
-            ForEach(model.actions) { action in
-                ActionLine(action: action, model: model) { model.open(action) }
             }
         }
     }
@@ -294,17 +263,6 @@ public struct StatusPanel: View {
                 // become key, so the keystrokes it advertised often did nothing — and a
                 // shortcut that fails half the time is worse than no shortcut at all. The
                 // handler stays; only the promise is gone.
-                // Only when there is something to send. A page goes on its own a minute after it
-                // is put down, so this is for the person who does not want to wait — and it is a
-                // count, because the number of pages still owed a transcript is the thing you want
-                // to know before you ask for them.
-                if model.isTranscribing {
-                    MenuItem(title: model.owed > 0
-                        ? "Transcribing… (\(model.owed) left)" : "Transcribing…") {}
-                } else if model.owed > 0 {
-                    MenuItem(title: "Transcribe \(model.owed) page\(model.owed == 1 ? "" : "s") now",
-                             action: model.transcribeNow)
-                }
                 MenuItem(title: "Settings…", action: model.openConfig)
                 MenuItem(title: "Quit") { NSApp.terminate(nil) }
             }
@@ -398,120 +356,6 @@ private struct RecentRow: View {
         .background(RoundedRectangle(cornerRadius: 5)
             .fill(hovering ? Color.primary.opacity(0.07) : Color.clear))
         .onHover { hovering = $0 }
-    }
-}
-
-/// One line addressed to an assistant. It shows and does not act: clicking opens the page it was
-/// written on, because carrying it out is not built yet and a row that pretends otherwise is worse
-/// than one that does not.
-private struct ActionLine: View {
-    let action: PanelModel.ActionItem
-    @ObservedObject var model: PanelModel
-    let open: () -> Void
-    @State private var hovering = false
-
-    private var busy: Bool { model.busyActions.contains(action.action.key) }
-
-    /// A line nobody has started, with an agent to start it: the mark is a play button only then.
-    private var runnable: Bool { model.canRun && action.status == .new && !busy }
-
-    var body: some View {
-        HStack(spacing: 9) {
-            // The same mark as the window, doing the same thing: play on a fresh line, stop on a
-            // running one, and a mark on every other. The row beside it opens the page.
-            Button {
-                if busy { model.stop(action) } else if runnable { model.run(action) }
-            } label: {
-                Image(systemName: symbol)
-                    .font(.system(size: 13))
-                    .foregroundStyle(colour)
-                    .frame(width: 17, height: 17)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!runnable && !busy)
-            .help(busy ? "Stop the agent" : runnable ? "Execute: hand this line to the agent" : "")
-            Button(action: open) {
-                HStack(spacing: 9) {
-                    Text(action.text)
-                        .font(.system(size: 12))
-                        .foregroundStyle(action.action.state == .open ? Color.primary : Color.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    // Stopped at DAM's gate. A hand rather than a word: the line itself needs the
-                    // width, and clicking the row is where the question can actually be read.
-                    if model.isWaiting(action) {
-                        Image(systemName: "hand.raised.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(Ink.accent)
-                            .help("The agent is waiting for your say-so")
-                    }
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(action.text)
-            // Three dots rather than a row of little buttons: the panel is 252 points wide, and a
-            // line of handwriting needs every one of them it can get.
-            Menu {
-                if model.canRun, action.action.state == .open {
-                    Button("Execute") { model.run(action) }
-                }
-                if action.action.done {
-                    Button("Reopen") { model.setDone(action, false) }
-                } else if !action.action.dismissed {
-                    Button("Mark as done") { model.setDone(action, true) }
-                }
-                if action.action.dismissed {
-                    Button("Put it back") { model.setDismissed(action, false) }
-                } else {
-                    Button("Delete") { model.setDismissed(action, true) }
-                }
-                Divider()
-                // Where the rest of it lives: the whole page, what the agent said back, and the
-                // box for the part the paper left out.
-                Button("Reveal in notebook") { open() }
-            } label: {
-                if busy {
-                    ProgressView().controlSize(.small).scaleEffect(0.6)
-                } else {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 11))
-                        .foregroundStyle(hovering ? Color.secondary : Color.clear)
-                }
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(width: 16)
-            .disabled(busy)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 5)
-            .fill(hovering ? Color.primary.opacity(0.07) : Color.clear))
-        .onHover { hovering = $0 }
-    }
-
-    private var symbol: String {
-        if busy { return "stop.circle" }
-        switch action.status {
-        case .new: return runnable ? "play.circle" : "circle"
-        case .wip: return "circle.inset.filled"
-        case .done: return "checkmark.circle"
-        case .dismissed: return "xmark.circle"
-        }
-    }
-
-    /// The window's rule: green for done, violet for what is moving, grey for the rest.
-    private var colour: Color {
-        if busy { return Ink.accent }
-        switch action.status {
-        case .new: return .secondary
-        case .wip: return Ink.accent
-        case .done: return Ink.done
-        case .dismissed: return Color.secondary.opacity(0.5)
-        }
     }
 }
 
@@ -709,6 +553,10 @@ private struct PenTile: View {
                 }
                 .padding(.top, 4)
             }
+            // A pen that is not connected drops back, so the one that is stands out without a
+            // badge on either. The glyph, the name and the bar fade together; the chip under an
+            // open tile does not, because that says which pen is showing, not which is here.
+            .opacity(pen.awake ? 1 : 0.55)
             .padding(.horizontal, 4)
             .padding(.top, 7)
             .padding(.bottom, 6)

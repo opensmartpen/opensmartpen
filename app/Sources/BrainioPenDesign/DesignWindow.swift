@@ -5,28 +5,18 @@ import SwiftUI
 
 /// A detached, always-visible copy of the panel for working on the design.
 ///
-/// This is the whole of `brainio-pen-design`: no pen, no git, no menubar item. That is deliberate
-/// — it means the design window can run beside the installed LaunchAgent without two processes
-/// committing to the same repo.
+/// This is the whole of `brainio-pen-design`: no pen, no bucket, no menubar item. That is
+/// deliberate — it means the design window can run beside the installed LaunchAgent without two
+/// processes writing to the same notes folder.
 ///
 /// Both appearances are drawn side by side, because a light-only check is how a panel ends up with
 /// one hard-coded colour that vanishes in dark mode. States come from `Scenario`: several of them
-/// — a failing push, a memory drain, a first run — take real effort to provoke with actual
+/// — a failing upload, a memory drain, a first run — take real effort to provoke with actual
 /// hardware, and a design pass should not depend on being able to.
 final class DesignWindowController: NSWindowController, NSWindowDelegate {
     private static let scenarioKey = "design.scenario"
 
     private let model = PanelModel(snapshot: Scenario.synced.snapshot)
-    /// One list shared by both appearances, so opening a row in one opens it in the other.
-    private let actions: ActionsStore = {
-        let store = ActionsStore(books: BookRegistry(root: FileManager.default.temporaryDirectory),
-                                 root: FileManager.default.temporaryDirectory)
-        store.preview(Scenario.actionsColumn)
-        store.showDeleted = true
-        // One row open, so the conversation under it is part of what gets looked at.
-        store.expanded = "2"
-        return store
-    }()
     private var hosts: [NSHostingController<StatusPanel>] = []
     private var picker: NSSegmentedControl!
     private var caption: NSTextField!
@@ -74,13 +64,7 @@ final class DesignWindowController: NSWindowController, NSWindowDelegate {
         panes.distribution = .fillEqually
         panes.spacing = 14
 
-        // The actions column, under the panel, in both appearances too.
-        let columns = NSStackView(views: [column(.aqua), column(.darkAqua)])
-        columns.orientation = .horizontal
-        columns.distribution = .fillEqually
-        columns.spacing = 14
-
-        let stack = NSStackView(views: [picker, caption, panes, columns, icons])
+        let stack = NSStackView(views: [picker, caption, panes, icons])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 10
@@ -124,27 +108,6 @@ final class DesignWindowController: NSWindowController, NSWindowDelegate {
             host.view.centerXAnchor.constraint(equalTo: ground.centerXAnchor),
             // The panel sizes itself; the ground must not stretch it, only be tall enough for it.
             host.view.bottomAnchor.constraint(lessThanOrEqualTo: ground.bottomAnchor, constant: -16),
-        ])
-        return ground
-    }
-
-    /// One appearance's copy of the actions column, at the width the real window is.
-    private func column(_ appearance: NSAppearance.Name) -> NSView {
-        let host = NSHostingController(rootView: ActionsView(store: actions))
-        let ground = NSView()
-        ground.wantsLayer = true
-        ground.appearance = NSAppearance(named: appearance)
-        ground.layer?.backgroundColor = (appearance == .darkAqua
-            ? NSColor(white: 0.09, alpha: 1) : NSColor(white: 0.96, alpha: 1)).cgColor
-        ground.layer?.cornerRadius = 10
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        ground.addSubview(host.view)
-        NSLayoutConstraint.activate([
-            host.view.topAnchor.constraint(equalTo: ground.topAnchor, constant: 12),
-            host.view.bottomAnchor.constraint(equalTo: ground.bottomAnchor, constant: -12),
-            host.view.trailingAnchor.constraint(equalTo: ground.trailingAnchor),
-            host.view.widthAnchor.constraint(equalToConstant: 340),
-            ground.heightAnchor.constraint(equalToConstant: 600),
         ])
         return ground
     }

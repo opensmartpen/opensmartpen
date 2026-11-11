@@ -104,13 +104,19 @@ final class StoreAndTrackerTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         var edited = created
         edited.pairedPens = [PairedPen(mac: "9C:7B:D2:00:00:01")]
-        edited.quietMinutes = 3
+        edited.quietSeconds = 45
+        edited.s3.bucket = "notes"
+        edited.s3.accessKeyId = "AKIAEXAMPLE"
         try edited.save(to: url)
         XCTAssertEqual(try Config.loadOrCreate(at: url), edited)
         // A partial file (older version, hand-edited) still loads: missing keys take defaults.
-        try Data("{\"quietMinutes\": 1}".utf8).write(to: url)
-        XCTAssertEqual(try Config.loadOrCreate(at: url).quietMinutes, 1)
-        XCTAssertEqual(try Config.loadOrCreate(at: url).gitPush, false)
+        try Data("{\"quietSeconds\": 15}".utf8).write(to: url)
+        XCTAssertEqual(try Config.loadOrCreate(at: url).quietSeconds, 15)
+        XCTAssertTrue(try Config.loadOrCreate(at: url).s3.isEmpty)
+        // A file from before the bucket still loads, and what it said about git and DAM is dropped.
+        try Data("{\"quietMinutes\": 10, \"gitPush\": true, \"damHost\": \"https://dam.example.com\"}".utf8)
+            .write(to: url)
+        XCTAssertEqual(try Config.loadOrCreate(at: url), Config())
     }
 
     /// A config from before pens were a list names one pen. It must come back as a list of one,
@@ -179,7 +185,7 @@ final class StoreAndTrackerTests: XCTestCase {
         let new = root.appendingPathComponent("brainio-pen")
         try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
         var legacy = Config()
-        legacy.quietMinutes = 99
+        legacy.quietSeconds = 99
         try legacy.save(to: old.appendingPathComponent("config.json"))
         try Data("{\"old\":1}".utf8).write(to: old.appendingPathComponent("pen-state.json"))
         try FileManager.default.createDirectory(at: new, withIntermediateDirectories: true)
@@ -187,7 +193,7 @@ final class StoreAndTrackerTests: XCTestCase {
 
         XCTAssertTrue(Config.adoptLegacyDirectory(at: new.appendingPathComponent("config.json"),
                                                   legacy: old.appendingPathComponent("config.json")))
-        XCTAssertEqual(try Config.loadOrCreate(at: new.appendingPathComponent("config.json")).quietMinutes, 99,
+        XCTAssertEqual(try Config.loadOrCreate(at: new.appendingPathComponent("config.json")).quietSeconds, 99,
                        "config.json was missing, so it is adopted")
         let kept = try String(contentsOf: new.appendingPathComponent("pen-state.json"), encoding: .utf8)
         XCTAssertEqual(kept, "{\"mine\":1}", "pen-state.json was already there and is left alone")
@@ -198,15 +204,15 @@ final class StoreAndTrackerTests: XCTestCase {
         let new = root.appendingPathComponent("brainio-pen")
         try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
         var legacy = Config()
-        legacy.quietMinutes = 99
+        legacy.quietSeconds = 99
         try legacy.save(to: old.appendingPathComponent("config.json"))
         var mine = Config()
-        mine.quietMinutes = 3
+        mine.quietSeconds = 3
         try mine.save(to: new.appendingPathComponent("config.json"))
 
         XCTAssertFalse(Config.adoptLegacyDirectory(at: new.appendingPathComponent("config.json"),
                                                    legacy: old.appendingPathComponent("config.json")))
-        XCTAssertEqual(try Config.loadOrCreate(at: new.appendingPathComponent("config.json")).quietMinutes, 3)
+        XCTAssertEqual(try Config.loadOrCreate(at: new.appendingPathComponent("config.json")).quietSeconds, 3)
     }
 
     /// The two real locations, spelled out. Every other test here passes explicit paths, so a typo

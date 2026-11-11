@@ -325,8 +325,8 @@ final class PenSession: NSObject {
     /// Write back only the field this object owns: which pens are paired.
     ///
     /// Two things save this file — the settings window and this — and each held its own copy of
-    /// the whole config. Whichever wrote last won, so pairing a pen quietly threw away an agent
-    /// roster somebody had just typed in. The file is re-read here so that everything this object
+    /// the whole config. Whichever wrote last won, so pairing a pen quietly threw away a
+    /// setting somebody had just typed in. The file is re-read here so that everything this object
     /// knows nothing about survives it.
     private func savePairedPens() {
         do {

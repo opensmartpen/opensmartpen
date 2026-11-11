@@ -1,17 +1,17 @@
 import Foundation
 
+/// Somewhere captured files are sent once they have gone quiet. In the app that is a bucket.
 public protocol Publishing: AnyObject {
-    var push: Bool { get set }
-    func publish(paths: [String], message: String) throws -> String?
-    /// Captured files written but never committed (survivors of a crash or restart).
+    /// Send these files, given relative to the notes folder. Returns how many actually went:
+    /// a file that has not changed since it was last sent is not sent again.
+    func publish(paths: [String]) throws -> Int
+    /// Captured files written but never sent (survivors of a crash, a restart, or a day offline).
     func dirtyPaths(under prefixes: [String]) -> [String]
 }
 
-extension GitPublisher: Publishing {}
-
-/// Owns the flow from strokes to commits: file each stroke in the copy of the notebook it
-/// belongs to, write it, track which pages are pending, publish pages once they are quiet, and
-/// tell the person when publishing keeps failing.
+/// Owns the flow from strokes to the bucket: file each stroke in the copy of the notebook it
+/// belongs to, write it, track which pages are pending, upload pages once they are quiet, and
+/// tell the person when uploading keeps failing.
 public final class SyncCoordinator {
     public let store: RawStore
     /// Decides which copy of a notebook an arriving stroke belongs to (ADR-002).
@@ -29,9 +29,23 @@ public final class SyncCoordinator {
 
     public struct PublishRecord: Equatable {
         public let date: Date
-        public let commit: String?
+        /// Files that went up. Nought when no bucket is connected, or when nothing had changed.
+        public let files: Int
         public let pages: Int
     }
+
+    /// When a pen last did anything at all: a dot on any page, a tap on the control strip. The
+    /// upload waits on this and not on each page. A page is not finished because the pen moved
+    /// to another one, and whatever reads the bucket should get a sitting's pages together, once.
+    public private(set) var lastActivity: Date = .distantPast
+
+    /// Called for every event a pen reports. Cheap enough for every dot.
+    public func penActive(at time: Date = Date()) {
+        if time > lastActivity { lastActivity = time }
+    }
+
+    /// When the pending pages will go, if no pen does anything before then.
+    public var uploadDue: Date { lastActivity.addingTimeInterval(quietWindow) }
 
     public private(set) var lastPublish: PublishRecord?
     public private(set) var consecutiveFailures = 0
@@ -58,8 +72,9 @@ public final class SyncCoordinator {
 
     public var pendingPages: [PageRef] { tracker.pendingPages }
 
-    /// The tracker lives in memory. On startup, adopt every uncommitted raw file as pending,
-    /// dated by its modification time, so a restart never strands written strokes.
+    /// The tracker lives in memory. On startup, and whenever a bucket is connected, adopt every
+    /// raw file that has not been sent as pending, dated by its modification time, so a restart
+    /// never strands written strokes.
     /// Returns the recovered pages.
     @discardableResult
     public func recoverPending() -> [PageRef] {
@@ -73,7 +88,7 @@ public final class SyncCoordinator {
             recovered.append(page)
         }
         if !recovered.isEmpty {
-            Log.info("recovered \(recovered.count) uncommitted page(s): \(recovered.map(\.description).sorted().joined(separator: ", "))")
+            Log.info("recovered \(recovered.count) unsent page(s): \(recovered.map(\.description).sorted().joined(separator: ", "))")
         }
         return recovered
     }
@@ -81,6 +96,7 @@ public final class SyncCoordinator {
     /// Strokes received live from the pen.
     public func ingestLive(_ strokes: [Stroke], now: Date = Date()) {
         guard !strokes.isEmpty else { return }
+        penActive(at: now)
         decodeControlTaps(strokes)
         do {
             let pages = try write(strokes, now: now)
@@ -154,42 +170,42 @@ public final class SyncCoordinator {
         return touched
     }
 
-    /// Where captured files live, as git pathspecs. Readable files are left out on purpose: they
-    /// can be made again, and a commit full of regenerated SVGs hides the strokes that changed.
-    static let capturePrefixes = ["books/", ModeLog.relativePath]
+    /// Everything that is the record: the pages, what each notebook and pen is called, and how
+    /// the ink is to be read. Anything else in the folder was made from these and can be made again.
+    static let capturePrefixes = ["books/", "pens/", ModeLog.relativePath, Palette.relativePath]
 
-    /// Periodic check: publish whatever has gone quiet.
+    /// Periodic check: once no pen has reported anything for the quiet window, upload every
+    /// page that is waiting.
     public func tick(now: Date = Date()) {
-        guard now >= nextRetry else { return }
-        let quiet = tracker.quietPages(now: now, window: quietWindow)
-        guard !quiet.isEmpty else { return }
-        publish(pages: quiet, reason: "quiet for \(Int(quietWindow / 60)) min", now: now)
+        guard now >= nextRetry, !inFlight else { return }
+        guard now.timeIntervalSince(lastActivity) >= quietWindow else { return }
+        let waiting = tracker.pendingPages
+        guard !waiting.isEmpty else { return }
+        publish(pages: waiting, reason: "no pen event for \(Int(quietWindow)) s", now: now)
     }
 
     /// Publish everything pending regardless of quiet state (menu action).
-    public func publishAll(now: Date = Date(), completion: ((Result<String?, Error>) -> Void)? = nil) {
-        let pages = tracker.pendingPages
-        guard !pages.isEmpty else {
-            completion?(.success(nil))
-            return
-        }
-        publish(pages: pages, reason: "manual", now: now, completion: completion)
+    ///
+    /// Runs even with no page pending: a notebook given a new title, or a pen a new name, is a
+    /// changed file with no page to ride along with, and this is how it gets sent today.
+    public func publishAll(now: Date = Date(), completion: ((Result<Int, Error>) -> Void)? = nil) {
+        publish(pages: tracker.pendingPages, reason: "manual", now: now, completion: completion)
     }
 
-    /// Commit the given pages (and push them when pushing is on). Pages written again while the
-    /// commit was in progress stay pending.
+    /// Upload the given pages. Pages written again while the upload was in progress stay pending.
     public func publish(pages: [PageRef], reason: String, now: Date = Date(),
-                        completion: ((Result<String?, Error>) -> Void)? = nil) {
+                        completion: ((Result<Int, Error>) -> Void)? = nil) {
         let sorted = pages.sorted { $0.description < $1.description }
         let snapshot = tracker.snapshot(of: sorted)
-        let paths = sorted.map(\.rawRelativePath) + untrackedRawPaths()
-        var message = "notes: \(sorted.count) page\(sorted.count == 1 ? "" : "s") (\(reason))\n\n"
-        message += sorted.map { "- \($0.description)" }.joined(separator: "\n")
+        // The small files first. They say what the pages are, so they should be there before
+        // the pages are.
+        let paths = untrackedRawPaths() + sorted.map(\.rawRelativePath)
+        Log.debug("sync (\(reason)): \(sorted.map(\.description).joined(separator: ", "))")
         inFlight = true
         workQueue.async { [self] in
-            let result: Result<String?, Error>
+            let result: Result<Int, Error>
             do {
-                result = .success(try publisher.publish(paths: paths, message: message))
+                result = .success(try publisher.publish(paths: paths))
             } catch {
                 result = .failure(error)
             }
@@ -201,14 +217,15 @@ public final class SyncCoordinator {
         }
     }
 
-    /// Raw files that belong in a commit but never enter the tracker: control-surface taps and the
-    /// mode log. They ride whatever publish happens next instead of starting one of their own. The
-    /// files are on disk the moment they arrive, so waiting leaves them unpublished, never unsaved.
+    /// Files that belong in the bucket but never enter the tracker: control-surface taps, the
+    /// mode log, the notebook and pen records. They ride whatever upload happens next instead of
+    /// starting one of their own. The files are on disk the moment they arrive, so waiting leaves
+    /// them unsent, never unsaved.
     private func untrackedRawPaths() -> [String] {
         publisher.dirtyPaths(under: Self.capturePrefixes).filter { path in
             guard let page = PageRef(rawRelativePath: path) else {
-                // Anything under a book that is not a captured page is a readable file, and those
-                // are regenerated rather than committed.
+                // Anything under a book's `pages` was made from the record. The one such file the
+                // bucket gets is the PNG, and that is drawn at upload rather than read from here.
                 return !path.contains("/pages/")
             }
             return controlBooks.contains(page.folder.surface)
@@ -220,29 +237,29 @@ public final class SyncCoordinator {
     /// When the next publish attempt is due after a failure; nil when nothing is being backed off.
     public var nextRetryAt: Date? { nextRetry == .distantPast ? nil : nextRetry }
 
-    private func finish(_ result: Result<String?, Error>, snapshot: [PageRef: Date], pages: Int, now: Date) {
+    private func finish(_ result: Result<Int, Error>, snapshot: [PageRef: Date], pages: Int, now: Date) {
         switch result {
-        case let .success(hash):
+        case let .success(files):
             tracker.clearIfUnchanged(snapshot)
-            lastPublish = PublishRecord(date: now, commit: hash, pages: pages)
-            if consecutiveFailures > 0 {
+            lastPublish = PublishRecord(date: now, files: files, pages: pages)
+            if consecutiveFailures >= 3 {
                 notifier.post(Notice(key: "publish-recovered", title: "Brainio Pen is syncing again",
-                                     body: "Notes are being committed normally."))
+                                     body: "Notes are being uploaded normally."))
             }
             consecutiveFailures = 0
             lastError = nil
             nextRetry = .distantPast
-            Log.info("published \(pages) page(s)\(hash.map { " as \($0)" } ?? " (nothing new)")")
+            if files > 0 { Log.info("uploaded \(files) file(s) for \(pages) page(s)") }
         case let .failure(error):
             consecutiveFailures += 1
-            lastError = "\(error)"
             // Back off: 1, 2, 4, … minutes, capped at 30.
             let delay = min(30.0, pow(2.0, Double(consecutiveFailures - 1))) * 60
             nextRetry = now.addingTimeInterval(delay)
-            Log.error("publish failed (\(consecutiveFailures)x): \(error)")
+            lastError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+            Log.error("upload failed (\(consecutiveFailures)x): \(lastError ?? "")")
             if consecutiveFailures >= 3 {
-                notifier.post(Notice(key: "publish-failed", title: "Brainio Pen cannot publish notes",
-                                     body: "\(consecutiveFailures) attempts failed. Strokes are safe on disk. Last error: \(error)"))
+                notifier.post(Notice(key: "publish-failed", title: "Brainio Pen cannot upload notes",
+                                     body: "\(consecutiveFailures) attempts failed. Strokes are safe on this Mac. \(lastError ?? "")"))
             }
         }
         onChange?()

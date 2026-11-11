@@ -2,11 +2,42 @@ import AppKit
 import BrainioPenCore
 import SwiftUI
 
+/// What the About tab says about this build, and where its files are. Handed in by the app,
+/// because the version and the SDK are facts of the layer above this one.
+public struct AppInfo {
+    public var name = "Brainio Pen"
+    public var version: String
+    public var sdk: String
+    public var configURL: URL
+    public var logURL: URL
+    public var sourceURL = URL(string: "https://github.com/apocohq/brainio-pen")!
+
+    public init(version: String, sdk: String, configURL: URL, logURL: URL) {
+        self.version = version
+        self.sdk = sdk
+        self.configURL = configURL
+        self.logURL = logURL
+    }
+}
+
+/// How the uploads are going, as the Sync tab shows it. Set by the app on every change.
+public struct SyncStatus: Equatable {
+    public var uploading = false
+    /// Pages written and not yet sent.
+    public var pending = 0
+    public var lastUpload: Date?
+    public var lastFiles = 0
+    /// Why the last attempt failed, or nil when it did not.
+    public var error: String?
+
+    public init() {}
+}
+
 /// Everything that has a name or a number you might want to change.
 ///
 /// The panel deliberately carries almost no words, which only works if there is somewhere else to
-/// put them. This is that place: the pens and the notebooks, where naming actually happens, plus
-/// the handful of settings that were previously only reachable by editing JSON by hand.
+/// put them. This is that place: the pens and the notebooks, where naming happens, the bucket the
+/// pages are copied to, and the handful of numbers the app runs on.
 public final class SettingsStore: ObservableObject {
     @Published var pens: [PenRecord] = []
     @Published var books: [BookRecord] = []
@@ -18,22 +49,48 @@ public final class SettingsStore: ObservableObject {
     /// MACs of the pens connected right now.
     @Published var connected: Set<String> = []
 
+    /// The bucket as it is being typed. Nothing here takes effect until Connect has proved it:
+    /// a bucket name applied one letter at a time is a dozen uploads to buckets that do not exist.
+    @Published var s3Draft: S3Settings
+    @Published var s3SecretDraft: String
+    @Published var s3State: S3State = .idle
+    @Published public var sync = SyncStatus()
+    /// A settings file that could not be written. Shown until a save works.
+    @Published var problem: String?
+
+    enum S3State: Equatable {
+        case idle
+        case checking
+        case failed(String)
+    }
+
+    let info: AppInfo
     private let penRegistry: PenRegistry
     private let bookRegistry: BookRegistry
     private let configURL: URL
+    private let secretURL: URL
+    private var savedSecret: String
     /// The running pens, for pairing. Nil in the design window, which has no pens.
     private weak var link: PenLink?
     private var pairedMacs: [String] = []
     /// Told when a setting that the running app cares about has changed.
     public var onConfigChange: ((Config) -> Void)?
+    /// Told when a pen or a notebook was renamed: a changed file with no page to ride along with.
+    public var onRecordsChange: (() -> Void)?
+    public var onSyncNow: (() -> Void)?
 
     public init(pens: PenRegistry, books: BookRegistry, config: Config, configURL: URL,
-                link: PenLink? = nil) {
+                info: AppInfo, link: PenLink? = nil, secretURL: URL = S3Secret.location) {
         penRegistry = pens
         bookRegistry = books
         self.config = config
         self.configURL = configURL
+        self.info = info
         self.link = link
+        self.secretURL = secretURL
+        savedSecret = S3Secret.read(at: secretURL) ?? ""
+        s3Draft = config.s3
+        s3SecretDraft = savedSecret
         readLink()
         reload()
     }
@@ -62,157 +119,87 @@ public final class SettingsStore: ObservableObject {
     }
 
     public func reload() {
-        // Only the pens this Mac accepts. A forgotten pen's record stays in the repo for the
-        // strokes it already wrote, but there is nothing left to set on it here.
+        // Only the pens this Mac accepts. A forgotten pen's record stays in the notes folder for
+        // the strokes it already wrote, but there is nothing left to set on it here.
         let paired = Set(pairedMacs)
         pens = link == nil ? penRegistry.pens : penRegistry.pens.filter { paired.contains($0.mac) }
         books = bookRegistry.books.sorted { $0.title < $1.title }
         palette = Palette.load(root: config.dataURL)
-        // The agents tab is a list of what the key can see, so the list is fetched when the window
-        // opens rather than only when somebody presses Check. Quietly: a failure here is shown
-        // where the rows would be, not as an alarm over a tab nobody is looking at.
-        if damAgents.isEmpty, let host = config.damHost, !host.isEmpty, !damApiKey.isEmpty {
-            Task { @MainActor in await self.fetchAgents(announce: false) }
-        }
     }
 
     func save(_ pen: PenRecord) {
         penRegistry.save(pen)
         reload()
+        onRecordsChange?()
     }
 
     func save(_ book: BookRecord) {
         bookRegistry.save(book)
         reload()
+        onRecordsChange?()
     }
 
-    /// The API key, held here only while the window is open. It is written to its own file beside
-    /// the config, never into the config itself, so the config stays safe to paste.
-    @Published var damApiKey = DamKey.read() ?? ""
-    /// What the last check said, for the person who has just typed a host in.
-    @Published var damStatus: String?
-    @Published var damAgents: [DamAgent] = []
+    // MARK: the bucket
 
-    /// The key, a moment after typing stops. Same reason as the rest, and one more: a key is
-    /// pasted, and a paste with no Return after it was silently doing nothing.
-    func saveKeySoon() {
-        keyPause?.invalidate()
-        keyPause = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.saveDamKey() }
-        }
-    }
+    /// A bucket is connected: the saved settings and the saved secret are a whole account.
+    var s3Connected: Bool { config.s3Account(secret: savedSecret) != nil }
 
-    private var keyPause: Timer?
+    /// The fields say something other than what is saved.
+    var s3Edited: Bool { s3Draft != config.s3 || s3SecretDraft != savedSecret }
 
-    func saveDamKey() {
-        do {
-            try DamKey.write(damApiKey)
-            onConfigChange?(config)
-            noteSaved()
-        } catch {
-            Log.error("writing the DAM key failed: \(error)")
-            damStatus = error.localizedDescription
-        }
-    }
-
-    /// Ask the server who we are talking to. Proves the host and the key in one call, and gives the
-    /// person a list to pick from instead of an id to copy.
+    /// Prove what is in the fields by writing one small file with it, and only then keep it.
+    ///
+    /// The test is the save. A bucket that was never written to is not a setting, it is a guess,
+    /// and the app would find that out an hour later in a notification.
     @MainActor
-    func checkDam() async { await fetchAgents(announce: true) }
-
-    /// The list of agents the key can see. `announce` says whether the outcome goes in the status
-    /// line: yes when somebody pressed Check, no when the window merely opened.
-    @MainActor
-    private func fetchAgents(announce: Bool) async {
-        guard let host = config.damHost, !host.isEmpty, !damApiKey.isEmpty else {
-            if announce { damStatus = "a host and a key are needed" }
+    func connectS3() async {
+        guard let account = S3Account(settings: s3Draft, secret: s3SecretDraft) else {
+            s3State = .failed("A bucket, an access key ID and a secret access key are needed.")
             return
         }
-        if announce { damStatus = "checking…" }
-        do {
-            // Any agent id will do for a listing: it is owner-wide and not bound to one.
-            let client = try DamClient(account: DamAccount(host: host,
-                                                           agentId: config.damAgentId ?? "none",
-                                                           apiKey: damApiKey))
-            damAgents = try await client.agents()
-            damStatus = damAgents.isEmpty ? "the key can see no agents"
-                : (announce ? "\(damAgents.count) agent(s)" : nil)
-        } catch {
-            damAgents = []
-            damStatus = error.localizedDescription
+        s3State = .checking
+        let client = S3Client(account: account)
+        let app = info.name
+        let outcome: Result<Void, Error> = await Task.detached {
+            Result { try client.check(app: app) }
+        }.value
+        switch outcome {
+        case .success:
+            do {
+                try S3Secret.write(s3SecretDraft, to: secretURL)
+                savedSecret = S3Secret.read(at: secretURL) ?? ""
+                config.s3 = s3Draft
+                s3State = .idle
+                saveConfig()
+            } catch {
+                s3State = .failed("The secret could not be saved: \(error.localizedDescription)")
+            }
+        case let .failure(error):
+            s3State = .failed(error.localizedDescription)
         }
     }
 
-    /// Which agent transcribes pages. Nil switches transcription off.
-    ///
-    /// The transcriber cannot also be an assistant: it has no connections, so offering it a line
-    /// says nothing, and the point of the split is that the agent that sees the paper is not one
-    /// of the agents that can act on it.
-    @MainActor
-    func setTranscriber(_ id: String?) {
-        config.damAgentId = id
-        if let id { config.damRoster.removeAll { $0.id == id } }
+    /// Stop uploading. Nothing in the bucket is touched, and nothing on this Mac either.
+    func disconnectS3() {
+        try? S3Secret.write(nil, to: secretURL)
+        savedSecret = ""
+        config.s3 = S3Settings()
+        s3Draft = S3Settings()
+        s3SecretDraft = ""
+        s3State = .idle
         saveConfig()
     }
 
-    /// Switch an assistant on: put it on the roster and ask it what it does, in one go.
-    ///
-    /// The question is the setup. Until the agent has answered it is on the list but offered
-    /// nowhere, because the transcriber chooses by what each assistant says it can reach. An agent
-    /// that cannot be asked cannot be used, so a failed question switches it off again and the
-    /// row says why.
-    @MainActor
-    func switchOn(_ agent: DamAgent) async {
-        failures[agent.id] = nil
-        if !config.damRoster.contains(where: { $0.id == agent.id }) {
-            config.damRoster.append(DamAgentProfile(id: agent.id, name: agent.name))
-            saveConfig()
-        }
-        let answered = await ask(agent.id)
-        if !answered, config.damRoster.first(where: { $0.id == agent.id })?.summary == nil {
-            config.damRoster.removeAll { $0.id == agent.id }
-            saveConfig()
-        }
+    /// Put the fields back to what is saved.
+    func revertS3() {
+        s3Draft = config.s3
+        s3SecretDraft = savedSecret
+        s3State = .idle
     }
 
-    @MainActor
-    func switchOff(_ id: String) {
-        failures[id] = nil
-        config.damRoster.removeAll { $0.id == id }
-        saveConfig()
-    }
+    func syncNow() { onSyncNow?() }
 
-    /// Ask one agent, in its own words, what it does and what it can reach. True when it answered.
-    @MainActor
-    @discardableResult
-    func ask(_ id: String) async -> Bool {
-        guard let host = config.damHost, !host.isEmpty, !damApiKey.isEmpty else {
-            failures[id] = "a host and a key are needed"
-            return false
-        }
-        asking.insert(id)
-        defer { asking.remove(id) }
-        do {
-            let runner = try DamRunner(account: DamAccount(host: host, agentId: id, apiKey: damApiKey))
-            let answer = AgentProfileAnswer(try await runner.run(prompt: AgentProfileAnswer.question,
-                                                                 timeout: 180).text)
-            guard let i = config.damRoster.firstIndex(where: { $0.id == id }) else { return false }
-            config.damRoster[i].summary = answer.summary
-            config.damRoster[i].systems = answer.systems
-            config.damRoster[i].askedAt = Date()
-            failures[id] = nil
-            saveConfig()
-            return true
-        } catch {
-            failures[id] = error.localizedDescription
-            return false
-        }
-    }
-
-    /// Agents being asked right now.
-    @Published var asking: Set<String> = []
-    /// What went wrong the last time each agent was asked, shown on its row until it answers.
-    @Published var failures: [String: String] = [:]
+    // MARK: saving
 
     func saveConfig() {
         do {
@@ -222,75 +209,62 @@ public final class SettingsStore: ObservableObject {
                 config.pairedPens = onDisk.pairedPens
             }
             try config.save(to: configURL)
+            problem = nil
             onConfigChange?(config)
-            noteSaved()
         } catch {
             Log.error("saving config failed: \(error)")
-            saved = "could not save: \(error.localizedDescription)"
+            problem = "The settings could not be saved: \(error.localizedDescription)"
         }
     }
-
-    /// What the window says about the last save, and when it stops saying it.
-    ///
-    /// A settings window that changes a file silently leaves everybody pressing Return to find out
-    /// whether it took. This is the answer to that question, in the corner, for a few seconds.
-    @Published var saved: String?
-    private var savedUntil: Timer?
-
-    private func noteSaved() {
-        saved = "Saved"
-        savedUntil?.invalidate()
-        savedUntil = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.saved = nil }
-        }
-    }
-
-    /// Save a field a moment after typing stops. Nothing here is worth a Save button, and nothing
-    /// here should need the Return key — that is a rule somebody has to be told, and nobody is.
-    func saveSoon() {
-        typingPause?.invalidate()
-        typingPause = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.saveConfig() }
-        }
-    }
-
-    private var typingPause: Timer?
 }
 
-public struct SettingsView: View {
-    @ObservedObject var store: SettingsStore
-    /// Which page it opens on. "Set up agents…" on an action has somewhere to go.
-    @State var tab: Tab = .pens
+// MARK: - tabs
 
-    public enum Tab: Hashable { case pens, books, general, agents }
+public enum SettingsTab: Int, CaseIterable {
+    case pens, books, sync, general, about
 
-    public var body: some View {
-        VStack(spacing: 0) {
-            TabView(selection: $tab) {
-                PensTab(store: store).tabItem { Text("Pens") }.tag(Tab.pens)
-                BooksTab(store: store).tabItem { Text("Notebooks") }.tag(Tab.books)
-                GeneralTab(store: store).tabItem { Text("General") }.tag(Tab.general)
-                AgentsTab(store: store).tabItem { Text("Agents") }.tag(Tab.agents)
-            }
-            // Nothing here has a Save button, so something has to say that a change landed. One
-            // line, in the same place whichever tab you are on, gone a few seconds later.
-            HStack(spacing: 5) {
-                if let saved = store.saved {
-                    Image(systemName: saved == "Saved" ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(saved == "Saved" ? Ink.accent : Ink.critical)
-                    Text(saved).font(.system(size: 10.5)).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                Text("Changes are kept as you make them")
-                    .font(.system(size: 10.5))
-                    .foregroundStyle(.tertiary)
-            }
-            .frame(height: 18)
-            .padding(.top, 8)
+    var title: String {
+        switch self {
+        case .pens: return "Pens"
+        case .books: return "Notebooks"
+        case .sync: return "Sync"
+        case .general: return "General"
+        case .about: return "About"
         }
-        .padding(16)
-        .frame(width: 560, height: 600)
+    }
+
+    var symbol: String {
+        switch self {
+        case .pens: return "pencil.tip"
+        case .books: return "book.closed"
+        case .sync: return "arrow.triangle.2.circlepath"
+        case .general: return "gearshape"
+        case .about: return "info.circle"
+        }
+    }
+}
+
+/// One size for every tab, so the window does not jump as you move between them.
+private let pageSize = CGSize(width: 620, height: 580)
+
+/// The ground every tab stands on: a grouped form, the way System Settings draws one. Labels on
+/// the left, values on the right, at the system's own sizes — nothing here is set in 10-point type.
+private struct Page<Content: View>: View {
+    @ObservedObject var store: SettingsStore
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Form {
+            if let problem = store.problem {
+                Section {
+                    Label(problem, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Ink.critical)
+                }
+            }
+            content()
+        }
+        .formStyle(.grouped)
+        .frame(width: pageSize.width, height: pageSize.height)
     }
 }
 
@@ -300,86 +274,82 @@ private struct PensTab: View {
     @ObservedObject var store: SettingsStore
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                AddPen(store: store)
+        Page(store: store) {
+            ForEach(store.pens, id: \.slug) { pen in
+                PenSection(pen: pen, palette: store.palette, connected: store.connected.contains(pen.mac),
+                           save: { store.save($0) }, forget: { store.forget(pen) })
+            }
+            Section {
+                // Pairing is the one thing here that waits on the hardware, so it says what it is
+                // waiting for. Only one new pen is taken, and only while this is looking.
+                if store.adding {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Looking for a new pen. Switch it on near this Mac.")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Cancel") { store.cancelAdding() }
+                    }
+                } else {
+                    HStack {
+                        Text(store.pens.isEmpty ? "No pen yet" : "Another pen")
+                        Spacer()
+                        Button("Add Pen…") { store.addPen() }
+                    }
+                }
+            } footer: {
                 if store.pens.isEmpty {
-                    Hint("No pen has connected yet. A pen names itself the first time it does, and "
-                         + "you can change that name here.")
-                }
-                ForEach(store.pens, id: \.slug) { pen in
-                    PenCard(pen: pen, palette: store.palette, connected: store.connected.contains(pen.mac),
-                            save: { store.save($0) }, forget: { store.forget(pen) })
+                    Note("The first pen that is switched on near this Mac is paired by itself. "
+                         + "Every pen after it is added here.")
                 }
             }
-            .padding(.top, 4)
         }
     }
 }
 
-/// Pairing a pen is the one thing here that waits on the hardware, so it says what it is waiting
-/// for: a pen that is switched on. Only one new pen is taken, and only while this is looking.
-private struct AddPen: View {
-    @ObservedObject var store: SettingsStore
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if store.adding {
-                ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 14, height: 14)
-                Text("Looking for a new pen. Switch it on near this Mac.")
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                Spacer()
-                Button("Cancel") { store.cancelAdding() }
-            } else {
-                Spacer()
-                Button("Add pen…") { store.addPen() }
-            }
-        }
-        .frame(minHeight: 22)
-    }
-}
-
-private struct PenCard: View {
+private struct PenSection: View {
     let pen: PenRecord
     let palette: Palette
     let connected: Bool
     let save: (PenRecord) -> Void
     let forget: () -> Void
-    @State private var name: String = ""
     @State private var confirmingForget = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 8) {
-                Text("Name").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 78, alignment: .leading)
-                TextField("Pen", text: $name, onCommit: commit)
-                    .textFieldStyle(.roundedBorder)
-                    .onAppear { name = pen.name }
+        Section {
+            LiveField(label: "Name", value: pen.name) { name in
+                var updated = pen
+                updated.name = name
+                save(updated)
             }
-            Row("Mode") {
-                Picker("", selection: binding(\.mode)) {
-                    ForEach(PenMode.allCases, id: \.rawValue) { mode in
-                        Text(mode.rawValue.capitalized).tag(mode)
-                    }
+            Picker("Used for", selection: binding(\.mode)) {
+                ForEach(PenMode.allCases, id: \.rawValue) { mode in
+                    Text(mode.rawValue.capitalized).tag(mode)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
             }
-            Row("Default ink") {
+            .pickerStyle(.segmented)
+            LabeledContent("Ink") {
                 InkPicker(selection: binding(\.ink), palette: palette)
             }
-            Row("Default width") {
+            LabeledContent("Line width") {
                 // Three, because the paper strip has three buttons. `LineWidth.default` is not a
                 // fourth width you can pick — it is the state before anything has been tapped, and
                 // offering it here would be offering "unset" as a setting.
-                WidthChoice(selection: binding(\.width))
+                WidthChoice(selection: binding(\.width)).frame(width: 230)
             }
-            Row("Hardware") {
-                Text(pen.mac).font(.system(size: 11, design: .monospaced)).foregroundStyle(.tertiary)
-                Text(connected ? "connected" : "not connected").font(.system(size: 10)).foregroundStyle(.quaternary)
-                Spacer()
+            LabeledContent("Address") {
+                Text(pen.mac).font(.callout.monospaced()).foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 Button("Forget…") { confirmingForget = true }
-                    .controlSize(.small)
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Text(pen.name)
+                Spacer()
+                Circle().fill(connected ? Ink.done : Color.secondary.opacity(0.4))
+                    .frame(width: 7, height: 7)
+                Text(connected ? "Connected" : "Not connected")
+                    .font(.callout).foregroundStyle(.secondary)
             }
         }
         .confirmationDialog("Forget \(pen.name)?", isPresented: $confirmingForget) {
@@ -387,14 +357,6 @@ private struct PenCard: View {
         } message: {
             Text("This Mac stops syncing from it. Notes it already wrote stay. Add it again to use it.")
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
-    }
-
-    private func commit() {
-        var updated = pen
-        updated.name = name.trimmingCharacters(in: .whitespaces).isEmpty ? pen.name : name
-        save(updated)
     }
 
     private func binding<V>(_ path: WritableKeyPath<PenRecord, V>) -> Binding<V> {
@@ -415,7 +377,8 @@ private struct WidthChoice: View {
             ForEach(choices, id: \.rawValue) { weight in
                 Button { selection = weight } label: {
                     Text(weight.rawValue.capitalized)
-                        .font(.system(size: 11, weight: selection == weight ? .semibold : .regular))
+                        .font(.system(size: 12, weight: selection == weight ? .semibold : .regular))
+                        .foregroundStyle(Color.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 3)
                         .background(RoundedRectangle(cornerRadius: 5)
@@ -477,56 +440,166 @@ private struct BooksTab: View {
     @ObservedObject var store: SettingsStore
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Hint("The title is yours to change at any time, and nothing moves when you do. "
-                     + "The folder is named by an id that means nothing, fixed when the notebook "
-                     + "was first seen.")
-                ForEach(store.books, id: \.folder) { book in
-                    BookCard(book: book) { store.save($0) }
+        Page(store: store) {
+            if store.books.isEmpty {
+                Section {
+                    Text("No notebook yet. One appears here the first time a pen writes in it.")
+                        .foregroundStyle(.secondary)
                 }
             }
-            .padding(.top, 4)
+            ForEach(store.books, id: \.folder) { book in
+                Section {
+                    LiveField(label: "Title", value: book.title) { title in
+                        var updated = book
+                        updated.title = title
+                        store.save(updated)
+                    }
+                    LabeledContent("Paper", value: paper(book))
+                    LabeledContent("Folder") {
+                        Text(book.folder.name).font(.callout.monospaced()).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                        Button("Show") {
+                            NSWorkspace.shared.open(store.config.dataURL
+                                .appendingPathComponent(book.folder.relativePath))
+                        }
+                    }
+                } header: {
+                    Text(book.title)
+                }
+            }
+            if !store.books.isEmpty {
+                Section {} footer: {
+                    Note("A title can change at any time, and nothing moves when it does. "
+                         + "The folder name is fixed when the notebook is first seen.")
+                }
+            }
         }
+    }
+
+    private func paper(_ book: BookRecord) -> String {
+        guard let w = book.widthMM, let h = book.heightMM else { return "Size not recorded" }
+        return String(format: "%.0f × %.0f mm", w, h)
     }
 }
 
-private struct BookCard: View {
-    let book: BookRecord
-    let save: (BookRecord) -> Void
-    @State private var title = ""
+// MARK: - sync
+
+/// Where the pages go. One bucket, proved by writing to it, and the two rules for when.
+private struct SyncTab: View {
+    @ObservedObject var store: SettingsStore
+    @State private var confirmingDisconnect = false
+
+    private static let waits: [Double] = [10, 30, 60, 300, 600]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("Title").font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 78, alignment: .leading)
-                TextField("Notebook", text: $title, onCommit: commit)
-                    .textFieldStyle(.roundedBorder)
-                    .onAppear { title = book.title }
+        Page(store: store) {
+            Section {
+                TextField("Bucket", text: $store.s3Draft.bucket, prompt: Text("my-notes"))
+                TextField("Region", text: $store.s3Draft.region, prompt: Text("us-east-1"))
+                TextField("Access key ID", text: $store.s3Draft.accessKeyId, prompt: Text("AKIA…"))
+                SecureField("Secret access key", text: $store.s3SecretDraft)
+                TextField("Folder in the bucket", text: $store.s3Draft.prefix, prompt: Text("None"))
+                TextField("Endpoint", text: $store.s3Draft.endpoint, prompt: Text("Amazon S3"))
+                connection
+            } header: {
+                Text("S3 bucket")
+            } footer: {
+                Note("Every page is copied to this bucket as its strokes and a PNG. Nothing in the "
+                     + "bucket is deleted, and the only thing read from it is the transcript of a "
+                     + "page you open. Fill in Endpoint only for a service other than Amazon S3, "
+                     + "such as Cloudflare R2 or MinIO.")
             }
-            Row("Folder") {
-                Text("books/\(book.folder.name)/").font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.tertiary).lineLimit(1).truncationMode(.head)
-                Spacer()
-                Text("fixed").font(.system(size: 10)).foregroundStyle(.quaternary)
-            }
-            Row("Paper") {
-                Text(paper).font(.system(size: 11)).foregroundStyle(.tertiary)
+            .autocorrectionDisabled()
+
+            Section {
+                Picker("Upload after", selection: $store.config.quietSeconds) {
+                    ForEach(waits, id: \.self) { Text(Self.wait($0)).tag($0) }
+                }
+                .onChange(of: store.config.quietSeconds) { _ in store.saveConfig() }
+                Toggle("Free the pen's memory once its pages are synced",
+                       isOn: $store.config.deleteFromPenAfterPublish)
+                    .onChange(of: store.config.deleteFromPenAfterPublish) { _ in store.saveConfig() }
+                LabeledContent("Last upload") {
+                    Text(lastUpload).foregroundStyle(.secondary)
+                    Button("Sync Now") { store.syncNow() }
+                        .disabled(!store.s3Connected || store.sync.uploading)
+                }
+            } header: {
+                Text("Uploads")
+            } footer: {
+                Note("The pen keeps its own copy of what you write while it is away from this "
+                     + "Mac. Freeing its memory deletes that copy after the pages are safe here "
+                     + "and in the bucket. Your notes are not deleted.")
             }
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
+        .confirmationDialog("Disconnect the bucket?", isPresented: $confirmingDisconnect) {
+            Button("Disconnect", role: .destructive) { store.disconnectS3() }
+        } message: {
+            Text("Uploads stop and the keys are removed from this Mac. "
+                 + "The files in the bucket and the notes on this Mac stay.")
+        }
     }
 
-    private var paper: String {
-        guard let w = book.widthMM, let h = book.heightMM else { return "size not recorded" }
-        return String(format: "%.0f × %.0f mm", w, h)
+    /// The waits on offer, plus whatever a hand-edited config says if it is none of them.
+    private var waits: [Double] {
+        Self.waits.contains(store.config.quietSeconds) ? Self.waits
+            : (Self.waits + [store.config.quietSeconds]).sorted()
     }
 
-    private func commit() {
-        var updated = book
-        updated.title = title.trimmingCharacters(in: .whitespaces).isEmpty ? book.title : title
-        save(updated)
+    private static func wait(_ seconds: Double) -> String {
+        seconds < 60 ? "\(Int(seconds)) seconds with no pen activity"
+            : "\(Int(seconds / 60)) minute\(seconds >= 120 ? "s" : "") with no pen activity"
+    }
+
+    /// One line that says where things stand, and the one button that moves them on.
+    @ViewBuilder private var connection: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            switch store.s3State {
+            case .checking:
+                ProgressView().controlSize(.small)
+                Text("Writing a test file…").foregroundStyle(.secondary)
+            case let .failed(why):
+                Label(why, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Ink.critical)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            case .idle:
+                if let error = store.sync.error, store.s3Connected, !store.s3Edited {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Ink.critical)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if store.s3Connected, !store.s3Edited {
+                    Label("Connected", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Ink.done)
+                } else if store.s3Connected {
+                    Text("Not saved yet").foregroundStyle(.secondary)
+                } else {
+                    Text("Not connected. Notes stay on this Mac.").foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            if store.s3Connected, !store.s3Edited {
+                Button("Disconnect…") { confirmingDisconnect = true }
+            } else {
+                if store.s3Connected { Button("Revert") { store.revertS3() } }
+                Button(store.s3Connected ? "Save" : "Connect") {
+                    Task { await store.connectS3() }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(store.s3State == .checking)
+            }
+        }
+    }
+
+    private var lastUpload: String {
+        if store.sync.uploading { return "Uploading…" }
+        if !store.s3Connected { return "No bucket connected" }
+        guard let date = store.sync.lastUpload else {
+            return store.sync.pending > 0 ? "\(store.sync.pending) page(s) waiting" : "Nothing yet"
+        }
+        let time = date.formatted(date: .omitted, time: .shortened)
+        let files = store.sync.lastFiles
+        return files > 0 ? "\(time), \(files) file\(files == 1 ? "" : "s")" : "\(time), nothing new"
     }
 }
 
@@ -536,349 +609,175 @@ private struct GeneralTab: View {
     @ObservedObject var store: SettingsStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Row("Notes") {
-                Text(store.config.dataPath).font(.system(size: 11, design: .monospaced)).lineLimit(1)
-                Spacer()
-                Button("Reveal") { NSWorkspace.shared.open(store.config.dataURL) }
-            }
-            Row("Wait before syncing") {
-                Stepper(value: $store.config.quietMinutes, in: 1...120, step: 1) {
-                    Text("\(Int(store.config.quietMinutes)) min").font(.system(size: 11)).monospacedDigit()
+        Page(store: store) {
+            Section {
+                LabeledContent("Notes folder") {
+                    Text(store.config.dataPath).font(.callout.monospaced()).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Button("Show") { NSWorkspace.shared.open(store.config.dataURL) }
                 }
-                .onChange(of: store.config.quietMinutes) { _ in store.saveConfig() }
+            } footer: {
+                Note("Everything the pens write is kept here, outside the app, so the app can be "
+                     + "deleted and installed again without losing a page.")
             }
-            Row("Low battery at") {
-                Stepper(value: $store.config.lowBatteryPercent, in: 5...50, step: 5) {
-                    Text("\(store.config.lowBatteryPercent)%").font(.system(size: 11)).monospacedDigit()
+
+            Section("Warnings") {
+                LabeledContent("Battery is low at") {
+                    Text("\(store.config.lowBatteryPercent)%").monospacedDigit()
+                    Stepper("", value: $store.config.lowBatteryPercent, in: 5...50, step: 5).labelsHidden()
                 }
                 .onChange(of: store.config.lowBatteryPercent) { _ in store.saveConfig() }
+                LabeledContent("Pen memory is full at") {
+                    Text("\(store.config.memoryWarnPercent)%").monospacedDigit()
+                    Stepper("", value: $store.config.memoryWarnPercent, in: 30...95, step: 5).labelsHidden()
+                }
+                .onChange(of: store.config.memoryWarnPercent) { _ in store.saveConfig() }
             }
-            Toggle("Push to the remote after every commit", isOn: $store.config.gitPush)
-                .onChange(of: store.config.gitPush) { _ in store.saveConfig() }
-            Hint("Off, the notes repo stays on this Mac. Turn it on only when the repo has an "
-                 + "origin remote you want the notes copied to.")
-            Toggle("Clear a notebook from the pen once it is synced",
-                   isOn: $store.config.deleteFromPenAfterPublish)
-                .onChange(of: store.config.deleteFromPenAfterPublish) { _ in store.saveConfig() }
-            Spacer()
-            Hint("Colours and line widths live in palette.json in the notes repo, so Brainio Pen and "
-                 + "the renderer cannot disagree about what red looks like.")
+
+            Section("Troubleshooting") {
+                LabeledContent("Log") {
+                    Button("Open") { NSWorkspace.shared.open(store.info.logURL) }
+                        .disabled(!FileManager.default.fileExists(atPath: store.info.logURL.path))
+                }
+                LabeledContent("Settings file") {
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([store.info.configURL])
+                    }
+                }
+            }
         }
-        .padding(.top, 4)
     }
 }
 
-// MARK: - agents
+// MARK: - about
 
-/// Where pages go, who transcribes them, and which assistants a line can be handed to.
-///
-/// Three parts, in the order they are needed. The connection: a host and a key, proved by Check.
-/// The transcriber: one agent, chosen alone, because it is the one that sees the paper. The
-/// assistants: every other agent the key can see, each with a switch, because an agent is either
-/// something a line can be handed to or it is not.
-private struct AgentsTab: View {
+private struct AboutTab: View {
     @ObservedObject var store: SettingsStore
-    @State private var checking = false
-
-    private var transcriberId: String? { store.config.damAgentId }
-
-    /// What the transcriber picker offers: everything the key can see, plus the one already chosen
-    /// when the key can no longer see it — so the choice is shown rather than silently blanked.
-    private var transcriberChoices: [DamAgent] {
-        var choices = store.damAgents
-        if let id = transcriberId, !choices.contains(where: { $0.id == id }) {
-            choices.append(DamAgent(id: id, name: store.config.damRoster.first { $0.id == id }?.name ?? id))
-        }
-        return choices
-    }
-
-    /// Every agent that could be an assistant: what the key sees, minus the transcriber, plus any
-    /// on the roster the key no longer sees, which are kept so they can be switched off.
-    private var candidates: [DamAgent] {
-        var list = store.damAgents.filter { $0.id != transcriberId }
-        for kept in store.config.damRoster where kept.id != transcriberId
-            && !list.contains(where: { $0.id == kept.id }) {
-            list.append(DamAgent(id: kept.id, name: kept.name))
-        }
-        return list
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Three cards, like the pens tab: each thing you set up has its own ground, and the
-            // one that sees your paper is not on the same list as the ones that act on it.
-            Card {
-                Row("DAM") {
-                    TextField("https://dam.example.com", text: Binding(
-                        get: { store.config.damHost ?? "" },
-                        set: { store.config.damHost = $0.isEmpty ? nil : $0; store.saveSoon() }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                }
-                Row("Key") {
-                    SecureField("pk_…", text: $store.damApiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .onChange(of: store.damApiKey) { _ in store.saveKeySoon() }
-                    Button(checking ? "Checking…" : "Check") {
-                        checking = true
-                        Task {
-                            store.saveDamKey()
-                            await store.checkDam()
-                            checking = false
-                        }
+        Page(store: store) {
+            Section {
+                VStack(spacing: 6) {
+                    // Run as a bare binary there is no icon, only the Finder's stand-in for one.
+                    if Bundle.main.bundlePath.hasSuffix(".app") {
+                        Image(nsImage: NSApp.applicationIconImage)
+                            .resizable().frame(width: 84, height: 84)
                     }
-                    .disabled(checking)
-                }
-                // Its own line, under the key. Beside the button it fought the field for width
-                // and lost, and a status you have to guess the end of is no status.
-                if let status = store.damStatus {
-                    Row("") {
-                        Text(status).font(.system(size: 10.5)).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-
-            Card(title: "Transcriber", note: "the one agent that sees everything you write") {
-                Row("Agent") {
-                    Picker("", selection: Binding(
-                        get: { transcriberId },
-                        set: { store.setTranscriber($0) }
-                    )) {
-                        Text("None — pages are kept, not transcribed").tag(String?.none)
-                        ForEach(transcriberChoices) { agent in
-                            Text(agent.name).tag(Optional(agent.id))
-                        }
-                    }
-                    .labelsHidden()
-                    .disabled(transcriberChoices.isEmpty)
-                }
-                Row("Wait") {
-                    Stepper(value: $store.config.damQuietMinutes, in: 1...60, step: 1) {
-                        Text("\(Int(store.config.damQuietMinutes)) min after the pen stops")
-                            .font(.system(size: 11)).monospacedDigit()
-                    }
-                    .onChange(of: store.config.damQuietMinutes) { _ in store.saveConfig() }
-                }
-                Hint("Pick an agent with nothing confidential behind it: a page is an untrusted "
-                     + "document. It also proposes which assistant carries out each line a page asks for.")
-            }
-
-            Card(title: "Assistants", note: "switch one on to hand it lines", fills: true) {
-                // Scrolls, and keeps everything above it on screen. Eight agents used to push the
-                // host and the key off both ends of the window.
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(candidates) { agent in
-                            AssistantRow(store: store, agent: agent,
-                                         profile: store.config.damRoster.first { $0.id == agent.id },
-                                         seen: store.damAgents.contains { $0.id == agent.id })
-                            if agent.id != candidates.last?.id { Divider().opacity(0.4) }
-                        }
-                        if candidates.isEmpty {
-                            Text(emptyNote)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.tertiary)
-                                .padding(.vertical, 10)
-                        }
-                    }
-                }
-                .frame(maxHeight: .infinity)
-                Hint("An assistant is asked what it does and what it can reach when it is switched on. "
-                     + "Until it has answered, no line is offered to it.")
-            }
-        }
-        .padding(.top, 4)
-    }
-
-    private var emptyNote: String {
-        if store.damApiKey.isEmpty || (store.config.damHost ?? "").isEmpty {
-            return "Put a host and a key in, then press Check."
-        }
-        if store.damAgents.isEmpty { return "Press Check to see what the key can reach." }
-        return "The key sees no agent other than the transcriber."
-    }
-}
-
-/// One block of the tab on its own ground, the way a pen has its card. An optional title, with a
-/// quiet note beside it saying what the block is for; `fills` lets one card take the height left.
-private struct Card<Content: View>: View {
-    let title: String?
-    let note: String?
-    let fills: Bool
-    @ViewBuilder let content: () -> Content
-
-    init(title: String? = nil, note: String? = nil, fills: Bool = false,
-         @ViewBuilder content: @escaping () -> Content) {
-        self.title = title
-        self.note = note
-        self.fills = fills
-        self.content = content
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let title {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(title).font(.system(size: 12, weight: .semibold))
-                    if let note {
-                        Text(note).font(.system(size: 10.5)).foregroundStyle(.tertiary)
-                    }
-                }
-            }
-            content()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: fills ? .infinity : nil, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.04)))
-    }
-}
-
-/// One agent that could be an assistant: a switch, what it says it does, and what it can reach.
-///
-/// The switch is the whole interface. On means the agent was asked and answered, and a line can
-/// now be handed to it; off means it is nothing to this app. In between, while the question is
-/// out, the row says so — and if the question fails, the switch falls back and the row says why.
-private struct AssistantRow: View {
-    @ObservedObject var store: SettingsStore
-    let agent: DamAgent
-    /// On the roster, with whatever it has said. Nil means switched off.
-    let profile: DamAgentProfile?
-    /// Whether the key can still see it. A row the key cannot see is kept only to be switched off.
-    let seen: Bool
-    @State private var hovering = false
-
-    private var asking: Bool { store.asking.contains(agent.id) }
-    private var isOn: Bool { profile != nil }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Toggle("", isOn: Binding(
-                get: { isOn },
-                set: { on in
-                    if on { Task { await store.switchOn(agent) } } else { store.switchOff(agent.id) }
-                }
-            ))
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .labelsHidden()
-            .disabled(asking || (!seen && !isOn))
-            .help(isOn ? "Switch it off: no line is handed to it" : "Switch it on and ask what it does")
-            .padding(.top, 1)
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(agent.name).font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(isOn || seen ? .primary : .secondary)
-                    if !seen {
-                        Text("not seen by this key").font(.system(size: 9.5)).foregroundStyle(.tertiary)
-                    }
-                    Spacer(minLength: 4)
-                    // Quiet until wanted. Eight rows each shouting a button is a wall of buttons.
-                    if isOn, seen {
-                        Button(store.failures[agent.id] == nil ? "Ask again" : "Retry") {
-                            Task { await store.ask(agent.id) }
-                        }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(asking ? Color.secondary : Ink.accent)
-                        .disabled(asking)
-                        .opacity(store.failures[agent.id] != nil || hovering ? 1 : 0)
-                        .help("Ask it again what it does and what it can reach")
-                    }
-                }
-                if let failure = store.failures[agent.id] {
-                    Text(failure)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(Ink.critical)
+                    Text(store.info.name).font(.title2.weight(.semibold))
+                    Text("Version \(store.info.version)").foregroundStyle(.secondary)
+                    Text("Keeps what you write with a Neo smartpen: on this Mac as it is written, "
+                         + "and in your S3 bucket soon after.")
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if asking {
-                    HStack(spacing: 6) {
-                        ProgressView().controlSize(.small).scaleEffect(0.6)
-                        Text("setting up — asking what it does…")
-                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
-                    }
-                } else if let profile {
-                    Text(profile.summary ?? "did not say what it does")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(profile.summary == nil ? .tertiary : .secondary)
-                        .lineLimit(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if !profile.systems.isEmpty {
-                        Text(profile.systems.joined(separator: " · "))
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                } else {
-                    Text("off — no line is handed to it")
-                        .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                        .padding(.top, 4)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            Section {
+                LabeledContent("Pen SDK", value: "\(store.info.sdk), GPL-3.0")
+                LabeledContent("Made by", value: "Apoco")
+                LabeledContent("Source") {
+                    Link("github.com/apocohq/brainio-pen", destination: store.info.sourceURL)
                 }
             }
         }
-        // Room on the right for the scroll bar, which otherwise sits on the row's own button.
-        .padding(.leading, 2)
-        .padding(.trailing, 14)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
     }
 }
 
 // MARK: - pieces
 
-private struct Row<Content: View>: View {
-    let label: String
-    @ViewBuilder let content: () -> Content
-
-    init(_ label: String, @ViewBuilder content: @escaping () -> Content) {
-        self.label = label
-        self.content = content
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
-                .frame(width: 78, alignment: .leading)
-            content()
-        }
-    }
-}
-
-private struct Hint: View {
+/// The sentence under a section. Set from the left like everything above it: a grouped form
+/// sets a footer from the right, which reads as a caption that has come loose.
+private struct Note: View {
     let text: String
     init(_ text: String) { self.text = text }
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10.5))
-            .foregroundStyle(.tertiary)
+            .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A text field that keeps what you type a moment after you stop typing. Nothing here is worth a
+/// Save button, and nothing here should need the Return key — that is a rule somebody has to be
+/// told, and nobody is.
+private struct LiveField: View {
+    let label: String
+    let value: String
+    let commit: (String) -> Void
+    @State private var text = ""
+    @State private var pending: DispatchWorkItem?
+
+    var body: some View {
+        TextField(label, text: $text)
+            .onAppear { text = value }
+            .onChange(of: text) { _ in
+                pending?.cancel()
+                let work = DispatchWorkItem { keep() }
+                pending = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
+            }
+            .onSubmit { pending?.cancel(); keep() }
+            .onDisappear { pending?.cancel(); keep() }
+    }
+
+    /// An emptied field is not a name. It is left alone until something is typed in it.
+    private func keep() {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed != value else { return }
+        commit(trimmed)
     }
 }
 
 // MARK: - window
 
+/// A settings window the way macOS draws one: the tabs are the toolbar, and the title is the tab.
 public final class SettingsWindowController: NSWindowController {
     let store: SettingsStore
+    private let tabs = NSTabViewController()
 
-    public init(store: SettingsStore, tab: SettingsView.Tab = .pens) {
+    public init(store: SettingsStore, tab: SettingsTab = .pens) {
         self.store = store
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
+        tabs.tabStyle = .toolbar
+        for tab in SettingsTab.allCases {
+            let page: NSViewController
+            switch tab {
+            case .pens: page = NSHostingController(rootView: PensTab(store: store))
+            case .books: page = NSHostingController(rootView: BooksTab(store: store))
+            case .sync: page = NSHostingController(rootView: SyncTab(store: store))
+            case .general: page = NSHostingController(rootView: GeneralTab(store: store))
+            case .about: page = NSHostingController(rootView: AboutTab(store: store))
+            }
+            page.preferredContentSize = pageSize
+            let item = NSTabViewItem(viewController: page)
+            item.label = tab.title
+            item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
+            tabs.addTabViewItem(item)
+        }
+        tabs.selectedTabViewItemIndex = tab.rawValue
+
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: pageSize),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
+        window.toolbarStyle = .preference
         window.title = "Brainio Pen Settings"
         window.isReleasedWhenClosed = false
-        window.contentViewController = NSHostingController(rootView: SettingsView(store: store, tab: tab))
-        window.setFrameAutosaveName("brainio-pen-settings")
+        window.contentViewController = tabs
         window.center()
+        window.setFrameAutosaveName("brainio-pen-settings-2")
         super.init(window: window)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    public func select(_ tab: SettingsTab) {
+        tabs.selectedTabViewItemIndex = tab.rawValue
+    }
 
     public override func showWindow(_ sender: Any?) {
         store.reload()

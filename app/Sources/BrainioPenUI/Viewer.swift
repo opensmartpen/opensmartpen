@@ -81,7 +81,9 @@ public final class Viewer: ObservableObject {
     /// Human page numbers present in this notebook, ascending.
     @Published private(set) var pages: [Int] = []
     /// The human page the viewer is looking at. For a bound notebook this is one half of a spread.
-    @Published private(set) var page: Int = 1
+    @Published private(set) var page: Int = 1 {
+        didSet { if page != oldValue { refreshTranscript() } }
+    }
     /// The page most recently written to, anywhere. The one you get back to with one click.
     @Published private(set) var activePage: Int?
     /// Which notebook the pen is in, so the pager only marks the active page when it is this one.
@@ -97,6 +99,12 @@ public final class Viewer: ObservableObject {
     /// How much larger than a fitted sheet the paper is drawn. 1 is the whole sheet in the window.
     /// Kept across page turns: you zoom in to read a hand, and the next page is in the same hand.
     @Published private(set) var zoom: Double = 1
+    /// The zoom the ink was last drawn at. While a zoom is under way the drawing is only
+    /// stretched to `zoom`, which costs nothing, and it is drawn again, sharp, once the zoom has
+    /// stopped. Drawing every stroke again for every step of a pinch is what made zooming
+    /// stutter: a full page is thousands of segments, and a gesture asks for sixty a second.
+    @Published private(set) var drawnZoom: Double = 1
+    private var sharpen: DispatchWorkItem?
     /// Where the paper has been dragged to, in points, away from the middle of the window.
     @Published private(set) var pan: CGSize = .zero
     /// The area the sheets are drawn in. The view owns this number — it is the only one that
@@ -124,9 +132,47 @@ public final class Viewer: ObservableObject {
 
     public func attach(modeLog: ModeLog?) { self.modeLog = modeLog }
 
-    /// Set by the app delegate, which owns the actions window. The viewer shows the paper; what
-    /// the paper asks for is a column of its own down the side of the screen.
-    public var onShowActions: (() -> Void)?
+    // MARK: transcript
+
+    /// Where transcripts come from. The app does not make them: whatever reads the bucket does,
+    /// and this fetches the one for the page on screen. Nil in a viewer with no bucket behind it.
+    public var transcripts: TranscriptStore?
+    /// The pane beside the paper. Remembered, because wanting the text next to the ink is a
+    /// habit, not a decision made again each time.
+    @Published var showsTranscript = UserDefaults.standard.bool(forKey: "viewer.transcript") {
+        didSet {
+            guard showsTranscript != oldValue else { return }
+            UserDefaults.standard.set(showsTranscript, forKey: "viewer.transcript")
+            onTranscriptToggle?(showsTranscript)
+            refreshTranscript()
+        }
+    }
+    @Published private(set) var transcript: Transcript = .none
+    @Published private(set) var fetchingTranscript = false
+    private var transcriptPage: PageRef?
+    /// Set by the window, which makes room for the pane rather than taking it from the paper.
+    var onTranscriptToggle: ((Bool) -> Void)?
+    static let transcriptWidth: CGFloat = 340
+
+    /// Show what this Mac already has for the page, at once, and ask the bucket for the latest.
+    /// Called when the page changes and every so often while the pane is open: a transcript
+    /// arrives a minute or two after the writing, with nothing to announce it.
+    func refreshTranscript() {
+        guard showsTranscript, let store = transcripts, let ref = ref(for: page) else {
+            transcriptPage = nil
+            return
+        }
+        if transcriptPage != ref {
+            transcriptPage = ref
+            transcript = store.cached(for: ref)
+        }
+        fetchingTranscript = true
+        store.fetch(for: ref) { [weak self] answer in
+            guard let self, self.transcriptPage == ref else { return }
+            self.fetchingTranscript = false
+            if self.transcript != answer { self.transcript = answer }
+        }
+    }
 
     var geometry: PageGeometry { book?.geometry ?? .a4 }
 
@@ -269,17 +315,38 @@ public final class Viewer: ObservableObject {
                      height: (pan.height - (a.y - middle.y)) * ratio + (a.y - middle.y))
         zoom = next
         clampPan()
+        sharpenSoon()
     }
 
     func zoomBy(_ factor: Double, about anchor: CGPoint? = nil) {
         setZoom(zoom * factor, about: anchor)
     }
 
+    /// One step from the keyboard, about the middle, eased rather than snapped: a jump of a
+    /// quarter is easy to lose your place in.
+    func zoomStep(_ factor: Double) {
+        withAnimation(.easeOut(duration: 0.16)) { zoomBy(factor) }
+    }
+
     /// The whole page again, in the middle.
     func zoomToFit() {
         guard zoom != 1 || pan != .zero else { return }
-        zoom = 1
-        pan = .zero
+        withAnimation(.easeOut(duration: 0.16)) {
+            zoom = 1
+            pan = .zero
+        }
+        sharpenSoon()
+    }
+
+    /// Draw the ink again at the zoom now in force, a moment after the zoom last moved.
+    private func sharpenSoon() {
+        sharpen?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.drawnZoom != self.zoom else { return }
+            self.drawnZoom = self.zoom
+        }
+        sharpen = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
     func setPan(_ offset: CGSize) {
@@ -318,6 +385,8 @@ public final class Viewer: ObservableObject {
         page = human
         if !pages.contains(human) { pages = availablePages(in: ref.folder) }
         loadVisible()
+        // The same page number in another notebook is another page.
+        refreshTranscript()
     }
 
     /// Read these pages from disk again. A page loaded before a drain lacks the strokes the pen
@@ -358,9 +427,10 @@ public final class Viewer: ObservableObject {
         case "2": layout = .spread; return true
         case "3": layout = .pair; return true
         case "4": layout = .grid; return true
-        case "+", "=": zoomBy(1.25); return true
-        case "-", "_": zoomBy(1 / 1.25); return true
+        case "+", "=": zoomStep(1.25); return true
+        case "-", "_": zoomStep(1 / 1.25); return true
         case "0": zoomToFit(); return true
+        case "t", "T": showsTranscript.toggle(); return true
         default: return false
         }
     }
@@ -485,21 +555,32 @@ struct ViewerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            sheets
+            HStack(spacing: 0) {
+                sheets
+                if viewer.showsTranscript {
+                    Divider()
+                    TranscriptPane(viewer: viewer)
+                        .frame(width: Viewer.transcriptWidth)
+                }
+            }
             bar
         }
         .background(Color(nsColor: .underPageBackgroundColor))
+        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+            viewer.refreshTranscript()
+        }
     }
 
     private var sheets: some View {
         GeometryReader { geo in
             let shape = viewer.layout.shape
             // Zoom multiplies the paper and the space between sheets alike, so a spread stays a
-            // spread as it grows. The sheet is drawn at its zoomed size rather than scaled up
-            // afterwards: the ink is redrawn, so it sharpens as you zoom instead of blurring.
+            // spread as it grows. The sheet is drawn at a zoomed size rather than only scaled
+            // up, so the ink is sharp — but at the size the zoom last came to rest at. While it
+            // is moving, that drawing is stretched the rest of the way, and redrawn when it stops.
             let sheet = viewer.fittedSheet(in: geo.size)
-            let size = CGSize(width: sheet.width * viewer.zoom, height: sheet.height * viewer.zoom)
-            let gap = Viewer.gap * viewer.zoom
+            let size = CGSize(width: sheet.width * viewer.drawnZoom, height: sheet.height * viewer.drawnZoom)
+            let gap = Viewer.gap * viewer.drawnZoom
             let slots = viewer.visible
 
             VStack(spacing: gap) {
@@ -518,6 +599,9 @@ struct ViewerView: View {
                     }
                 }
             }
+            // About its own middle, which is the middle of the window: the same place the
+            // sheets would be if they had been drawn at this zoom.
+            .scaleEffect(viewer.zoom / viewer.drawnZoom)
             .frame(width: geo.size.width, height: geo.size.height)
             .offset(x: viewer.pan.width, y: viewer.pan.height)
             .clipped()
@@ -569,14 +653,6 @@ struct ViewerView: View {
                 .font(.system(size: 11.5, weight: .medium))
                 .lineLimit(1)
 
-            // What this page asks for lives in the actions window, not in a strip beside the
-            // paper. This is the way in from the page you are reading.
-            Button { viewer.onShowActions?() } label: {
-                Image(systemName: "checklist").font(Self.glyph)
-            }
-            .buttonStyle(.borderless)
-            .help("Actions")
-
             Spacer(minLength: 8)
 
             Button { viewer.step(-1) } label: { Image(systemName: "chevron.left").font(Self.glyph) }
@@ -623,7 +699,15 @@ struct ViewerView: View {
             }
             .buttonStyle(.borderless)
             .disabled(!viewer.canZoomOut)
-            .help("The whole page again (0)")
+            .help("The whole page again (⌘0). ⌘+ and ⌘− zoom in and out.")
+
+            // The text beside the ink. Lit while it is open, like any toggle in a toolbar.
+            Button { viewer.showsTranscript.toggle() } label: {
+                Image(systemName: "text.alignleft").font(Self.glyph)
+                    .foregroundStyle(viewer.showsTranscript ? Ink.accent : Color.primary)
+            }
+            .buttonStyle(.borderless)
+            .help("Show the transcript of this page (T)")
 
             Picker("", selection: $viewer.layout) {
                 ForEach(ViewerLayout.allCases) { option in
@@ -656,10 +740,6 @@ struct ViewerView: View {
 
 /// One page number in the pager. Violet marks the page the pen touched last, which is the one you
 /// are usually trying to get back to.
-/// The lines on this page addressed to an assistant, and what has become of them.
-///
-/// It shows and does not act: nothing here carries anything out yet. A tick means the app has a
-/// record of it being done, which is a thing that happened in the world and does not come back off.
 private struct PageChip: View {
     let number: Int
     let current: Bool
@@ -687,6 +767,111 @@ private struct PageChip: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+    }
+}
+
+/// The page as text, beside the page as ink.
+///
+/// The text is somebody else's reading of the handwriting, made from the picture in the bucket.
+/// It is shown as it was written — headings, lists, the marks for a word that could not be read —
+/// and nothing here edits it.
+private struct TranscriptPane: View {
+    @ObservedObject var viewer: Viewer
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Text("Transcript")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                if viewer.fetchingTranscript {
+                    ProgressView().controlSize(.small).scaleEffect(0.55).frame(width: 12, height: 12)
+                }
+                Spacer(minLength: 0)
+                if case let .text(text) = viewer.transcript {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(text, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc").font(.system(size: 11))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy the transcript")
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 30)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 3) {
+                    switch viewer.transcript {
+                    case let .text(text):
+                        ForEach(Array(Self.lines(of: text).enumerated()), id: \.offset) { _, line in
+                            row(line)
+                        }
+                    case .none:
+                        note("No transcript for this page yet.")
+                    case let .unavailable(why):
+                        note(why)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+            }
+        }
+        .background(Color(nsColor: .textBackgroundColor))
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).font(.system(size: 12)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    enum Line: Equatable {
+        case title(String)
+        case heading(String)
+        case body(String)
+        case blank
+    }
+
+    /// Markdown, a line at a time. Only what a transcript uses: a title, the headings that say
+    /// when a part was written, and lines of text with their emphasis and their crossings-out.
+    /// A full renderer would reflow the lines, and the line breaks are the handwriting's own.
+    static func lines(of text: String) -> [Line] {
+        text.components(separatedBy: "\n").map { raw in
+            let line = raw.hasSuffix("\r") ? String(raw.dropLast()) : raw
+            if line.hasPrefix("## ") { return .heading(String(line.dropFirst(3))) }
+            if line.hasPrefix("# ") { return .title(String(line.dropFirst(2))) }
+            if line.trimmingCharacters(in: .whitespaces).isEmpty { return .blank }
+            return .body(line)
+        }
+    }
+
+    @ViewBuilder private func row(_ line: Line) -> some View {
+        switch line {
+        case let .title(text):
+            Text(text).font(.system(size: 13, weight: .semibold)).padding(.bottom, 2)
+        case let .heading(text):
+            Text(text).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                .padding(.top, 10).padding(.bottom, 1)
+        case let .body(text):
+            Text(Self.inline(text)).font(.system(size: 13)).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        case .blank:
+            Color.clear.frame(height: 5)
+        }
+    }
+
+    /// Emphasis and strike-through inside one line, with its indentation kept, and a list
+    /// marker drawn as the bullet it stands for.
+    static func inline(_ line: String) -> AttributedString {
+        let indent = line.prefix { $0 == " " || $0 == "\t" }
+        var rest = String(line.dropFirst(indent.count))
+        if rest.hasPrefix("- ") || rest.hasPrefix("* ") { rest = "• " + rest.dropFirst(2) }
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        let parsed = (try? AttributedString(markdown: rest, options: options)) ?? AttributedString(rest)
+        return AttributedString(String(indent).replacingOccurrences(of: " ", with: "\u{00A0}")) + parsed
     }
 }
 
@@ -795,6 +980,19 @@ public final class ViewerWindowController: NSWindowController {
         window.collectionBehavior = [.managed, .fullScreenAuxiliary]
         super.init(window: window)
         window.onKey = { [weak self] key in self?.key(key) ?? false }
+        // The pane is added to the window, not carved out of the paper: the page stays the size
+        // it was, and the window grows to the right as far as the screen lets it.
+        viewer.onTranscriptToggle = { [weak self] shown in
+            guard let window = self?.window else { return }
+            var frame = window.frame
+            frame.size.width += shown ? Viewer.transcriptWidth : -Viewer.transcriptWidth
+            frame.size.width = max(frame.size.width, window.minSize.width)
+            if let visible = window.screen?.visibleFrame {
+                frame.size.width = min(frame.size.width, visible.width)
+                frame.origin.x = max(visible.minX, min(frame.origin.x, visible.maxX - frame.size.width))
+            }
+            window.setFrame(frame, display: true, animate: true)
+        }
         // Wheel and pinch do not reach SwiftUI on macOS 13, and a view that catches them would
         // have to sit over the sheets and swallow their clicks. A monitor sees them first and
         // hands back anything that is not ours.
@@ -818,14 +1016,24 @@ public final class ViewerWindowController: NSWindowController {
             viewer.zoomBy(1 + Double(event.magnification), about: anchor)
             return true
         case .scrollWheel:
-            // A trackpad reports points and a mouse wheel reports lines, and one line is not one
-            // point: taken raw, the same gesture moves a hundred times less on a mouse.
-            let step: Double = event.hasPreciseScrollingDeltas ? 1 : 16
-            let dy = Double(event.scrollingDeltaY) * step
-            guard dy != 0 else { return false }
-            // Exponential, so a given roll of the wheel is the same proportion of a change
+            // Exponential in both cases, so a given movement is the same proportion of a change
             // whether you are at 100% or at 600%.
-            viewer.zoomBy(exp(dy * 0.01), about: anchor)
+            if event.hasPreciseScrollingDeltas {
+                // A trackpad keeps sending events after the fingers lift, to coast a scroll to
+                // a stop. A zoom that carries on by itself is a zoom you then have to undo, so
+                // those are taken and dropped.
+                guard event.momentumPhase.isEmpty else { return true }
+                let dy = Double(event.scrollingDeltaY)
+                guard dy != 0 else { return true }
+                viewer.zoomBy(exp(dy * 0.006), about: anchor)
+            } else {
+                // A mouse wheel reports lines, and an accelerated flick reports a dozen of them
+                // in one event, which used to be a jump of several hundred percent. One event is
+                // held to a small step; a longer roll is simply more events.
+                let lines = max(-2, min(2, Double(event.scrollingDeltaY)))
+                guard lines != 0 else { return true }
+                viewer.zoomBy(exp(lines * 0.08), about: anchor)
+            }
             return true
         default:
             return false
@@ -838,8 +1046,10 @@ public final class ViewerWindowController: NSWindowController {
     private func anchor(of event: NSEvent, in window: NSWindow) -> CGPoint? {
         let rect = window.contentLayoutRect
         let point = event.locationInWindow
+        // The transcript is text, and a wheel over text scrolls it.
+        let paper = rect.maxX - (viewer.showsTranscript ? Viewer.transcriptWidth : 0)
         guard point.y >= rect.minY + Self.barHeight, point.y <= rect.maxY,
-              point.x >= rect.minX, point.x <= rect.maxX else { return nil }
+              point.x >= rect.minX, point.x <= paper else { return nil }
         return CGPoint(x: point.x - rect.minX, y: rect.maxY - point.y)
     }
 
@@ -903,5 +1113,26 @@ private final class ViewerWindow: NSWindow {
            !event.modifierFlags.contains(.command),
            onKey?(characters) == true { return }
         super.keyDown(with: event)
+    }
+
+    /// ⌘+, ⌘− and ⌘0, as in every window that shows a page.
+    ///
+    /// By the key as well as by the character it types: on a Czech keyboard the key that says 0
+    /// types "é" unless Shift is held, and ⌘0 is still the key somebody presses.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if event.type == .keyDown, flags.contains(.command),
+           !flags.contains(.control), !flags.contains(.option) {
+            let typed = event.charactersIgnoringModifiers ?? ""
+            let key: String?
+            switch (event.keyCode, typed) {
+            case (24, _), (69, _), (_, "+"), (_, "="): key = "+"     // the = key, keypad +
+            case (27, _), (78, _), (_, "-"), (_, "_"): key = "-"     // the - key, keypad -
+            case (29, _), (82, _), (_, "0"): key = "0"               // the 0 key, keypad 0
+            default: key = nil
+            }
+            if let key, onKey?(key) == true { return true }
+        }
+        return super.performKeyEquivalent(with: event)
     }
 }
