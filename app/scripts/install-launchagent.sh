@@ -45,6 +45,14 @@ if [ -d "$HOME/Applications/BrainioPen.app" ]; then
   rm -rf "$HOME/Applications/BrainioPen.app"
 fi
 
+# What each signature says the app is, read before the old bundle goes. macOS keeps a grant for as
+# long as that answer stays the same, so this is how the script knows whether a person is needed.
+# An ad-hoc answer names the binary's own hash and so never matches; one made with a certificate
+# (scripts/make-signing-identity.sh) names the bundle id and the certificate, and does.
+requirement() { codesign -d -r- "$1" 2>/dev/null | sed -n 's/^designated => //p'; }
+WAS="$(requirement "$DEST")"
+NOW="$(requirement "$SRC")"
+
 mkdir -p "$HOME/Applications" "$HOME/Library/LaunchAgents" "$LOGDIR"
 rm -rf "$DEST"
 cp -R "$SRC" "$DEST"
@@ -78,25 +86,32 @@ echo "installed $DEST"
 # which means an installer that bootstraps first and prints advice afterwards gives advice that
 # cannot work. Nothing of ours is running at this point, by the bootout at the top.
 #
-# The grant is keyed to the code signature as well as the bundle id, and an ad-hoc signature changes
-# with every build, so this is needed again after each make-app.sh.
-open "$DEST"
-echo
-echo "A Bluetooth prompt should now be on screen. Allow it — without it the pen cannot connect."
-
-if [ -t 0 ]; then
-  printf 'Press Return once you have allowed it, and the agent will take over: '
-  read -r _
-  pkill -f "$DEST/Contents/MacOS/brainio-pen" 2>/dev/null || true
-  sleep 1
+# The grant is keyed to the code signature as well as the bundle id. When the new bundle's
+# signature says what the old one's did, the grant made for the old one still stands, there is
+# nothing to prompt for, and the agent can simply be started. BRAINIO_PEN_ASK=1 asks anyway, for
+# the day the grant has been revoked in System Settings.
+if [ -n "$NOW" ] && [ "$WAS" = "$NOW" ] && [ -z "${BRAINIO_PEN_ASK:-}" ]; then
   launchctl bootstrap "gui/$UID_" "$PLIST"
-  echo "started $LABEL"
+  echo "started $LABEL (same signature as before, so the Bluetooth grant carries over)"
 else
+  open "$DEST"
   echo
-  echo "Not started, because this is not a terminal and the prompt needs a person. Once you have"
-  echo "allowed it, hand over to the agent with:"
-  echo "    pkill -f \"$DEST/Contents/MacOS/brainio-pen\""
-  echo "    launchctl bootstrap gui/$UID_ \"$PLIST\""
+  echo "A Bluetooth prompt should now be on screen. Allow it — without it the pen cannot connect."
+
+  if [ -t 0 ]; then
+    printf 'Press Return once you have allowed it, and the agent will take over: '
+    read -r _
+    pkill -f "$DEST/Contents/MacOS/brainio-pen" 2>/dev/null || true
+    sleep 1
+    launchctl bootstrap "gui/$UID_" "$PLIST"
+    echo "started $LABEL"
+  else
+    echo
+    echo "Not started, because this is not a terminal and the prompt needs a person. Once you have"
+    echo "allowed it, hand over to the agent with:"
+    echo "    pkill -f \"$DEST/Contents/MacOS/brainio-pen\""
+    echo "    launchctl bootstrap gui/$UID_ \"$PLIST\""
+  fi
 fi
 
 echo

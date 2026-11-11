@@ -46,6 +46,9 @@ final class PenConnection: NSObject {
     private var passwordTried = false
     private var powerWriteAttempted = false
     private var assembler = StrokeAssembler()
+    /// Samples the pen took and could not read, gathered so they are reported once a window.
+    private var unread = UnreadInk()
+    private var unreadTimer: Timer?
     /// The SDK's own MAC string, unnormalised, as every stroke has always carried it.
     private var strokeMac = ""
     private var firmware = ""
@@ -296,11 +299,26 @@ final class PenConnection: NSObject {
         settingTimer = nil
         if let s = assembler.flush() { coordinator.ingestLive([s]) }
         assembler = StrokeAssembler()
+        reportUnread()
         draining = nil
         drain = nil
         drainTotal = 0
         drainQueue = []
         state = .scanning
+    }
+}
+
+extension PenConnection {
+    /// Say what the pen could not read, once for the window it happened in.
+    fileprivate func reportUnread() {
+        unreadTimer?.invalidate()
+        unreadTimer = nil
+        guard let report = unread.take() else { return }
+        Log.warn("\(name): \(report.line)")
+        guard report.worthTelling else { return }
+        notifier.post(Notice(key: key("unread-ink"), title: "\(displayName) could not read the paper",
+                             body: "Some of what was just written did not reach the Mac and is not in pen "
+                                 + "memory. Check the page in the viewer and write it again if it is missing."))
     }
 }
 
@@ -385,6 +403,11 @@ extension PenConnection: PenDelegate {
             Log.warn("packet error: \(err)")
         case let .EVENT_DOT_ERROR(err):
             Log.debug("dot error: \(err)")
+            if unread.record(code: err.code) {
+                unreadTimer = Timer.scheduledTimer(withTimeInterval: UnreadInk.window, repeats: false) { [weak self] _ in
+                    self?.reportUnread()
+                }
+            }
         default:
             Log.debug("pen message: \(msg)")
         }

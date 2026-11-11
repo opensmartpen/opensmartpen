@@ -61,11 +61,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signature: enough to make the bundle launchable, and nothing more. It does NOT preserve
-# TCC grants across rebuilds — the signature changes with the binary, so Bluetooth and
-# notification permission have to be granted again after every build. See README, "Moving from
-# PenBridge".
-codesign --force --sign - --identifier "$BUNDLE_ID" "$APP" >/dev/null
-echo "built $APP (v$VERSION)"
+# Signed with this Mac's own certificate when scripts/make-signing-identity.sh has made one, so the
+# signature says the same thing about every build — "com.brainio.pen, signed by this certificate"
+# — and the Bluetooth and notification grants carry over from one build to the next.
+#
+# Without one, ad hoc: enough to make the bundle launchable, and nothing more. That signature is
+# the binary's own hash, so every build is a different app to macOS and has to be allowed again.
+IDENTITY="${BRAINIO_PEN_SIGN_IDENTITY:-Brainio Pen Dev}"
+if security find-identity -p codesigning 2>/dev/null | grep -q "\"$IDENTITY\""; then
+  codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP" >/dev/null
+  SIGNED="signed as \"$IDENTITY\"; grants carry over"
+else
+  codesign --force --sign - --identifier "$BUNDLE_ID" "$APP" >/dev/null
+  SIGNED="ad-hoc signed; Bluetooth must be allowed again. scripts/make-signing-identity.sh ends that"
+fi
+echo "built $APP (v$VERSION), $SIGNED"
 echo "run:   open $APP"
 echo "logs:  log stream --predicate 'process == \"brainio-pen\"' --level info   (or run the binary directly for stderr)"
