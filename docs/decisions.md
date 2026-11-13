@@ -268,3 +268,11 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **The log lost some entries.** Entries about features that the app no longer has (the agent integration, actions, the two migrations) were deleted. The repository history has them.
 - **An accepted ADR was edited in place.** ADR-002 lost two sentences that gave the earlier product family as the reason for the folder name. The decision itself did not change.
 - **Open:** the name promises every smart pen, and the app supports NeoLAB Ncode pens only. The README must say which pens work.
+
+## 2026-11-13 — The company holds the copyright, and outside code needs an agreement
+
+- **Decided:** the copyright line names the company ("Apoco"), not "the authors". The owner wants to be able to change the license later, and only the holder of the copyright can do that for its own code.
+- **Outside code needs a contributor agreement before the first merge.** A contributor keeps the copyright on what they wrote. Apache-2.0 lets us ship it under other terms, but a clean change of license needs their permission. `CONTRIBUTING.md` says so.
+- **The About tab says "Copyright", not "Made by".** That is what the row is.
+- **Open:** the text of the agreement and the tool for it. The legal name of the company is also still open (see above).
+- **The root README says which pens work:** the A1 and the LAMY Safari Ncode, the two that were tested.

@@ -721,7 +721,7 @@ private struct AboutTab: View {
                 .padding(.vertical, 10)
             }
             Section {
-                LabeledContent("Made by", value: "Apoco")
+                LabeledContent("Copyright", value: "Apoco")
                 LabeledContent("Source") {
                     Link("github.com/opensmartpen/opensmartpen", destination: store.info.sourceURL)
                 }

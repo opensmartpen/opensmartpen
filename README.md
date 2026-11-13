@@ -1,6 +1,10 @@
 # Open Smart Pen
 
-Digitise handwritten notes from a Neo smartpen (A1, Ncode paper) into a store of captured strokes, SVG renders and Markdown transcriptions at `~/OpenSmartPen`. Everything stays on this Mac; nothing is pushed to a remote.
+An open-source macOS menubar app for Neo smartpens. It captures what the pen writes on Ncode paper and keeps it as plain files in `~/OpenSmartPen`: the strokes of each page and a PNG of it. If you connect an S3 bucket, the same files are copied there.
+
+The app does not transcribe. A reader of your choice, for example an AI agent, reads the folder or the bucket and writes the text. `docs/processing.md` is the contract with that reader.
+
+Tested with the Neo smartpen A1 and the LAMY Safari Ncode, on NeoLAB Ncode A4 paper and LAMY digital paper. macOS 13 or later.
 
 - `RESEARCH.md` — SDK, protocol, vendor app and field research (2026-09-10).
 - `docs/architecture.md` — system overview and entry point to the docs.
@@ -11,8 +15,8 @@ Digitise handwritten notes from a Neo smartpen (A1, Ncode paper) into a store of
 
 Components:
 
-- `app/` — the Open Smart Pen macOS menubar app, on NeoLAB's NISDK3, filing captured strokes under `~/OpenSmartPen`.
-- Transcribing is not done by the app. It uploads each page to an S3 bucket, as strokes and a PNG, and whatever reads the bucket transcribes. `docs/processing.md` is the contract with that reader, and holds the instructions it was given.
+- `app/` — the macOS menubar app, on NeoLAB's NISDK3. See `app/README.md` to build and install it.
+- `docs/processing.md` — what the app writes, where and when, for whatever reads it.
 - `pipeline/` — earlier local scripts for rendering and transcribing. Not used by the app.
 - `docs/adrs/` — architecture decision records.
 
@@ -22,3 +26,4 @@ Components:
 - The app links NISDK3, NeoLAB's pen SDK, which is GPL-3.0. A built copy of the app is thus distributed under GPL-3.0 as a whole. See `NOTICE`.
 - NISDK3 is not in this repository. The build downloads it.
 - Open Smart Pen is not affiliated with NeoLAB Convergence, Inc.
+- To contribute, read `CONTRIBUTING.md` first.
