@@ -29,7 +29,10 @@ let plateBottom = NSColor(calibratedRed: 0.902, green: 0.890, blue: 0.875, alpha
 /// `fullBleed` fills the whole square with the plate, with no margin and no rounded corners. That
 /// is the picture for a place that crops and frames it itself, such as a GitHub profile: the app
 /// icon's own margin shows there as a tile inside a tile.
-func drawIcon(into size: CGFloat, fullBleed: Bool = false) -> NSBitmapImageRep {
+///
+/// `gentle` is the look of the pictures people see on a web page: the tinted plate and the bigger
+/// pencil. The app icon does not have it.
+func drawIcon(into size: CGFloat, fullBleed: Bool = false, gentle: Bool = false) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size), pixelsHigh: Int(size),
                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                               colorSpaceName: .calibratedRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -43,17 +46,22 @@ func drawIcon(into size: CGFloat, fullBleed: Bool = false) -> NSBitmapImageRep {
     let shape = fullBleed
         ? NSBezierPath(rect: plateRect)
         : NSBezierPath(roundedRect: plateRect, xRadius: cornerRadius * k, yRadius: cornerRadius * k)
-    if fullBleed {
+    if gentle {
         // A profile picture is seen at 20 to 40 pixels, on a dark page and on a white one. The
         // plate is near-white with a violet tint from the top right and a pink one from the
         // bottom left: gentle, and still a shape of its own on a white page.
         NSColor(srgbRed: 0.984, green: 0.980, blue: 1, alpha: 1).setFill()
         shape.fill()
-        for (tint, at, reach) in [(avatarViolet, NSPoint(x: size, y: size), size * 1.0),
-                                  (avatarPink, NSPoint(x: 0, y: 0), size * 0.9)] {
+        // The tints stay inside the plate, whatever its shape.
+        NSGraphicsContext.saveGraphicsState()
+        shape.addClip()
+        let w = plateRect.width
+        for (tint, at, reach) in [(avatarViolet, NSPoint(x: plateRect.maxX, y: plateRect.maxY), w * 1.0),
+                                  (avatarPink, NSPoint(x: plateRect.minX, y: plateRect.minY), w * 0.9)] {
             NSGradient(starting: tint.withAlphaComponent(0.5), ending: tint.withAlphaComponent(0))?
                 .draw(fromCenter: at, radius: 0, toCenter: at, radius: reach, options: [])
         }
+        NSGraphicsContext.restoreGraphicsState()
     } else {
         NSGradient(starting: plateTop, ending: plateBottom)?.draw(in: shape, angle: -90)
     }
@@ -64,8 +72,8 @@ func drawIcon(into size: CGFloat, fullBleed: Bool = false) -> NSBitmapImageRep {
     // marker at 1024, so it is thinned to 1.0. The shape is what has to match.
     // The profile picture has a bigger pencil with the menubar's own stroke: both were made for
     // small sizes.
-    let grid = plateRect.height * (fullBleed ? 0.76 : 0.60)
-    let weight: CGFloat = fullBleed ? 1.35 : 1.0
+    let grid = plateRect.height * (gentle ? 0.76 : 0.60)
+    let weight: CGFloat = gentle ? 1.35 : 1.0
     let u = grid / 16
     let ox = plateRect.midX - grid / 2
     let oy = plateRect.midY - grid / 2
@@ -122,12 +130,12 @@ for (name, px) in [("icon_16x16", 16), ("icon_16x16@2x", 32),
 // committed, because a web page cannot run this script.
 if let flag = CommandLine.arguments.firstIndex(of: "--logo"), CommandLine.arguments.count > flag + 1 {
     let out = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
-    try drawIcon(into: 512).representation(using: .png, properties: [:])!.write(to: out)
+    try drawIcon(into: 512, gentle: true).representation(using: .png, properties: [:])!.write(to: out)
 }
 // The same mark filling the whole square, for a profile picture.
 if let flag = CommandLine.arguments.firstIndex(of: "--avatar"), CommandLine.arguments.count > flag + 1 {
     let out = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
-    try drawIcon(into: 512, fullBleed: true).representation(using: .png, properties: [:])!.write(to: out)
+    try drawIcon(into: 512, fullBleed: true, gentle: true).representation(using: .png, properties: [:])!.write(to: out)
 }
 
 let resources = root.appendingPathComponent("Resources")
