@@ -19,7 +19,7 @@ If a question can be answered by exploring the codebase, explore the codebase in
 
 During codebase exploration, also look at existing documentation:
 
-- `docs/architecture.md` — the system overview and the pages it links (`docs/stroke-format.md`, `docs/decisions.md`, `docs/landscape-log.md`) plus `RESEARCH.md`. These are the source of truth for *why* the system is shaped the way it is.
+- `docs/architecture.md` — the system overview and the pages it links (`docs/stroke-format.md`, `docs/decisions.md`, `docs/landscape-log.md`) plus `docs/research.md`. These are the source of truth for *why* the system is shaped the way it is.
 - `docs/ubiquitous-language.md` — the glossary of domain terms and their definitions.
 
 ## During the session

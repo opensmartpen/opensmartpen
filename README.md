@@ -1,4 +1,4 @@
-<img src="docs/logo.png" width="96" alt="Open Smart Pen">
+<img src="assets/logo.png" width="96" alt="Open Smart Pen">
 
 # Open Smart Pen
 
@@ -8,8 +8,8 @@ The app does not transcribe. An agent of your choice, for example Claude Code or
 
 Tested with the Neo smartpen A1 and the LAMY Safari Ncode, on NeoLAB Ncode A4 paper and LAMY digital paper. macOS 13 or later.
 
-- `RESEARCH.md` — SDK, protocol, vendor app and field research (2026-09-10).
 - `docs/architecture.md` — system overview and entry point to the docs.
+- `docs/research.md` — SDK, protocol, vendor app and field research (2026-09-10).
 - `docs/stroke-format.md` — the raw JSONL stroke format and derived files.
 - `docs/decisions.md` — running decision log; formal records in `docs/adrs/`.
 - `docs/landscape-log.md` — how other products solve each concern, and how we differ.
@@ -19,7 +19,7 @@ Components:
 
 - `app/` — the macOS menubar app, on NeoLAB's NISDK3. See `app/README.md` to build and install it.
 - `docs/processing.md` — what the app writes, where and when, for whatever reads it.
-- `pipeline/` — earlier local scripts for rendering and transcribing. Not used by the app.
+- `assets/` — the logo and the profile picture.
 - `docs/adrs/` — architecture decision records.
 
 ## License

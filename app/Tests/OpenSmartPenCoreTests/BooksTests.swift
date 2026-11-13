@@ -3,7 +3,7 @@ import XCTest
 
 /// Each copy of a notebook is one folder under `books/`, named by the surface identity the client
 /// reported and an id we generated, and `book.json` inside it is the only authority on what that
-/// copy is (ADR-002). These tests use the real file shape `pipeline/books.py` reads.
+/// copy is (ADR-002). These tests use the real file shape.
 final class BooksTests: XCTestCase {
     private var root: URL!
     private let pad = BookFolder(surface: "s3/o27/b450", id: "7f3a9c")

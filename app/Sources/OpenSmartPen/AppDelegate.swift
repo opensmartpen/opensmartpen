@@ -310,7 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// One window for reading, whether the ink arrived a second ago or last month. Pages are
     /// drawn from raw strokes rather than opened as a PNG, so there is a single view experience
-    /// and a page is readable before the pipeline has ever touched it.
+    /// and a page is readable before anything else has touched it.
     private func showViewer(_ page: PageRef?) {
         panel?.dismiss()
         if viewerWindow == nil {

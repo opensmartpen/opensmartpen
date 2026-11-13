@@ -14,4 +14,4 @@ Pen (Neo smartpen A1, Ncode paper) → Bluetooth → **Open Smart Pen** (macOS m
 - `docs/decisions.md` — running decision log; formal records go to `docs/adrs/`.
 - `docs/landscape-log.md` — how other products solve each concern and how we differ.
 - `docs/ubiquitous-language.md` — glossary.
-- `RESEARCH.md` — SDK, protocol, app and field research (2026-09-10).
+- `docs/research.md` — SDK, protocol, app and field research (2026-09-10).

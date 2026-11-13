@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// Turns a worked-out page into a PNG. Everything decided — the crop, the scale, the width of each
 /// line — was decided in `PageRaster`; this only draws it.
 ///
-/// Core Graphics does the anti-aliasing and the round joins that `render.py` has to fake with
+/// Core Graphics does the anti-aliasing and the round joins that the earlier Python renderer had to fake with
 /// supersampling and hand-drawn dots, so the image is made at its final size.
 public enum PageImage {
     public static func png(_ raster: PageRaster) -> Data? {

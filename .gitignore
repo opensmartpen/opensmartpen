@@ -4,10 +4,6 @@
 DerivedData/
 *.xcuserstate
 xcuserdata/
-# Python
-.venv/
-__pycache__/
-*.pyc
 # local secrets
 .env
 # Open Smart Pen build output

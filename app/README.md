@@ -71,7 +71,7 @@ opposite fixes, and the menubar can only show the first.
 ## Working on the design
 
 ```
-./dev-design.sh
+scripts/dev-design.sh
 ```
 
 Opens a detached, always-visible window showing the panel in both appearances at once, with a

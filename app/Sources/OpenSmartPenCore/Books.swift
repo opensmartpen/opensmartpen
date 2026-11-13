@@ -63,7 +63,7 @@ public struct BookRecord: Equatable {
     /// The number a person would count to, 1 for the first sheet.
     public func humanPage(_ ncodePage: Int) -> Int { ncodePage - firstPage + 1 }
 
-    /// Readable-file stem, matching what `pipeline/books.py` writes. The same name the client
+    /// Readable-file stem. The same name the client
     /// used, so one sheet is one name everywhere under this copy (ADR-002).
     public func pageStem(_ ncodePage: Int) -> String { "p\(ncodePage)" }
 

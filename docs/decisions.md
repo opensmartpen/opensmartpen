@@ -282,7 +282,15 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **Decided:** the app icon is the pencil from the menubar, on the same light plate as before. This reverses the 2026-09-12 choice of the notebook. The pencil is the mark a person sees all day, so it is the one that says "this app" in a notification, in the About tab and on GitHub.
 - **Same path, one number changed.** `scripts/make-icon.swift` draws the path of `StatusIcon.pencil` on its 16-unit grid. The stroke is 1.0 where the menubar has 1.35, and the ends of the band are cut square; at 1024 pixels a round end shows as a bump outside the outline.
 - **No ink drop and no colour.** The drop means pages are waiting, and an icon must not claim a state.
-- **One icon file is committed:** `docs/logo.png`, 512 pixels, written by `scripts/make-icon.swift --logo ../docs/logo.png` from `app/`. The README and GitHub need a file; everything else is still generated at build time.
-- **A second picture fills the whole square:** `docs/avatar.png`, written by `--avatar`. A GitHub profile frames the picture itself, and the app icon's own margin showed there as a tile inside a tile.
+- **One icon file is committed:** `assets/logo.png`, 512 pixels, written by `scripts/make-icon.swift --logo ../assets/logo.png` from `app/`. The README and GitHub need a file; everything else is still generated at build time.
+- **A second picture fills the whole square:** `assets/avatar.png`, written by `--avatar`. A GitHub profile frames the picture itself, and the app icon's own margin showed there as a tile inside a tile.
 - **The profile picture has its own plate and a bigger pencil.** Near-white, with a violet tint from the top right and a pink one from the bottom left; the pencil is 76% of the square with the menubar stroke of 1.35. It is seen at 20 to 40 pixels, where the app icon's thin pencil was a grey mark. The app icon and the README logo did not change.
 - **The README logo has the same look as the profile picture,** on the rounded plate. Only the app icon keeps the plain plate and the thin pencil.
+
+## 2026-11-13 — The files are in fewer places
+
+- **`assets/`** holds the logo and the profile picture. They are brand pictures, not documents.
+- **`docs/research.md`** was `RESEARCH.md` at the root. The root now has only what a visitor expects: the README, the license files, and the folders `app/`, `docs/` and `assets/`.
+- **`docs/adrs/template.md`** was `docs/adr-template.md`, and **`app/scripts/dev-design.sh`** was `app/dev-design.sh`.
+- **`pipeline/` is deleted.** The three Python scripts drew and transcribed pages on the Mac before the app drew the page itself. The app never called them. Older entries in this log still name `render.py` and `transcribe.py`; the repository history has the files.
+- **The pencil in every picture is pure black.** It was 13% white.

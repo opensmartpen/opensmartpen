@@ -8,8 +8,8 @@ import SwiftUI
 /// in force at the moment it was written. The same join the renderer does — so what you see here
 /// and what lands in the PNG come from one rule rather than two.
 /// A point with the width the line has there. Width is resolved once, at load, through
-/// `Palette.width(for:force:)` — the one definition of how pressure widens a line, shared with
-/// render.py through palette.json. A second curve here is how the preview and the page start to
+/// `Palette.width(for:force:)` — the one definition of how pressure widens a line, kept in
+/// palette.json. A second curve here is how the preview and the page start to
 /// disagree by a little, always.
 struct InkPoint: Equatable {
     var x: Double

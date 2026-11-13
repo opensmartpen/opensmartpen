@@ -1,7 +1,7 @@
 #!/bin/bash
 # Live design loop: rebuild and relaunch the design window whenever a source file changes.
 #
-#   ./dev-design.sh
+#   scripts/dev-design.sh
 #
 # This builds `opensmartpen-design`, a separate app from the one people install. It has no pen, no
 # notes repo and no menubar item, so it is safe to run while the installed LaunchAgent is running.
@@ -9,7 +9,7 @@
 # The window keeps its position (AppKit frame autosave) and its selected state (UserDefaults),
 # so a relaunch reads as a reload.
 set -uo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 BIN=".build/debug/opensmartpen-design"
 PID=""

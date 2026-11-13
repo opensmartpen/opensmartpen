@@ -60,7 +60,7 @@ final class PensTests: XCTestCase {
     func testARecordWrittenByHandIsRead() throws {
         // Every other test here creates its record through the registry, so a mismatch between
         // what we write and what we read would pass all of them. This one writes the file the way
-        // the pipeline and a person do, and reads it back.
+        // a person does, and reads it back.
         //
         // The values are deliberately NOT the fallbacks: a record saying black/default is
         // indistinguishable from a lookup that found nothing, so it cannot prove the file was read.

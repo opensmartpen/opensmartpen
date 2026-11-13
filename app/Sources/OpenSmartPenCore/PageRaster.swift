@@ -6,9 +6,9 @@ import Foundation
 /// in different ways: a wrong scale is a bug you can test for, and a wrong stroke join is something
 /// you have to look at. This half is tested; the other half is small enough to read.
 ///
-/// It follows `pipeline/render.py`, which is the renderer of record — the same crop, the same
-/// pressure curve out of `palette.json`, the same resolution. Two renderers can still drift; what
-/// stops them drifting silently is that every number either of them uses comes from one file.
+/// It took its crop and its pressure curve from an earlier Python renderer, `render.py`, which is
+/// no longer in the repository. Every number it uses comes from `palette.json`, so a second
+/// renderer that reads the same file cannot drift from it silently.
 public struct PageRaster: Equatable {
     public struct Point: Equatable {
         /// Pixels from the left and top edge of the image.
@@ -29,15 +29,15 @@ public struct PageRaster: Equatable {
     public let lines: [Line]
 
     /// The ink width in millimetres when the palette has no measurement for the weight in force.
-    /// What the refill actually lays down, as measured against Neo Studio; the same 0.25 as
-    /// `render.py`'s `NIB_MM`.
+    /// What the refill actually lays down, as measured against Neo Studio; the 0.25 that the
+    /// earlier Python renderer also used.
     public static let nibMM = 0.25
 
     /// White space around the writing, in millimetres.
     static let padMM = 6.0
     static let dpi = 200.0
-    /// Sized for the transcriber, not for a person, which is where this parts company with `render.py`:
-    /// its PNG is opened in Preview, this one is looked at by a model. A model scales anything
+    /// Sized for the transcriber, not for a person, which is where this parts company with the earlier
+    /// Python renderer: its PNG was opened in Preview, this one is looked at by a model. A model scales anything
     /// longer than about 1568 pixels back down, so more than that is bytes spent on nothing; and
     /// under about 1100 a page with one line on it arrives small enough that the transcriber starts
     /// cropping and magnifying it to be sure, which costs minutes.
