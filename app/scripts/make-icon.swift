@@ -20,7 +20,8 @@ let side: CGFloat = 1024
 let plate = NSRect(x: 100, y: 100, width: 824, height: 824)
 let cornerRadius: CGFloat = 185
 
-let ink = NSColor(calibratedWhite: 0.13, alpha: 1)
+// Pure black, in every picture.
+let ink = NSColor(srgbRed: 0, green: 0, blue: 0, alpha: 1)
 let avatarViolet = NSColor(srgbRed: 0.545, green: 0.424, blue: 1, alpha: 1)
 let avatarPink = NSColor(srgbRed: 1, green: 0.722, blue: 0.851, alpha: 1)
 let plateTop = NSColor(calibratedRed: 0.98, green: 0.976, blue: 0.969, alpha: 1)
