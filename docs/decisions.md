@@ -283,3 +283,4 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **Same path, one number changed.** `scripts/make-icon.swift` draws the path of `StatusIcon.pencil` on its 16-unit grid. The stroke is 1.0 where the menubar has 1.35, and the ends of the band are cut square; at 1024 pixels a round end shows as a bump outside the outline.
 - **No ink drop and no colour.** The drop means pages are waiting, and an icon must not claim a state.
 - **One icon file is committed:** `docs/logo.png`, 512 pixels, written by `scripts/make-icon.swift --logo ../docs/logo.png` from `app/`. The README and GitHub need a file; everything else is still generated at build time.
+- **A second picture fills the whole square:** `docs/avatar.png`, written by `--avatar`. A GitHub profile frames the picture itself, and the app icon's own margin showed there as a tile inside a tile.

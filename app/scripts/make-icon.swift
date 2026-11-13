@@ -10,7 +10,8 @@
 // It carries no ink drop. In the menubar the drop means pages are waiting to sync, and an icon
 // has no business claiming a state.
 //
-//   scripts/make-icon.swift --logo <file.png>   also writes the 512-pixel picture the README shows
+//   scripts/make-icon.swift --logo <file.png>     also writes the 512-pixel picture the README shows
+//   scripts/make-icon.swift --avatar <file.png>   also writes it with the plate filling the square
 import AppKit
 
 let side: CGFloat = 1024
@@ -23,7 +24,10 @@ let ink = NSColor(calibratedWhite: 0.13, alpha: 1)
 let plateTop = NSColor(calibratedRed: 0.98, green: 0.976, blue: 0.969, alpha: 1)
 let plateBottom = NSColor(calibratedRed: 0.902, green: 0.890, blue: 0.875, alpha: 1)
 
-func drawIcon(into size: CGFloat) -> NSBitmapImageRep {
+/// `fullBleed` fills the whole square with the plate, with no margin and no rounded corners. That
+/// is the picture for a place that crops and frames it itself, such as a GitHub profile: the app
+/// icon's own margin shows there as a tile inside a tile.
+func drawIcon(into size: CGFloat, fullBleed: Bool = false) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size), pixelsHigh: Int(size),
                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                               colorSpaceName: .calibratedRGB, bytesPerRow: 0, bitsPerPixel: 0)!
@@ -31,17 +35,19 @@ func drawIcon(into size: CGFloat) -> NSBitmapImageRep {
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     let k = size / side   // everything below is authored at 1024 and scaled down
 
-    let plateRect = NSRect(x: plate.minX * k, y: plate.minY * k,
-                           width: plate.width * k, height: plate.height * k)
-    let shape = NSBezierPath(roundedRect: plateRect,
-                             xRadius: cornerRadius * k, yRadius: cornerRadius * k)
+    let plateRect = fullBleed
+        ? NSRect(x: 0, y: 0, width: size, height: size)
+        : NSRect(x: plate.minX * k, y: plate.minY * k, width: plate.width * k, height: plate.height * k)
+    let shape = fullBleed
+        ? NSBezierPath(rect: plateRect)
+        : NSBezierPath(roundedRect: plateRect, xRadius: cornerRadius * k, yRadius: cornerRadius * k)
     NSGradient(starting: plateTop, ending: plateBottom)?.draw(in: shape, angle: -90)
 
     // The pencil from StatusIcon, on its own 16-unit grid, blown up to fill the plate.
     //
     // One number is not the menubar's: the 1.35 stroke. It is right at 17 points and reads as a
     // marker at 1024, so it is thinned to 1.0. The shape is what has to match.
-    let grid = plate.height * 0.60 * k
+    let grid = plateRect.height * 0.60
     let u = grid / 16
     let ox = plateRect.midX - grid / 2
     let oy = plateRect.midY - grid / 2
@@ -99,6 +105,11 @@ for (name, px) in [("icon_16x16", 16), ("icon_16x16@2x", 32),
 if let flag = CommandLine.arguments.firstIndex(of: "--logo"), CommandLine.arguments.count > flag + 1 {
     let out = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
     try drawIcon(into: 512).representation(using: .png, properties: [:])!.write(to: out)
+}
+// The same mark filling the whole square, for a profile picture.
+if let flag = CommandLine.arguments.firstIndex(of: "--avatar"), CommandLine.arguments.count > flag + 1 {
+    let out = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+    try drawIcon(into: 512, fullBleed: true).representation(using: .png, properties: [:])!.write(to: out)
 }
 
 let resources = root.appendingPathComponent("Resources")
