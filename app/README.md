@@ -1,6 +1,6 @@
 # Brainio Pen
 
-macOS menubar app that keeps a Neo smartpen's strokes flowing into `~/Brainio/pen` with no attention from the user. The notes sit outside the app, so deleting it and installing it again costs nothing. Connect an S3 bucket in Settings → Sync and every page is copied there, as its strokes and a PNG, soon after the pen stops; with no bucket connected the notes simply stay on this Mac. It does not transcribe anything and runs no agents: whatever reads the bucket does that.
+macOS menubar app that keeps a Neo smartpen's strokes flowing into `~/Brainio/pen` with no attention from the user. The notes sit outside the app, so deleting it and installing it again costs nothing. Soon after the pen stops, each page gets a PNG beside its strokes. Connect an S3 bucket in Settings → Sync and both files are copied there; with no bucket connected the notes stay on this Mac. It does not transcribe anything and runs no agents: whatever reads the folder or the bucket does that.
 
 ## What it does
 
@@ -8,7 +8,7 @@ macOS menubar app that keeps a Neo smartpen's strokes flowing into `~/Brainio/pe
 - Scans whenever a paired pen is not connected, and connects one pen at a time. Each connected pen authorises, drains and streams on its own.
 - On connect, per pen: authorises (sends the configured PIN once if the pen asks), sets the pen clock, subscribes to all notebooks, then drains offline memory one notebook at a time.
 - Live strokes are appended to `books/<copy>/raw/p{page}.jsonl` as they finish. Each physical copy of a notebook is one folder (ADR-002).
-- Pages are uploaded once no pen has reported any event for `quietSeconds` (default 30). The wait is on the pen, not on each page: every page written in a sitting goes together. For each page the strokes go to the bucket, then a PNG drawn from them. The notebook and pen records, the ink log and the palette ride along whenever they have changed.
+- Pages are finished once no pen has reported any event for `quietSeconds` (default 30). The wait is on the pen, not on each page: every page written in a sitting goes together. Each page is then drawn as `books/<copy>/pages/p<N>.png`, with or without a bucket. With a bucket, the strokes go up, then the PNG. The notebook and pen records, the ink log and the palette ride along whenever they have changed.
 - Offline strokes are uploaded as soon as a notebook has been fully transferred. Only after the upload succeeds is that notebook deleted from the pen.
 - Failures are retried with backoff and surfaced as macOS notifications after three attempts. Battery, memory, PIN, duplicate connection and stalled transfers also notify. Normal operation is silent.
 
@@ -203,13 +203,15 @@ notes folder's own:
 ```
 books/<copy>/book.json        what the notebook is called, its paper, when this copy began
 books/<copy>/raw/p<N>.jsonl   the strokes of one page; replaced whole each time the page changes
-books/<copy>/pages/p<N>.png   the page drawn from those strokes; uploaded right after them
+books/<copy>/pages/p<N>.png   the page drawn from those strokes; written and uploaded after them
 pens/<slug>.json              each pen's name, mode, default ink and width
 mode.jsonl, palette.json      which ink and width was in force when, and what each ink looks like
 ```
 
-The PNG arrives last, so it is the object to listen for: when it lands, the strokes it was drawn
-from are already there. A page written on again is uploaded again, under the same two keys.
+The PNG arrives last, so it is the object to listen for, in the folder and in the bucket: when it
+lands, the strokes it was drawn from are already there. A page written on again is drawn and
+uploaded again, under the same two names. The file in the folder is only replaced when the picture
+is different. A PNG that is missing or older than its strokes is drawn again at the next start.
 
 What has been uploaded is remembered in `~/.config/brainio-pen/s3-uploaded.json`, by file size and
 date, for one bucket. Connect a different bucket — or delete that file — and everything on disk is
@@ -218,8 +220,9 @@ and the keys.
 
 ## Transcripts
 
-The app does not transcribe. Whatever reads the bucket does, and stores the text at
-`transcripts/<copy>/p<N>.md` (`../docs/processing.md` is the contract). The viewer can show that
+The app does not transcribe. Whatever reads the bucket or the folder does, and stores the text at
+`transcripts/<copy>/p<N>.md` there (`../docs/processing.md` is the contract). With no bucket, the
+viewer shows the file in the folder. The viewer can show that
 text beside the ink: the button in its bar, or T. It fetches the one file for the page on screen,
 asks again every 30 seconds while the pane is open, and keeps each transcript at the same path
 under `~/Brainio/pen` so it can be read offline.
@@ -231,7 +234,7 @@ pointer. While a zoom is moving the page is stretched, and it is redrawn sharp w
 
 Four layers, each unable to reach the one above it. See [ADR-003](../docs/adrs/003-ui-layer-separate-from-the-pen-sdk.md).
 
-- `Sources/BrainioPenCore` — no SDK dependency, no AppKit, fully unit-tested: models and JSONL serialisation, `StrokeAssembler` (dots → strokes), `RawStore` (append-only files), `QuietTracker` (what is pending and when it publishes), `Notebook`/`PageNaming` (how a page is described to a person), `S3Client` and `SigV4` (put a file in a bucket, with no AWS SDK), `S3Sync` (what has been uploaded and what has not), `SyncCoordinator` (write, track, upload, back off, notify), `Config`, notifiers.
+- `Sources/BrainioPenCore` — no SDK dependency, no AppKit, fully unit-tested: models and JSONL serialisation, `StrokeAssembler` (dots → strokes), `RawStore` (append-only files), `QuietTracker` (what is pending and when it publishes), `Notebook`/`PageNaming` (how a page is described to a person), `S3Client` and `SigV4` (put a file in a bucket, with no AWS SDK), `PagePictures` (the PNG of each page, kept in the folder), `S3Sync` (what has been uploaded and what has not), `SyncCoordinator` (write, track, upload, back off, notify), `Config`, notifiers.
 - `Sources/BrainioPenUI` — every window and view, and no SDK: `PanelModel` (one observable snapshot fed by the existing `onChange` closures), `StatusPanel` (SwiftUI), `StatusIcon` (the pencil and its states), `Viewer`, the pinned and menubar panels, the settings window. `PenLink` is the whole of what it knows about a pen — a protocol of plain values, so the layer builds and runs with no pen and no SDK linked in.
 - `Sources/BrainioPen` — the app: `PenSession` (NISDK3 delegates, connection and drain state machine, and the only conformance to `PenLink`), `SDKMapping`, `AppDelegate` (status item and popover), `UserNotifier`.
 - `Sources/BrainioPenDesign` + `Sources/BrainioPenDesignApp` — the design window and its fixtures, and the `brainio-pen-design` executable that opens it. Nothing else imports these, so none of it ships.

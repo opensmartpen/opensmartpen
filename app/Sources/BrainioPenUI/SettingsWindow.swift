@@ -244,8 +244,10 @@ public enum SettingsTab: Int, CaseIterable {
     }
 }
 
-/// One size for every tab, so the window does not jump as you move between them.
-private let pageSize = CGSize(width: 620, height: 580)
+/// One width for every tab. The height is the tab's own, up to a limit: a tab with three rows is
+/// not drawn above a field of empty grey, and a tab with five pens scrolls.
+private let pageWidth: CGFloat = 620
+private let pageMaxHeight: CGFloat = 720
 
 /// The ground every tab stands on: a grouped form, the way System Settings draws one. Labels on
 /// the left, values on the right, at the system's own sizes — nothing here is set in 10-point type.
@@ -264,7 +266,8 @@ private struct Page<Content: View>: View {
             content()
         }
         .formStyle(.grouped)
-        .frame(width: pageSize.width, height: pageSize.height)
+        .frame(width: pageWidth)
+        .frame(maxHeight: pageMaxHeight)
     }
 }
 
@@ -322,20 +325,28 @@ private struct PenSection: View {
                 updated.name = name
                 save(updated)
             }
-            Picker("Used for", selection: binding(\.mode)) {
-                ForEach(PenMode.allCases, id: \.rawValue) { mode in
-                    Text(mode.rawValue.capitalized).tag(mode)
+            LabeledContent("Used for") {
+                Segments(selection: binding(\.mode), choices: PenMode.allCases) { mode in
+                    Text(mode.rawValue.capitalized)
                 }
             }
-            .pickerStyle(.segmented)
+            // The same marks as the panel, in the same order: the inks, then the three widths.
+            // Somebody who has picked red in the menubar should find red here without reading.
+            // Three widths, because the paper strip has three buttons. `LineWidth.default` is the
+            // state before anything has been tapped, not a fourth width you can pick.
             LabeledContent("Ink") {
-                InkPicker(selection: binding(\.ink), palette: palette)
-            }
-            LabeledContent("Line width") {
-                // Three, because the paper strip has three buttons. `LineWidth.default` is not a
-                // fourth width you can pick — it is the state before anything has been tapped, and
-                // offering it here would be offering "unset" as a setting.
-                WidthChoice(selection: binding(\.width)).frame(width: 230)
+                HStack(spacing: 14) {
+                    InkPicker(selection: binding(\.ink), palette: palette)
+                    HStack(spacing: 4) {
+                        ForEach([LineWidth.thin, .medium, .thick], id: \.rawValue) { weight in
+                            WidthMark(weight: weight, selected: weight == pen.width) {
+                                var updated = pen
+                                updated.width = weight
+                                save(updated)
+                            }
+                        }
+                    }
+                }
             }
             LabeledContent("Address") {
                 Text(pen.mac).font(.callout.monospaced()).foregroundStyle(.secondary)
@@ -346,10 +357,7 @@ private struct PenSection: View {
             HStack(spacing: 6) {
                 Text(pen.name)
                 Spacer()
-                Circle().fill(connected ? Ink.done : Color.secondary.opacity(0.4))
-                    .frame(width: 7, height: 7)
-                Text(connected ? "Connected" : "Not connected")
-                    .font(.callout).foregroundStyle(.secondary)
+                StatusMark(on: connected, text: connected ? "Connected" : "Not connected")
             }
         }
         .confirmationDialog("Forget \(pen.name)?", isPresented: $confirmingForget) {
@@ -365,29 +373,49 @@ private struct PenSection: View {
     }
 }
 
-/// The three weights the strip offers. A plain row rather than a Picker, because the stored value
-/// can be `.default` — a pen that has never been given one — and a segmented Picker with nothing
-/// matching draws a selection anyway and lies about it.
-private struct WidthChoice: View {
-    @Binding var selection: LineWidth
-    private let choices: [LineWidth] = [.thin, .medium, .thick]
+/// One choice out of a few, drawn the way the system draws a segmented control. Not a Picker,
+/// because a line width can be `.default` — a pen that has never been given one — and a segmented
+/// Picker with nothing matching draws a selection anyway and lies about it. Both rows of a pen use
+/// this one, so they are the same width and the same shape.
+private struct Segments<Value: Hashable, Label: View>: View {
+    @Binding var selection: Value
+    let choices: [Value]
+    @ViewBuilder let label: (Value) -> Label
 
     var body: some View {
-        HStack(spacing: 5) {
-            ForEach(choices, id: \.rawValue) { weight in
-                Button { selection = weight } label: {
-                    Text(weight.rawValue.capitalized)
-                        .font(.system(size: 12, weight: selection == weight ? .semibold : .regular))
+        HStack(spacing: 0) {
+            ForEach(choices, id: \.self) { choice in
+                let on = selection == choice
+                Button { selection = choice } label: {
+                    label(choice)
+                        .font(.system(size: 13))
                         .foregroundStyle(Color.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 3)
                         .background(RoundedRectangle(cornerRadius: 5)
-                            .fill(selection == weight ? Color.accentColor.opacity(0.25)
-                                  : Color.primary.opacity(0.06)))
+                            .fill(on ? Color(nsColor: .controlColor) : .clear)
+                            .shadow(color: .black.opacity(on ? 0.18 : 0), radius: 1, y: 0.5))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(on ? .isSelected : [])
             }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.07)))
+        .frame(width: 290)
+    }
+}
+
+/// The dot and the word at the right of a section's title: is this thing connected or not.
+private struct StatusMark: View {
+    let on: Bool
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(on ? Ink.done : Color.secondary.opacity(0.4)).frame(width: 7, height: 7)
+            Text(text).font(.callout).fontWeight(.regular).foregroundStyle(.secondary)
         }
     }
 }
@@ -397,24 +425,21 @@ private struct InkPicker: View {
     let palette: Palette
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             ForEach(choices, id: \.rawValue) { colour in
-                let hex = palette.hex(for: colour)
-                Button { selection = colour } label: {
-                    Group {
-                        if let fill = swatch(hex) {
-                            Circle().fill(fill).overlay(Circle().stroke(Color.primary.opacity(0.15), lineWidth: 0.5))
-                        } else {
-                            Circle().strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [2, 1.5]))
-                                .foregroundStyle(.tertiary)
-                        }
+                if let fill = Color(inkHex: palette.hex(for: colour)) {
+                    InkDot(colour: fill, selected: selection == colour) { selection = colour }
+                        .help(colour.rawValue.capitalized)
+                } else {
+                    // An ink with no colour behind it has nothing to fill a dot with.
+                    Button { selection = colour } label: {
+                        Circle().strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [2, 1.5]))
+                            .foregroundStyle(selection == colour ? .primary : .tertiary)
+                            .frame(width: 16, height: 16).padding(2)
                     }
-                    .frame(width: 16, height: 16)
-                    .overlay(Circle().stroke(Color.primary, lineWidth: selection == colour ? 1.5 : 0).padding(-2.5))
-                    .padding(2)
+                    .buttonStyle(.plain)
+                    .help("\(colour.rawValue.capitalized): no colour assigned")
                 }
-                .buttonStyle(.plain)
-                .help(hex == nil ? "\(colour.rawValue) — no colour assigned" : colour.rawValue)
             }
         }
     }
@@ -423,14 +448,6 @@ private struct InkPicker: View {
     /// dropping it, so the setting is visible and can be changed.
     private var choices: [InkColor] {
         palette.offered.contains(selection) ? palette.offered : palette.offered + [selection]
-    }
-
-    private func swatch(_ hex: String?) -> Color? {
-        guard var h = hex else { return nil }
-        if h.hasPrefix("#") { h.removeFirst() }
-        guard h.count == 6, let v = Int(h, radix: 16) else { return nil }
-        return Color(.sRGB, red: Double((v >> 16) & 0xff) / 255,
-                     green: Double((v >> 8) & 0xff) / 255, blue: Double(v & 0xff) / 255)
     }
 }
 
@@ -502,9 +519,14 @@ private struct SyncTab: View {
                 TextField("Endpoint", text: $store.s3Draft.endpoint, prompt: Text("Amazon S3"))
                 connection
             } header: {
-                Text("S3 bucket")
+                HStack(spacing: 6) {
+                    Text("S3 bucket")
+                    Spacer()
+                    StatusMark(on: store.s3Connected,
+                               text: store.s3Connected ? "Connected" : "Not connected")
+                }
             } footer: {
-                Note("Every page is copied to this bucket as its strokes and a PNG. Nothing in the "
+                Note("Every page is kept on this Mac as its strokes and a PNG, and copied to this bucket. Nothing in the "
                      + "bucket is deleted, and the only thing read from it is the transcript of a "
                      + "page you open. Fill in Endpoint only for a service other than Amazon S3, "
                      + "such as Cloudflare R2 or MinIO.")
@@ -569,12 +591,16 @@ private struct SyncTab: View {
                         .foregroundStyle(Ink.critical)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if store.s3Connected, !store.s3Edited {
-                    Label("Connected", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Ink.done)
+                    // The header says it is connected. This says to where, in one piece, which
+                    // the five fields above do not.
+                    (Text("Pages go to ") + Text(destination).font(.callout.monospaced()))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
                 } else if store.s3Connected {
                     Text("Not saved yet").foregroundStyle(.secondary)
                 } else {
-                    Text("Not connected. Notes stay on this Mac.").foregroundStyle(.secondary)
+                    Text("Notes stay on this Mac until a bucket is connected.")
+                        .foregroundStyle(.secondary)
                 }
             }
             Spacer(minLength: 8)
@@ -589,6 +615,11 @@ private struct SyncTab: View {
                 .disabled(store.s3State == .checking)
             }
         }
+    }
+
+    private var destination: String {
+        let folder = store.config.s3.prefix.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return folder.isEmpty ? store.config.s3.bucket : "\(store.config.s3.bucket)/\(folder)"
     }
 
     private var lastUpload: String {
@@ -612,8 +643,13 @@ private struct GeneralTab: View {
         Page(store: store) {
             Section {
                 LabeledContent("Notes folder") {
-                    Text(store.config.dataPath).font(.callout.monospaced()).foregroundStyle(.secondary)
+                    // With a limit, because a row whose value is too wide stops being a row: the
+                    // form stacks it under its label.
+                    Text((store.config.dataURL.path as NSString).abbreviatingWithTildeInPath)
+                        .font(.callout.monospaced()).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
+                        .frame(maxWidth: 330, alignment: .trailing)
+                        .help(store.config.dataURL.path)
                     Button("Show") { NSWorkspace.shared.open(store.config.dataURL) }
                 }
             } footer: {
@@ -696,6 +732,8 @@ private struct Note: View {
 
     var body: some View {
         Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -746,13 +784,12 @@ public final class SettingsWindowController: NSWindowController {
         for tab in SettingsTab.allCases {
             let page: NSViewController
             switch tab {
-            case .pens: page = NSHostingController(rootView: PensTab(store: store))
-            case .books: page = NSHostingController(rootView: BooksTab(store: store))
-            case .sync: page = NSHostingController(rootView: SyncTab(store: store))
-            case .general: page = NSHostingController(rootView: GeneralTab(store: store))
-            case .about: page = NSHostingController(rootView: AboutTab(store: store))
+            case .pens: page = Self.host(PensTab(store: store))
+            case .books: page = Self.host(BooksTab(store: store))
+            case .sync: page = Self.host(SyncTab(store: store))
+            case .general: page = Self.host(GeneralTab(store: store))
+            case .about: page = Self.host(AboutTab(store: store))
             }
-            page.preferredContentSize = pageSize
             let item = NSTabViewItem(viewController: page)
             item.label = tab.title
             item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
@@ -760,7 +797,7 @@ public final class SettingsWindowController: NSWindowController {
         }
         tabs.selectedTabViewItemIndex = tab.rawValue
 
-        let window = NSWindow(contentRect: NSRect(origin: .zero, size: pageSize),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: pageWidth, height: 400),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
         window.toolbarStyle = .preference
@@ -774,6 +811,14 @@ public final class SettingsWindowController: NSWindowController {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// A tab that tells the window how tall it is, so the window fits it, and follows it when a
+    /// pen is added or an error line appears.
+    private static func host<V: View>(_ view: V) -> NSViewController {
+        let host = NSHostingController(rootView: view)
+        host.sizingOptions = [.preferredContentSize]
+        return host
+    }
 
     public func select(_ tab: SettingsTab) {
         tabs.selectedTabViewItemIndex = tab.rawValue

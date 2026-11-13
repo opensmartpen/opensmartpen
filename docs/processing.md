@@ -1,12 +1,14 @@
-# Processing (the other side of the bucket)
+# Processing (the reader's side)
 
-Brainio Pen stops at the bucket. It captures pages and uploads them; it does not transcribe. This page is the contract with whatever reads the bucket, so the two halves stay aligned. Change the app's uploads and this page changes with them.
+Brainio Pen stops at the page. It captures pages, keeps them in `~/Brainio/pen`, and copies them to a bucket if one is connected; it does not transcribe. This page is the contract with whatever reads the pages, so the two halves stay aligned. Change what the app writes and this page changes with it.
+
+The folder and the bucket have one layout. A reader on the Mac reads the folder; a reader anywhere else reads the bucket. All that follows applies to both, unless it says bucket.
 
 The reader today is an agent that sweeps the bucket. The instructions it was given are at the bottom, word for word.
 
 ## What the app writes
 
-Under the bucket, and under the folder set in Settings → Sync if there is one:
+Under `~/Brainio/pen`, and the same under the bucket (and under the folder set in Settings → Sync if there is one):
 
 ```
 books/<copy>/book.json        notebook title, paper size, first_page
@@ -17,10 +19,11 @@ mode.jsonl, palette.json      which ink and width was in force when, and what ea
 brainio-pen-connected.txt     written once when the bucket is connected; not a note
 ```
 
-- **One direction, with one exception.** The app writes under `books/`, `pens/` and the two ink files. It never lists and never deletes, so anything the reader stores in the bucket is left alone. The one thing it reads is the transcript of a page that is open in the viewer (see below).
-- **When.** Pages go up once no pen has reported any event for `quietSeconds` (30 by default). The wait is on the pen, not on each page, so the pages of one sitting arrive together. Pages drained from pen memory go up as soon as the notebook has been transferred.
-- **Order.** The strokes first, then the PNG. The PNG is the object to trigger on: when it lands, its strokes are already there.
-- **Replaced whole.** A page written on again is uploaded again under the same two keys. The PNG always shows the whole page, cropped to the ink, so its size changes as the page grows.
+- **One direction, with one exception.** The app writes under `books/`, `pens/` and the two ink files. In the bucket it never lists and never deletes, so anything the reader stores there is left alone. The one thing it reads is the transcript of a page that is open in the viewer (see below).
+- **When.** Pages are drawn, and go up, once no pen has reported any event for `quietSeconds` (30 by default). The wait is on the pen, not on each page, so the pages of one sitting arrive together. Pages drained from pen memory go up as soon as the notebook has been transferred.
+- **Order.** The strokes first, then the PNG, in the folder and in the bucket. The PNG is the file to trigger on: when it lands, its strokes are already there.
+- **Replaced whole.** A page written on again is drawn and uploaded again under the same two names. The PNG always shows the whole page, cropped to the ink, so its size changes as the page grows. In the folder the PNG is replaced in one step and only when the picture is different, so a reader never sees half a file and is not woken for nothing.
+- **The folder holds more.** `books/<copy>/pages/` on a Mac that ran earlier builds can also hold `.svg`, `.md` and `.actions.json` files. The app no longer reads or writes them, and they do not go to the bucket.
 - **The control strip.** `books/s3-o1013-b1-*` is the printed strip of colour and width buttons. Its taps are uploaded as strokes, because they are the record, but it gets no PNG and it is not a notebook.
 - **Colour.** The PNG is already drawn in the right inks. `mode.jsonl` and `palette.json` are only needed by a reader that draws pages itself.
 
@@ -34,9 +37,9 @@ The limit of this: the transcript is made from the image, so a reader can tell w
 
 ## What the reader writes
 
-Transcripts go to `transcripts/<copy>/p<N>.md` in the same bucket. Not under `books/`: that is the app's side, and a reader that sweeps for changed files would otherwise be woken by its own output.
+Transcripts go to `transcripts/<copy>/p<N>.md`, in the bucket for a reader of the bucket and in `~/Brainio/pen` for a reader on the Mac. Not under `books/`: that is the app's side, and a reader that sweeps for changed files would otherwise be woken by its own output.
 
-The app shows them. When a page is open in the viewer with the transcript pane on (the button in the bar, or T), the app fetches that one file by name, shows it beside the ink, and asks again every 30 seconds while the pane is open. Each transcript fetched is kept at the same path under `~/Brainio/pen`, so it can be read offline. The path is therefore part of the contract: move the transcripts and the pane goes empty. The key needs permission to read as well as to write.
+The app shows them. When a page is open in the viewer with the transcript pane on (the button in the bar, or T), the app fetches that one file by name, shows it beside the ink, and asks again every 30 seconds while the pane is open. Each transcript fetched is kept at the same path under `~/Brainio/pen`, so it can be read offline. With no bucket connected, the pane shows the file in the folder. With a bucket connected, the bucket's transcript replaces the one in the folder, so use one reader for one page, not two. The path is therefore part of the contract: move the transcripts and the pane goes empty. The key needs permission to read as well as to write.
 
 The pane draws Markdown a line at a time: `# ` as the title, `## ` as a heading (the reader uses it for when a part was written and which meeting it belongs to), `- ` as a bullet, and emphasis and `~~struck~~` inside a line. Line breaks are kept as written. Anything else is shown as plain text.
 

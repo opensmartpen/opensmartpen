@@ -57,12 +57,11 @@ Inside it, captured and derived stay apart. Everything in `pages/` can be delete
     s3-o27-b450-7f3a9c/
       book.json                     surface identity, title, paper size, when this copy began
       raw/     p1.jsonl  p2.jsonl        as the client named them
-      pages/   p1.svg  p1.md              the same pages, made readable
-               p2.svg  p2.md
+      pages/   p1.png  p2.png            the same pages, made readable
     s3-o1012-b3017-2b81e4/
       book.json
       raw/     p4.jsonl
-      pages/   p4.svg  p4.md
+      pages/   p4.png
 ```
 
 **The name of a folder is the surface identity, then the id.** The two are joined by a dash, and any `/` in the surface identity becomes a dash. The pen's `s3/o27/b450` therefore gives `s3-o27-b450-7f3a9c`.
@@ -71,7 +70,7 @@ Inside it, captured and derived stay apart. Everything in `pages/` can be delete
 
 **The id is opaque and permanent.** Nothing may read meaning out of it. The surface identity in the name is there for a person to read. `book.json` is the only authority.
 
-**One sheet has one name.** A page is named as the client named it, and that name carries through: `raw/p4.jsonl` becomes `pages/p4.svg`. You can pair a captured file with its readable one by eye, and no rule stands between them.
+**One sheet has one name.** A page is named as the client named it, and that name carries through: `raw/p4.jsonl` becomes `pages/p4.png`. You can pair a captured file with its readable one by eye, and no rule stands between them.
 
 The number a person counts to is not thrown away. `book.json` holds which sheet its owner calls page 1, and everything a person reads uses it — the panel, and the front matter of a transcription. It just does not name a file.
 
@@ -100,7 +99,7 @@ The number a person counts to is not thrown away. `book.json` holds which sheet 
 - **Put the data in `~/Library/Application Support`** — the macOS convention, and the right one for data a person must never open. These are the person's notes, which is the opposite kind of data.
 - **Put the data in `~/Documents`** — the usual place for documents, and the usual place that syncs to iCloud. An append-only record uploaded on every line, and evicted when the disk fills, is a record we cannot trust.
 - **Put the title in the folder name** — a rename would then move every file and break every link into it.
-- **Number a readable file as a person counts pages** — `raw/p4.jsonl` then becomes `pages/page-01.svg`, and every tool needs the book record before it can pair the two. The offset is still there for a person to read; it does not have to name a file as well.
+- **Number a readable file as a person counts pages** — `raw/p4.jsonl` then becomes `pages/page-01.png`, and every tool needs the book record before it can pair the two. The offset is still there for a person to read; it does not have to name a file as well.
 - **File a setting under the page of the tap that caused it** — a click in the app has no page, so many settings would have no home.
 
 ## Consequences
@@ -111,6 +110,6 @@ The number a person counts to is not thrown away. `book.json` holds which sheet 
 - **Harder:** the app must guess whether a copy is new. Two notebooks of the same product, in use at the same time, is the case it will get wrong.
 - **Harder:** the surface identity alone no longer finds a page. Something must read the book records to learn which folder holds it.
 - **Harder:** a repair moves files, so a tool must exist to do it. Until it does, a wrong guess is fixed by hand.
-- **Harder:** a readable file carries the pen's page number, which is not the number printed on the sheet. The LAMY notebook starts at `p4.svg` and has no `p1`.
+- **Harder:** a readable file carries the pen's page number, which is not the number printed on the sheet. The LAMY notebook starts at `p4.png` and has no `p1`.
 - **Harder:** a folder in the root of the home folder is not what a Mac user expects. We accept one strange folder, which a person learns one time, instead of a location that works against reading the files every day.
 - **Committed-to:** the generated id as opaque and permanent, a page as movable between book folders, and one file for every setting.

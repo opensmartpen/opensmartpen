@@ -369,9 +369,19 @@ DAM holds an agent in two places, and until now both of them looked the same fro
 
 ## 2026-11-11 — The app only captures and uploads
 
-- Removed from the app: actions, transcription and the whole DAM integration, the agents in Settings, and git (the local commits as well as the push). The drafts `DRAFT-a-page-is-transcribed-by-an-agent`, `DRAFT-image-transcription` and `DRAFT-git-is-a-view` describe what was removed.
+- Removed from the app: actions, transcription and the whole DAM integration, the agents in Settings, and git (the local commits as well as the push). The drafts `DRAFT-a-page-is-transcribed-by-an-agent`, `DRAFT-image-transcription` and `DRAFT-git-is-a-view` described what was removed; they were deleted on 2026-11-13.
 - One storage: an S3 bucket, connected in Settings → Sync. A page goes up as its strokes and a PNG once it has been quiet for 30 seconds. One direction only; the app never reads or deletes in the bucket. With no bucket connected, notes stay on this Mac and nothing fails.
 - S3 is spoken directly (SigV4 over URLSession, checked against the AWS worked example), not through the AWS SDK. The secret key is in `~/.config/brainio-pen/s3-secret`, not the Keychain, for the reason the DAM key was not: an ad-hoc signature changes with every build.
 - What has been uploaded is a list beside the config, not in the notes folder. The existing `.git` in `~/Brainio/pen` and the old `pages/*.md` and `*.actions.json` files are left where they are; the app no longer reads or writes them.
 - Open: what reads the bucket and transcribes. The PNG is the object to trigger on.
 - Later the same day: uploads wait on the pen, not on each page — everything pending goes once no pen has reported any event for 30 seconds. And the app reads one thing from the bucket after all: the transcript of the page open in the viewer, at `transcripts/<copy>/p<N>.md`, shown beside the ink. It still makes no transcript itself. The first real one arrived that evening.
+
+## 2026-11-13 — The page picture is kept in the folder
+
+- **Why.** The plan is an open release that works with no bucket (meeting of 2026-11-13). A reader on the Mac had strokes and nothing to look at, because the PNG was drawn at upload only.
+- **What changed.** `PagePictures` writes `books/<copy>/pages/p<N>.png` when the pen has been quiet, with or without a bucket. `S3Sync` uploads that file and draws nothing. The folder and the bucket now have one layout, and `docs/processing.md` is one contract for both.
+- **The bucket did not change.** Same keys, same order, same moment. The reader of the bucket needs no new instructions.
+- **What is owed is read from the files** (ADR-004). A PNG that is missing or older than its strokes makes the page pending at the next start. So the first start of this build draws every page captured before it. The September PNGs made by `pipeline/render.py` are replaced.
+- **A retry does not wake a reader.** The file is replaced only when the picture is different.
+- **A local reader writes `transcripts/<copy>/p<N>.md` in the folder**, and the viewer already shows it when no bucket is connected. With a bucket, the bucket's transcript replaces the local one.
+- Open: the reader kit for a local agent, and what wakes it.

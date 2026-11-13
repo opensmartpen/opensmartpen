@@ -2,7 +2,8 @@ import BrainioPenCore
 import BrainioPenUI
 import Foundation
 
-/// Draws a captured page as a PNG, to go to the bucket beside its strokes.
+/// Draws a captured page as a PNG, kept in the notes folder beside its strokes and sent to the
+/// bucket with them.
 ///
 /// It reads the strokes back off disk rather than holding them: the page being drawn went quiet a
 /// minute ago, so the file is the whole of it, and nothing here has to be kept in step with what

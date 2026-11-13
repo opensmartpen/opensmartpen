@@ -225,7 +225,7 @@ public final class SyncCoordinator {
         publisher.dirtyPaths(under: Self.capturePrefixes).filter { path in
             guard let page = PageRef(rawRelativePath: path) else {
                 // Anything under a book's `pages` was made from the record. The one such file the
-                // bucket gets is the PNG, and that is drawn at upload rather than read from here.
+                // bucket gets is the PNG, and that goes up with its page, not by itself.
                 return !path.contains("/pages/")
             }
             return controlBooks.contains(page.folder.surface)

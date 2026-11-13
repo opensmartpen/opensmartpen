@@ -1,20 +1,14 @@
 import Foundation
 
-/// Makes the picture of a page that goes to the bucket beside its strokes. The drawing needs Core
-/// Graphics, which this layer does not have, so it arrives from above.
-public protocol PageImaging: AnyObject {
-    func png(for ref: PageRef) -> Data?
-}
-
 /// Copies captured files to the bucket, and remembers which ones it has copied.
 ///
 /// One direction only. Nothing is ever read back from the bucket and nothing in it is ever
 /// deleted: the notes folder on this Mac is the original, and the bucket is where the rest of
 /// the world picks the pages up.
 ///
-/// A captured page goes up as two files — the strokes, then a PNG drawn from them — so that
-/// whatever reads the bucket can look at a page without knowing how to draw one. The PNG is the
-/// last thing to arrive, which makes it the one to listen for.
+/// A captured page goes up as two files — the strokes, then the PNG that `PagePictures` keeps
+/// beside them — so that whatever reads the bucket can look at a page without knowing how to draw
+/// one. The PNG is the last thing to arrive, which makes it the one to listen for.
 ///
 /// With no bucket connected this does nothing and says everything went well. That is deliberate:
 /// the app is whole without a bucket, and the day one is connected every file already on disk is
@@ -25,7 +19,6 @@ public final class S3Sync: Publishing {
     private let lock = NSLock()
     private var client: S3Client?
     private var sent: [String: Stamp] = [:]
-    public var imaging: PageImaging?
 
     /// What a file looked like when it was uploaded. A file that still looks like this has
     /// nothing new in it; captured files are only ever appended to, so size alone would nearly
@@ -91,9 +84,12 @@ public final class S3Sync: Publishing {
 
             try client.put(path, data: data, contentType: Self.contentType(of: path))
             uploaded += 1
-            if let page = PageRef(rawRelativePath: path), let png = image(of: page) {
-                try client.put(Self.imagePath(for: page), data: png, contentType: "image/png")
-                uploaded += 1
+            if let page = PageRef(rawRelativePath: path) {
+                let image = PagePictures.imagePath(for: page)
+                if let png = try? Data(contentsOf: root.appendingPathComponent(image)) {
+                    try client.put(image, data: png, contentType: "image/png")
+                    uploaded += 1
+                }
             }
             // Only now: a page whose picture did not arrive has not arrived.
             record(path, stamp)
@@ -114,20 +110,7 @@ public final class S3Sync: Publishing {
         return out
     }
 
-    /// Where a page's picture goes: beside the strokes, under the same name.
-    public static func imagePath(for page: PageRef) -> String {
-        page.folder.pagePath(stem: "p\(page.number)", ext: "png")
-    }
-
     // MARK: - pieces
-
-    /// The drawing reads the same in-memory ink state the panel does, which belongs to the main
-    /// thread. Uploads run off it, so the drawing is the one step that goes back.
-    private func image(of page: PageRef) -> Data? {
-        guard let imaging else { return nil }
-        if Thread.isMainThread { return imaging.png(for: page) }
-        return DispatchQueue.main.sync { imaging.png(for: page) }
-    }
 
     private func recorded(_ path: String) -> Stamp? {
         lock.lock(); defer { lock.unlock() }

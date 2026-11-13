@@ -70,14 +70,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         books = BookRegistry(root: config.dataURL)
         let router = PageRouter(books: books, store: store)
         router.adoptExisting()
+        // Each page gets a picture in the folder first, bucket or no bucket, and then goes on to
+        // the bucket. The picture is what a reader looks at, on this Mac or on the other side.
+        let pictures = PagePictures(root: config.dataURL, next: sync)
+        pictures.controlBooks = Set(config.controlBooks)
         coordinator = SyncCoordinator(store: store, router: router, tracker: QuietTracker(),
-                                      publisher: sync, notifier: notifier,
+                                      publisher: pictures, notifier: notifier,
                                       quietWindow: config.quietSeconds)
         coordinator.controlBooks = Set(config.controlBooks)
         coordinator.modeLog = ModeLog(root: config.dataURL, app: Self.clientID, sdk: Self.sdkVersion)
         // The page's picture is drawn the way the viewer draws it, from the same strokes.
-        sync.imaging = PageImager(books: books, root: config.dataURL, modeLog: coordinator.modeLog,
-                                  controlBooks: Set(config.controlBooks))
+        pictures.imaging = PageImager(books: books, root: config.dataURL, modeLog: coordinator.modeLog,
+                                      controlBooks: Set(config.controlBooks))
         connectBucket()
 
         session = PenSession(config: config, configURL: configURL, coordinator: coordinator, notifier: notifier)
@@ -233,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.info("pages go to \(account.destination) after \(Int(config.quietSeconds)) s of quiet")
         } else {
             sync.connect(nil)
-            Log.info("no bucket connected; pages stay on this Mac")
+            Log.info("no bucket connected; pages and their pictures stay on this Mac")
         }
         coordinator.recoverPending()
     }

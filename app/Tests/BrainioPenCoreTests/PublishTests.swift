@@ -114,26 +114,91 @@ final class PublishTests: XCTestCase {
         XCTAssertEqual(bucket.requests.count, 2)
     }
 
+    final class Drawer: PageImaging {
+        var drawn = 0
+        var text: (PageRef) -> String = { "png of \($0.description)" }
+        func png(for ref: PageRef) -> Data? { drawn += 1; return Data(text(ref).utf8) }
+    }
+
     func testAPageGoesUpAsItsStrokesAndThenItsPicture() throws {
-        final class Drawer: PageImaging {
-            func png(for ref: PageRef) -> Data? { Data("png of \(ref.description)".utf8) }
-        }
-        let sync = try makeSync()
-        let drawer = Drawer()
-        sync.imaging = drawer
-        let flow = makeFlow(publisher: sync)
+        let pictures = PagePictures(root: notes, next: try makeSync())
+        pictures.imaging = Drawer()
+        let flow = makeFlow(publisher: pictures)
         let a = PageID(section: 3, owner: 27, book: 5, page: 7)
         flow.coordinator.ingestLive([stroke(a, start: 1)])
         let refA = try ref(a, flow.books)
 
-        XCTAssertEqual(try sync.publish(paths: [refA.rawRelativePath]), 2)
+        XCTAssertEqual(try pictures.publish(paths: [refA.rawRelativePath]), 2)
         let image = "books/\(refA.folder.name)/pages/p7.png"
         XCTAssertEqual(bucket.paths, [key(refA.rawRelativePath), key(image)],
                        "the picture is last, so it is the one to listen for")
         XCTAssertEqual(bucket.objects[key(image)], Data("png of \(refA.description)".utf8))
         XCTAssertEqual(bucket.requests.last?.value(forHTTPHeaderField: "content-type"), "image/png")
-        XCTAssertFalse(FileManager.default.fileExists(atPath: notes.appendingPathComponent(image).path),
-                       "the picture is made for the bucket, not left in the notes folder")
+        XCTAssertEqual(try Data(contentsOf: notes.appendingPathComponent(image)), bucket.objects[key(image)],
+                       "the folder and the bucket hold the same picture")
+    }
+
+    /// A reader on this Mac needs the picture as much as one behind a bucket does.
+    func testWithNoBucketThePictureIsStillKeptInTheFolder() throws {
+        let pictures = PagePictures(root: notes, next: try makeSync(connected: false))
+        pictures.imaging = Drawer()
+        let flow = makeFlow(publisher: pictures)
+        let a = PageID(section: 3, owner: 27, book: 5, page: 7)
+        flow.coordinator.ingestLive([stroke(a, start: 1)])
+        let refA = try ref(a, flow.books)
+
+        XCTAssertEqual(try pictures.publish(paths: [refA.rawRelativePath]), 0, "nothing went to a bucket")
+        let image = notes.appendingPathComponent("books/\(refA.folder.name)/pages/p7.png")
+        XCTAssertEqual(try Data(contentsOf: image), Data("png of \(refA.description)".utf8))
+        XCTAssertTrue(bucket.requests.isEmpty)
+    }
+
+    /// A reader that listens for the picture must not be woken by a retry.
+    func testAPictureThatHasNotChangedIsNotWrittenAgain() throws {
+        let pictures = PagePictures(root: notes, next: try makeSync(connected: false))
+        let drawer = Drawer()
+        pictures.imaging = drawer
+        let flow = makeFlow(publisher: pictures)
+        let a = PageID(section: 3, owner: 27, book: 5, page: 7)
+        flow.coordinator.ingestLive([stroke(a, start: 1)])
+        let refA = try ref(a, flow.books)
+        let image = notes.appendingPathComponent(PagePictures.imagePath(for: refA))
+
+        _ = try pictures.publish(paths: [refA.rawRelativePath])
+        let long = Date(timeIntervalSince1970: 1_000_000)
+        try FileManager.default.setAttributes([.modificationDate: long], ofItemAtPath: image.path)
+        _ = try pictures.publish(paths: [refA.rawRelativePath])
+        XCTAssertEqual(drawer.drawn, 2)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: image.path)[.modificationDate] as? Date, long)
+
+        drawer.text = { _ in "more ink" }
+        _ = try pictures.publish(paths: [refA.rawRelativePath])
+        XCTAssertEqual(try Data(contentsOf: image), Data("more ink".utf8))
+    }
+
+    /// With no bucket nothing is "unsent", so the picture is what says a page was left unfinished:
+    /// one written just before the app stopped, or captured by a build that kept no pictures.
+    func testAPageWithoutACurrentPictureIsRecoveredAndTheControlStripIsNot() throws {
+        let pictures = PagePictures(root: notes, next: try makeSync(connected: false))
+        pictures.imaging = Drawer()
+        pictures.controlBooks = ["s3/o1013/b1"]
+        let flow = makeFlow(publisher: pictures)
+        flow.coordinator.controlBooks = pictures.controlBooks
+        let a = PageID(section: 3, owner: 27, book: 5, page: 7)
+        let strip = PageID(section: 3, owner: 1013, book: 1, page: 1)
+        flow.coordinator.ingestLive([stroke(a, start: 1), stroke(strip, start: 2)])
+        let refA = try ref(a, flow.books)
+
+        XCTAssertEqual(pictures.dirtyPaths(under: ["books/"]), [refA.rawRelativePath])
+        _ = try pictures.publish(paths: [refA.rawRelativePath])
+        XCTAssertEqual(pictures.dirtyPaths(under: ["books/"]), [], "the picture is as new as the strokes")
+
+        // More ink, later than the picture.
+        let raw = notes.appendingPathComponent(refA.rawRelativePath)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)],
+                                              ofItemAtPath: raw.path)
+        let restarted = makeFlow(publisher: pictures)
+        XCTAssertEqual(restarted.coordinator.recoverPending(), [refA])
     }
 
     /// The wait is on the pen, not on the page. A page left for another is not finished, so
