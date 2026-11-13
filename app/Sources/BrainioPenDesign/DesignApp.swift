@@ -90,9 +90,12 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
             config.s3.prefix = "pen"
             try? S3Secret.write("not-a-real-secret", to: secret)
         }
-        let info = AppInfo(version: "0.0.0", sdk: "NISDK3 1.1.5",
+        var info = AppInfo(version: "0.0.0", sdk: "NISDK3 1.1.5",
                            configURL: root.appendingPathComponent("config.json"),
                            logURL: root.appendingPathComponent("brainio-pen.log"))
+        // The design window is a bare binary and carries no license texts. A packaged app does,
+        // and that is the state worth looking at, so the fixture stands in for the folder.
+        info.licensesURL = root
         let store = SettingsStore(pens: pens, books: books, config: config,
                                   configURL: info.configURL, info: info, secretURL: secret)
         if bucket {
