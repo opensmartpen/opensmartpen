@@ -11,6 +11,15 @@ public struct AppInfo {
     public var configURL: URL
     public var logURL: URL
     public var sourceURL = URL(string: "https://github.com/apocohq/brainio-pen")!
+    /// The source of the pen SDK this build links, at the version `Package.swift` pins. The built
+    /// app is GPL-3.0 because of it, and the GPL asks that a copy says where that source is.
+    public var sdkSourceURL = URL(string: "https://github.com/NeoSmartpen/iOS-SDK3.0/tree/1.1.5")!
+    /// The license texts `make-app.sh` puts in the bundle. Nil for a bare binary, which has none.
+    public var licensesURL: URL? = {
+        guard let url = Bundle.main.resourceURL?.appendingPathComponent("Licenses"),
+              FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url
+    }()
 
     public init(version: String, sdk: String, configURL: URL, logURL: URL) {
         self.version = version
@@ -712,11 +721,25 @@ private struct AboutTab: View {
                 .padding(.vertical, 10)
             }
             Section {
-                LabeledContent("Pen SDK", value: "\(store.info.sdk), GPL-3.0")
                 LabeledContent("Made by", value: "Apoco")
                 LabeledContent("Source") {
                     Link("github.com/apocohq/brainio-pen", destination: store.info.sourceURL)
                 }
+                LabeledContent("Pen SDK") {
+                    Link("\(store.info.sdk), GPL-3.0", destination: store.info.sdkSourceURL)
+                }
+            }
+            Section {
+                LabeledContent("License") {
+                    // Only a packaged app carries the texts, so only a packaged app offers them.
+                    if let licenses = store.info.licensesURL {
+                        Button("Show Licenses") { NSWorkspace.shared.open(licenses) }
+                    } else {
+                        Text("Apache-2.0 and GPL-3.0").foregroundStyle(.secondary)
+                    }
+                }
+                Note("Open source. The source code is Apache-2.0. This app contains the pen SDK, "
+                     + "so the app as a whole is GPL-3.0.")
             }
         }
     }

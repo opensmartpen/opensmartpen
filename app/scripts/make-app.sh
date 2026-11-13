@@ -34,6 +34,16 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # CFBundleIconName and the compiled catalog, and ignores CFBundleIconFile entirely.
 cp Resources/Assets.car "$APP/Contents/Resources/Assets.car"
 
+# The license texts travel with the app. The built app contains NISDK3, which is GPL-3.0, and the
+# GPL asks that each copy of a binary carries the license. The GPL text is taken from the SDK
+# checkout the build has just used, so it is always the text of the version that was linked.
+SDK_LICENSE=".build/checkouts/iOS-SDK3.0/LICENSE"
+[ -f "$SDK_LICENSE" ] || { echo "build failed: $SDK_LICENSE missing" >&2; exit 1; }
+mkdir -p "$APP/Contents/Resources/Licenses"
+cp ../LICENSE "$APP/Contents/Resources/Licenses/LICENSE-Apache-2.0.txt"
+cp ../NOTICE "$APP/Contents/Resources/Licenses/NOTICE.txt"
+cp "$SDK_LICENSE" "$APP/Contents/Resources/Licenses/NISDK3-GPL-3.0.txt"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
