@@ -53,7 +53,7 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
 
     public func windowWillClose(_ notification: Notification) { NSApp.terminate(nil) }
 
-    /// A settings store with two pens and two notebooks behind it, none of them real. Everything
+    /// A settings store with three pens and two notebooks behind it, none of them real. Everything
     /// it writes goes to a folder that is thrown away, including the secret.
     private static func settings(bucket: Bool) -> SettingsStore {
         let root = FileManager.default.temporaryDirectory
@@ -65,8 +65,13 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
 
         let pens = PenRegistry(repo: notes)
         pens.create(mac: "9c7bd2000001", name: "Everyday")
+        if var marker = pens.create(mac: "9c7bd2000003", name: "Marker") {
+            marker.mode = .highlight
+            marker.ink = .yellow
+            marker.width = .thick
+            pens.save(marker)
+        }
         if var red = pens.create(mac: "9c7bd2000002", name: "Red one") {
-            red.mode = .accent
             red.ink = .red
             red.width = .thin
             pens.save(red)

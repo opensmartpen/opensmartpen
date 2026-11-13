@@ -3,8 +3,11 @@ import Foundation
 /// What a pen is for. Chosen by picking up a pen rather than by tapping a mode onto the one pen
 /// you own, which is the point: a pen in your hand is self-evident, and a mode is invisible once
 /// set. The renderer reads this; Brainio Pen only stores it.
+///
+/// Two, not three. There was an `accent` between them, and it said nothing an ink colour does not
+/// already say. A record that still says `accent` is read as `writing`.
 public enum PenMode: String, CaseIterable, Codable {
-    case writing, accent, highlight
+    case writing, highlight
 }
 
 /// A pen as the notes repo records it, in `pens/<slug>.json`.

@@ -325,6 +325,8 @@ private struct PenSection: View {
                 updated.name = name
                 save(updated)
             }
+            // The one thing about a pen that its ink does not say: whether its strokes are the
+            // writing, or go over it.
             LabeledContent("Used for") {
                 Segments(selection: binding(\.mode), choices: PenMode.allCases) { mode in
                     Text(mode.rawValue.capitalized)
@@ -351,7 +353,7 @@ private struct PenSection: View {
             LabeledContent("Address") {
                 Text(pen.mac).font(.callout.monospaced()).foregroundStyle(.secondary)
                     .textSelection(.enabled)
-                Button("Forget…") { confirmingForget = true }
+                Button("Remove…") { confirmingForget = true }
             }
         } header: {
             HStack(spacing: 6) {
@@ -360,8 +362,8 @@ private struct PenSection: View {
                 StatusMark(on: connected, text: connected ? "Connected" : "Not connected")
             }
         }
-        .confirmationDialog("Forget \(pen.name)?", isPresented: $confirmingForget) {
-            Button("Forget", role: .destructive, action: forget)
+        .confirmationDialog("Remove \(pen.name)?", isPresented: $confirmingForget) {
+            Button("Remove", role: .destructive, action: forget)
         } message: {
             Text("This Mac stops syncing from it. Notes it already wrote stay. Add it again to use it.")
         }
@@ -373,10 +375,8 @@ private struct PenSection: View {
     }
 }
 
-/// One choice out of a few, drawn the way the system draws a segmented control. Not a Picker,
-/// because a line width can be `.default` — a pen that has never been given one — and a segmented
-/// Picker with nothing matching draws a selection anyway and lies about it. Both rows of a pen use
-/// this one, so they are the same width and the same shape.
+/// One choice out of a few, drawn the way the system draws a segmented control, in the same
+/// greys as the width marks beside it.
 private struct Segments<Value: Hashable, Label: View>: View {
     @Binding var selection: Value
     let choices: [Value]
@@ -403,7 +403,7 @@ private struct Segments<Value: Hashable, Label: View>: View {
         }
         .padding(2)
         .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.07)))
-        .frame(width: 290)
+        .frame(width: CGFloat(choices.count) * 96)
     }
 }
 
