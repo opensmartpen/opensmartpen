@@ -394,7 +394,7 @@ private struct Pencil: View {
 
 /// One ink. A ring rather than a card or a well: it is the smallest mark that separates chosen
 /// from not, and it leaves the colour itself untouched.
-private struct InkDot: View {
+struct InkDot: View {
     let colour: Color
     let selected: Bool
     let choose: () -> Void
@@ -439,7 +439,7 @@ private struct InkDot: View {
 
 /// One line weight, drawn as the line it makes. The chosen one sits on a faint chip — the same
 /// grey the panel uses everywhere else, so the selection is legible without being coloured.
-private struct WidthMark: View {
+struct WidthMark: View {
     let weight: LineWidth
     let selected: Bool
     let choose: () -> Void

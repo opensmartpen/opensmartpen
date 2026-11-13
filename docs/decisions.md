@@ -398,3 +398,10 @@ DAM holds an agent in two places, and until now both of them looked the same fro
 - **Checked:** NeoLAB's shop terms, refund policy and FAQ have no term against other software on the pen. The contract for a bulk order was not seen.
 - **Open: a built app must carry the license texts and a link to the source.** `make-app.sh` does not put `LICENSE`, `NOTICE` and the GPL-3.0 text in the bundle yet. Necessary before the first public download.
 - **Open: the copyright owner.** `NOTICE` says "Apoco", from `NSHumanReadableCopyright`. The legal name of the company is not confirmed.
+
+## 2026-11-13 — A pen is a highlighter or it is not
+
+- **Decided:** a pen's mode is `writing` or `highlight`. `accent` is removed: an ink colour already says it. A pen record that says `accent` is read as `writing`.
+- **In Settings:** "Used for" on each pen, with the two choices. The ink dots and the width marks are the same ones as in the panel, on one row.
+- **Not done:** nothing draws a highlight differently yet. The PNG is drawn from ink and width only. The mode goes up in `pens/<slug>.json` for a reader that wants it.
+- **The settings window is as tall as the tab on it,** up to a limit. It was one fixed size, and most tabs were half empty.
