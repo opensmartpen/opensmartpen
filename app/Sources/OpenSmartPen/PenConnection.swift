@@ -79,7 +79,15 @@ final class PenConnection: NSObject {
         "\(base)-\(mac.isEmpty ? peripheral.identifier.uuidString : mac)"
     }
 
-    private var displayName: String { name.isEmpty ? "the pen" : name }
+    /// The pen's records, for the name a person gave it. It reads the folder again when a record
+    /// changes, so a pen renamed in Settings is named correctly in the next notice.
+    private lazy var pens = PenRegistry(repo: config.dataURL)
+
+    /// What a person calls this pen. `name` is what the pen calls itself over Bluetooth
+    /// ("LAMY_safari"), and that belongs in the log, not in a notification.
+    private var displayName: String {
+        pens.record(mac: mac)?.name ?? (name.isEmpty ? "the pen" : name)
+    }
 
     func start() {
         pen.setPenDelegate(self)
@@ -163,12 +171,12 @@ final class PenConnection: NSObject {
         Log.info("\(name) power: auto-off \(s.autoPwrOffTime) min, auto-on-by-tip \(s.usePenTipOnOff), cap-power-off \(s.usePenCapOff), offline-save \(s.offlineOnOff), hover \(s.useHover), beep \(s.beepOnOff)")
         applyPowerSettings(s)
         if s.offlineOnOff == .Off {
-            notifier.post(Notice(key: key("offline-save-off"), title: "\(name) is not storing notes offline",
+            notifier.post(Notice(key: key("offline-save-off"), title: "\(displayName) is not storing notes offline",
                                  body: "Anything written away from this Mac would be lost. Turning it back on now."))
             pen.requestSetPenOfflineSave(.On)
         }
         if Int(s.battLevel) <= config.lowBatteryPercent && s.charging == .Off {
-            notifier.post(Notice(key: key("battery"), title: "Pen battery at \(s.battLevel)%", body: "Charge \(name) soon."))
+            notifier.post(Notice(key: key("battery"), title: "Pen battery at \(s.battLevel)%", body: "Charge \(displayName) soon."))
         } else {
             notifier.reset(key("battery"))
         }
@@ -253,7 +261,7 @@ final class PenConnection: NSObject {
             guard let self, let n = self.draining else { return }
             Log.warn("offline transfer stalled for book b\(n.note) on \(self.name)")
             self.notifier.post(Notice(key: self.key("drain-stalled"), title: "Pen sync stalled",
-                                      body: "Transfer from \(self.name) stopped mid-way. It will be retried next time the pen connects."))
+                                      body: "Transfer from \(self.displayName) stopped mid-way. It will be retried next time the pen connects."))
             self.draining = nil
             self.drainNext()
         }
