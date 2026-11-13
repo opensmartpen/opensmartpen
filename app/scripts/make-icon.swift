@@ -3,13 +3,14 @@
 //
 //   scripts/make-icon.swift
 //
-// The glyph is the notebook from the panel's own book rows — `PaperMark`, bound, with the ink dot
-// on its corner. Kept here as code rather than as a checked-in image so the two cannot drift apart
-// silently: redraw the mark and this is the one file to match.
+// The glyph is the menubar pencil: the same path, on the same 16-unit grid, as `StatusIcon.pencil`.
+// Kept here as code rather than as a checked-in image so the two cannot drift apart silently:
+// redraw one and this is the file to match.
 //
-// A notebook rather than a pencil, because a pencil is what every note app puts on its icon and
-// says nothing about this one. The elastic band is the part that reads as *this* notebook even at
-// 16 px, and the dot is the single point of colour the panel allows itself.
+// It carries no ink drop. In the menubar the drop means pages are waiting to sync, and an icon
+// has no business claiming a state.
+//
+//   scripts/make-icon.swift --logo <file.png>   also writes the 512-pixel picture the README shows
 import AppKit
 
 let side: CGFloat = 1024
@@ -19,8 +20,6 @@ let plate = NSRect(x: 100, y: 100, width: 824, height: 824)
 let cornerRadius: CGFloat = 185
 
 let ink = NSColor(calibratedWhite: 0.13, alpha: 1)
-// Ink.accent, light appearance, from StatusPanel.
-let accent = NSColor(srgbRed: 0.357, green: 0.247, blue: 0.769, alpha: 1)
 let plateTop = NSColor(calibratedRed: 0.98, green: 0.976, blue: 0.969, alpha: 1)
 let plateBottom = NSColor(calibratedRed: 0.902, green: 0.890, blue: 0.875, alpha: 1)
 
@@ -38,46 +37,38 @@ func drawIcon(into size: CGFloat) -> NSBitmapImageRep {
                              xRadius: cornerRadius * k, yRadius: cornerRadius * k)
     NSGradient(starting: plateTop, ending: plateBottom)?.draw(in: shape, angle: -90)
 
-    // The bound mark from PaperMark, which is itself traced from the panel design: rect at
-    // (2.5, 2) sized 10 x 12 with a 1.6 corner, and the elastic down x = 10.6, all on the same
-    // 16-unit grid. The grid is blown up to fill the plate instead of the panel's 15 points.
+    // The pencil from StatusIcon, on its own 16-unit grid, blown up to fill the plate.
     //
-    // One number is deliberately not the design's: the 1.1 stroke. It is right at 15 pt and reads
-    // as a fat letter at 1024, so it is thinned to 0.75 — the shape is what has to match, and a
-    // line weight copied across a 70x scale change matches the drawing but not the drawing's
-    // intent. Everything else is exact, so the two can be checked against each other.
-    let grid = plate.height * 0.62 * k
+    // One number is not the menubar's: the 1.35 stroke. It is right at 17 points and reads as a
+    // marker at 1024, so it is thinned to 1.0. The shape is what has to match.
+    let grid = plate.height * 0.60 * k
     let u = grid / 16
     let ox = plateRect.midX - grid / 2
     let oy = plateRect.midY - grid / 2
     // The design is authored downward, AppKit draws upward.
     func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint { NSPoint(x: ox + x * u, y: oy + (16 - y) * u) }
 
-    let book = NSRect(x: ox + 2.5 * u, y: oy + 2 * u, width: 10 * u, height: 12 * u)
+    let body = NSBezierPath()
+    body.move(to: p(11.2, 1.6))
+    body.line(to: p(14.4, 4.8))
+    body.line(to: p(5.6, 13.6))
+    body.line(to: p(1.9, 14.5))
+    body.line(to: p(2.8, 10.8))
+    body.close()
+
+    let ferrule = NSBezierPath()
+    ferrule.move(to: p(9.6, 3.2))
+    ferrule.line(to: p(12.8, 6.4))
+
+    // The band ends on the outline, so its ends are cut square: a round end would show as a bump
+    // outside the pencil at this size.
     ink.setStroke()
-    let outline = NSBezierPath(roundedRect: book, xRadius: 1.6 * u, yRadius: 1.6 * u)
-    outline.lineWidth = 0.75 * u
-    outline.stroke()
-
-    let elastic = NSBezierPath()
-    elastic.move(to: p(10.6, 2))
-    elastic.line(to: p(10.6, 14))
-    elastic.lineWidth = 0.75 * u
-    elastic.stroke()
-
-    // The ink dot, centred on the cover's top right corner so it straddles it evenly.
-    //
-    // Not the panel's own offset. There the dot is a badge hung off a 15-point row-mark, clear of
-    // the glyph so it cannot be mistaken for part of the book; at icon size that same offset reads
-    // as a dot floating loose in the plate. The corner is what the eye goes to, so the dot sits on
-    // it — the one place it belongs to the notebook rather than to the empty square around it.
-    let d = 4.4 * u
-    // A shade outward along both axes: dead-centre on the corner, the dot eats the head of the
-    // elastic and the whole thing reads as a pin stuck in a page.
-    let corner = NSPoint(x: book.maxX + 0.6 * u, y: book.maxY + 0.6 * u)
-    accent.setFill()
-    NSBezierPath(ovalIn: NSRect(x: corner.x - d / 2, y: corner.y - d / 2,
-                                width: d, height: d)).fill()
+    for path in [body, ferrule] {
+        path.lineWidth = 1.0 * u
+        path.lineCapStyle = path === ferrule ? .butt : .round
+        path.lineJoinStyle = .round
+        path.stroke()
+    }
 
     NSGraphicsContext.restoreGraphicsState()
     return rep
@@ -101,6 +92,13 @@ for (name, px) in [("icon_16x16", 16), ("icon_16x16@2x", 32),
         exit(1)
     }
     try data.write(to: iconset.appendingPathComponent("\(name).png"))
+}
+
+// The picture for the README and for GitHub, only when asked for: it is the one icon file that is
+// committed, because a web page cannot run this script.
+if let flag = CommandLine.arguments.firstIndex(of: "--logo"), CommandLine.arguments.count > flag + 1 {
+    let out = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+    try drawIcon(into: 512).representation(using: .png, properties: [:])!.write(to: out)
 }
 
 let resources = root.appendingPathComponent("Resources")

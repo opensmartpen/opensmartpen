@@ -1,3 +1,5 @@
+<img src="docs/logo.png" width="96" alt="Open Smart Pen">
+
 # Open Smart Pen
 
 An open-source macOS menubar app for Neo smartpens. It captures what the pen writes on Ncode paper and keeps it as plain files in `~/OpenSmartPen`: the strokes of each page and a PNG of it. If you connect an S3 bucket, the same files are copied there.

@@ -276,3 +276,10 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **The About tab says "Copyright", not "Made by".** That is what the row is.
 - **Open:** the text of the agreement and the tool for it. The legal name of the company is also still open (see above).
 - **The root README says which pens work:** the A1 and the LAMY Safari Ncode, the two that were tested.
+
+## 2026-11-13 — The logo is the menubar pencil
+
+- **Decided:** the app icon is the pencil from the menubar, on the same light plate as before. This reverses the 2026-09-12 choice of the notebook. The pencil is the mark a person sees all day, so it is the one that says "this app" in a notification, in the About tab and on GitHub.
+- **Same path, one number changed.** `scripts/make-icon.swift` draws the path of `StatusIcon.pencil` on its 16-unit grid. The stroke is 1.0 where the menubar has 1.35, and the ends of the band are cut square; at 1024 pixels a round end shows as a bump outside the outline.
+- **No ink drop and no colour.** The drop means pages are waiting, and an icon must not claim a state.
+- **One icon file is committed:** `docs/logo.png`, 512 pixels, written by `scripts/make-icon.swift --logo ../docs/logo.png` from `app/`. The README and GitHub need a file; everything else is still generated at build time.
