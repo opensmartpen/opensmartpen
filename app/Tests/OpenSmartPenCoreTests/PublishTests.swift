@@ -138,7 +138,7 @@ final class PublishTests: XCTestCase {
                        "the folder and the bucket hold the same picture")
     }
 
-    /// A reader on this Mac needs the picture as much as one behind a bucket does.
+    /// An agent on this Mac needs the picture as much as one behind a bucket does.
     func testWithNoBucketThePictureIsStillKeptInTheFolder() throws {
         let pictures = PagePictures(root: notes, next: try makeSync(connected: false))
         pictures.imaging = Drawer()
@@ -153,7 +153,7 @@ final class PublishTests: XCTestCase {
         XCTAssertTrue(bucket.requests.isEmpty)
     }
 
-    /// A reader that listens for the picture must not be woken by a retry.
+    /// An agent that listens for the picture must not be woken by a retry.
     func testAPictureThatHasNotChangedIsNotWrittenAgain() throws {
         let pictures = PagePictures(root: notes, next: try makeSync(connected: false))
         let drawer = Drawer()

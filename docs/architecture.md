@@ -9,7 +9,7 @@ Pen (Neo smartpen A1, Ncode paper) → Bluetooth → **Open Smart Pen** (macOS m
 ## Pages
 
 - `app/README.md` — the macOS capture app: what it does, config, layout, what is unverified.
-- `docs/processing.md` — the contract with whatever reads the folder or the bucket: what the app writes, how time is to be read, and the instructions given to the reader.
+- `docs/processing.md` — the contract with whatever reads the folder or the bucket: what the app writes, how time is to be read, and the instructions given to the agent.
 - `docs/stroke-format.md` — raw and derived file formats, geometry.
 - `docs/decisions.md` — running decision log; formal records go to `docs/adrs/`.
 - `docs/landscape-log.md` — how other products solve each concern and how we differ.

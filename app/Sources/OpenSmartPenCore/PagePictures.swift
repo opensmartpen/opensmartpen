@@ -9,7 +9,7 @@ public protocol PageImaging: AnyObject {
 /// Keeps a picture of each page in the notes folder, beside its strokes, and then passes the
 /// page on to wherever it is sent next.
 ///
-/// The picture is what a reader looks at: something that transcribes a page should not have to
+/// The picture is what an agent looks at: something that transcribes a page should not have to
 /// know how to draw one. It is written at `books/<copy>/pages/p<N>.png` when the pen has gone
 /// quiet, with or without a bucket, so the folder on this Mac and the bucket have one layout and
 /// one contract (`docs/processing.md`). The strokes are on disk before the picture is, so the
@@ -28,7 +28,7 @@ public final class PagePictures: Publishing {
 
     /// Draw each of these pages, then send the files on. A page is drawn every time it is
     /// published, because it is published when it has been written on. The file is only replaced
-    /// when the picture is different, so a retry does not wake a reader for nothing.
+    /// when the picture is different, so a retry does not wake an agent for nothing.
     public func publish(paths: [String]) throws -> Int {
         var seen = Set<String>()
         for path in paths where seen.insert(path).inserted {

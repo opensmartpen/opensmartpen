@@ -65,7 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let router = PageRouter(books: books, store: store)
         router.adoptExisting()
         // Each page gets a picture in the folder first, bucket or no bucket, and then goes on to
-        // the bucket. The picture is what a reader looks at, on this Mac or on the other side.
+        // the bucket. The picture is what an agent looks at, on this Mac or on the other side.
         let pictures = PagePictures(root: config.dataURL, next: sync)
         pictures.controlBooks = Set(config.controlBooks)
         coordinator = SyncCoordinator(store: store, router: router, tracker: QuietTracker(),

@@ -36,7 +36,7 @@ Nothing is released early. A page is handed on only once it is finished, and a b
 - **Let the person say when a page is done** — the whole point is that nobody thinks about the sync.
 - **Delete from the pen as each notebook finishes transferring** — the drain is the least durable moment; a crash between transfer and publish loses pages the pen no longer holds.
 - **Keep the pending list in a state file** — a second record of something the stored files already know, free to disagree with them; it was the memory-only version of exactly this that stranded a page on 2026-09-11. A list of what was sent is different: if it is lost, each file is sent again and no page is lost.
-- **Time each page on its own** — a page left for another page is sent before it is finished, and a reader gets one sitting in parts.
+- **Time each page on its own** — a page left for another page is sent before it is finished, and an agent gets one sitting in parts.
 - **Never delete from the pen** — the 160 pages then fill, after which the pen stops keeping offline strokes at all.
 
 ## Consequences
@@ -52,4 +52,4 @@ Nothing is released early. A page is handed on only once it is finished, and a b
 
 - Where a finished page is handed on to.
 - How long the quiet window is.
-- What a reader does with a page it receives.
+- What an agent does with a page it receives.

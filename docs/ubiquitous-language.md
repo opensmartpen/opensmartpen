@@ -22,5 +22,5 @@ Terms used in this project, kept precise. Update inline when a term is resolved.
 - **Quiet page** — a page with no new strokes for the debounce window (default 10 minutes). Only quiet pages are published for processing.
 - **Publish** — hand a quiet page's raw file on for processing. The destination is undecided; a publish must confirm, because pen memory is cleared only after it does.
 - **Transcription** — the Markdown text derived from a page by handwriting recognition (stroke-based or image-based).
-- **Reader** — whatever reads the pages the app wrote, in the folder or in the bucket, and writes the transcription. Not a part of the app; `docs/processing.md` is the contract with it.
+- **Agent** — the program on the other side that works with the files the app wrote, in the folder or in the bucket, and writes the transcription. For example Claude Code, Codex or Claude Desktop. Not a part of the app; `docs/processing.md` is the contract with it.
 - **Note** — a user-meaningful grouping of pages (by book, time gap, or marker). Derived and not yet defined; see `docs/decisions.md`.

@@ -166,13 +166,13 @@ Not built: there is nothing to test it against until a second notebook of the sa
 
 ## 2026-09-14 — Three faults found while building
 
-- **The page was drawn upside down, and only the reader noticed.** Core Graphics counts y up from the bottom; paper and every dot the pen reports count it down from the top. The first reading came back with a note that the image was mirrored top to bottom. Handwriting flipped about its own line still looks like handwriting, which is why nothing else caught it. There is now a test that renders a page heavy at the top and fails when the halves swap — checked by removing the flip and watching it fail.
+- **The page was drawn upside down, and only the agent noticed.** Core Graphics counts y up from the bottom; paper and every dot the pen reports count it down from the top. The first reading came back with a note that the image was mirrored top to bottom. Handwriting flipped about its own line still looks like handwriting, which is why nothing else caught it. There is now a test that renders a page heavy at the top and fails when the halves swap — checked by removing the flip and watching it fail.
 - **Every rebuild costs the Bluetooth grant.** A new ad-hoc signature loses the Bluetooth (TCC) grant, so the app must be opened by hand once after each build. A stable signing identity ends it; see `scripts/make-signing-identity.sh`.
 - **`make-app.sh` said "built" after a failed build**, because the build's exit status was thrown away and a stale binary in `.build/release` was packaged instead. It cost half an hour of testing an old app. The status is now checked, and `install-launchagent.sh` refuses a bundle older than `Sources/`.
 
-## 2026-09-15 — The page picture is drawn for a reader
+## 2026-09-15 — The page picture is drawn for an agent
 
-- **The page is drawn for the reader now, not for a person.** 1100 to 1568 pixels on the long side, where `render.py` uses 700 to 2200. A model scales anything longer than about 1568 back down, so more is bytes spent on nothing; under about 1100 the reader starts magnifying. This is a deliberate parting from `render.py`, whose PNG is opened in Preview by a person.
+- **The page is drawn for the agent now, not for a person.** 1100 to 1568 pixels on the long side, where `render.py` uses 700 to 2200. A model scales anything longer than about 1568 back down, so more is bytes spent on nothing; under about 1100 the agent starts magnifying. This is a deliberate parting from `render.py`, whose PNG is opened in Preview by a person.
 - **A menubar-only app has no editing keys.** ⌘A, ⌘C and ⌘V are key equivalents of Edit-menu items, and an accessory app has no menu bar, so the settings fields could be typed into but not copied out of or pasted into. There is now a main menu that nobody sees, holding Edit and a Close item.
 
 ## 2026-09-15 — The design was being done blind, and now it is not
@@ -231,13 +231,13 @@ Every panel until this point was written, packaged, installed, and then judged b
 
 ## 2026-11-13 — The page picture is kept in the folder
 
-- **Why.** The plan is an open release that works with no bucket (meeting of 2026-11-13). A reader on the Mac had strokes and nothing to look at, because the PNG was drawn at upload only.
+- **Why.** The plan is an open release that works with no bucket (meeting of 2026-11-13). An agent on the Mac had strokes and nothing to look at, because the PNG was drawn at upload only.
 - **What changed.** `PagePictures` writes `books/<copy>/pages/p<N>.png` when the pen has been quiet, with or without a bucket. `S3Sync` uploads that file and draws nothing. The folder and the bucket now have one layout, and `docs/processing.md` is one contract for both.
-- **The bucket did not change.** Same keys, same order, same moment. The reader of the bucket needs no new instructions.
+- **The bucket did not change.** Same keys, same order, same moment. The agent of the bucket needs no new instructions.
 - **What is owed is read from the files** (ADR-004). A PNG that is missing or older than its strokes makes the page pending at the next start. So the first start of this build draws every page captured before it. The September PNGs made by `pipeline/render.py` are replaced.
-- **A retry does not wake a reader.** The file is replaced only when the picture is different.
-- **A local reader writes `transcripts/<copy>/p<N>.md` in the folder**, and the viewer already shows it when no bucket is connected. With a bucket, the bucket's transcript replaces the local one.
-- Open: the reader kit for a local agent, and what wakes it.
+- **A retry does not wake an agent.** The file is replaced only when the picture is different.
+- **A local agent writes `transcripts/<copy>/p<N>.md` in the folder**, and the viewer already shows it when no bucket is connected. With a bucket, the bucket's transcript replaces the local one.
+- Open: the agent kit for a local agent, and what wakes it.
 
 ## 2026-11-13 — The source is Apache-2.0, a built app is GPL-3.0
 
@@ -256,7 +256,7 @@ Every panel until this point was written, packaged, installed, and then judged b
 
 - **Decided:** a pen's mode is `writing` or `highlight`. `accent` is removed: an ink colour already says it. A pen record that says `accent` is read as `writing`.
 - **In Settings:** "Used for" on each pen, with the two choices. The ink dots and the width marks are the same ones as in the panel, on one row.
-- **Not done:** nothing draws a highlight differently yet. The PNG is drawn from ink and width only. The mode goes up in `pens/<slug>.json` for a reader that wants it.
+- **Not done:** nothing draws a highlight differently yet. The PNG is drawn from ink and width only. The mode goes up in `pens/<slug>.json` for an agent that wants it.
 - **The settings window is as tall as the tab on it,** up to a limit. It was one fixed size, and most tabs were half empty.
 
 ## 2026-11-13 — The project is called Open Smart Pen
@@ -264,7 +264,7 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **Decided:** the project, the app and the repository are Open Smart Pen. It is an open project of its own, not a part of another product. The home is `github.com/opensmartpen/opensmartpen`.
 - **One spelling for each use.** Text a person reads: "Open Smart Pen". Swift types and targets: `OpenSmartPen`. Binary, config folder, log file and repository: `opensmartpen`. Bundle id and LaunchAgent label: `org.opensmartpen.app`, the reverse of the domain `opensmartpen.org`. Data folder: `~/OpenSmartPen`.
 - **No migration code.** The project starts here, so the app adopts no earlier config folder and copies no earlier notes. An install from before this date is moved by hand, once.
-- **The bucket marker is `opensmartpen-connected.txt`** and new raw files carry `"app":"opensmartpen-mac/<version>"`. A reader of the bucket needs the new marker name; see `docs/processing.md`.
+- **The bucket marker is `opensmartpen-connected.txt`** and new raw files carry `"app":"opensmartpen-mac/<version>"`. An agent of the bucket needs the new marker name; see `docs/processing.md`.
 - **The log lost some entries.** Entries about features that the app no longer has (the agent integration, actions, the two migrations) were deleted. The repository history has them.
 - **An accepted ADR was edited in place.** ADR-002 lost two sentences that gave the earlier product family as the reason for the folder name. The decision itself did not change.
 - **Open:** the name promises every smart pen, and the app supports NeoLAB Ncode pens only. The README must say which pens work.

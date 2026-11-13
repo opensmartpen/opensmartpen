@@ -10,9 +10,9 @@ Do not add these back to the app: transcription, actions, agents, calls to an ag
 
 ## The contract with the other side
 
-`docs/processing.md` is the contract with whatever reads the bucket: the layout, the upload order, how time is read, and the exact instructions the reader was given.
+`docs/processing.md` is the contract with whatever reads the bucket: the layout, the upload order, how time is read, and the exact instructions the agent was given.
 
-If you change what the app uploads, where, or when, update `docs/processing.md` in the same change, and tell the user that the reader needs the new instructions.
+If you change what the app uploads, where, or when, update `docs/processing.md` in the same change, and tell the user that the agent needs the new instructions.
 
 ## Working here
 
