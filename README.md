@@ -15,3 +15,10 @@ Components:
 - Transcribing is not done by the app. It uploads each page to an S3 bucket, as strokes and a PNG, and whatever reads the bucket transcribes. `docs/processing.md` is the contract with that reader, and holds the instructions it was given.
 - `pipeline/` — earlier local scripts for rendering and transcribing. Not used by the app.
 - `docs/adrs/` — architecture decision records.
+
+## License
+
+- The source code in this repository is licensed under Apache-2.0. See `LICENSE`.
+- The app links NISDK3, NeoLAB's pen SDK, which is GPL-3.0. A built copy of the app is thus distributed under GPL-3.0 as a whole. See `NOTICE`.
+- NISDK3 is not in this repository. The build downloads it.
+- Brainio Pen is not affiliated with NeoLAB Convergence, Inc.

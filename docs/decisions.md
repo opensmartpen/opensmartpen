@@ -385,3 +385,16 @@ DAM holds an agent in two places, and until now both of them looked the same fro
 - **A retry does not wake a reader.** The file is replaced only when the picture is different.
 - **A local reader writes `transcripts/<copy>/p<N>.md` in the folder**, and the viewer already shows it when no bucket is connected. With a bucket, the bucket's transcript replaces the local one.
 - Open: the reader kit for a local agent, and what wakes it.
+
+## 2026-11-13 — The source is Apache-2.0, a built app is GPL-3.0
+
+- **Decided:** all source in this repository is Apache-2.0 (`LICENSE`). A built app links NISDK3, which is GPL-3.0, so a built app as a whole is distributed under GPL-3.0. `NOTICE` says which license applies to what.
+- **Why this works:** Apache-2.0 code can go into a GPL-3.0 program. The other direction is not permitted. NISDK3 is not in the repository; the Swift package manager downloads it at build time.
+- **What NeoLAB wrote:** the SDK's `LICENSE` file and podspec say GPL-3.0. Its README adds "for non-commercial purpose" and offers a commercial license by email. The GPL text permits commercial use and permits no added restriction, so that line is weak in law, but it shows their intent. A question to NeoLAB is open.
+- **No Mac App Store.** The App Store terms conflict with GPL-3.0, and only NeoLAB can give an exception. Distribution is a direct download.
+- **No contributor agreement.** A contribution comes in as Apache-2.0, and that is sufficient for each later step.
+- **Later step, not started: the connector as a separate program.** A helper that links NISDK3 and owns the pen, GPL-3.0; the app without the SDK, Apache-2.0 as a binary too. `Package.swift` already keeps the SDK out of `BrainioPenCore` and `BrainioPenUI`. Do this when the app must go into a closed product, or when a second pen brand comes.
+- **Last option: our own protocol code,** with NISDK3 removed. About 1,000 to 1,500 lines, in the part that must not lose handwriting. Only if the App Store becomes necessary and NeoLAB says no.
+- **Checked:** NeoLAB's shop terms, refund policy and FAQ have no term against other software on the pen. The contract for a bulk order was not seen.
+- **Open: a built app must carry the license texts and a link to the source.** `make-app.sh` does not put `LICENSE`, `NOTICE` and the GPL-3.0 text in the bundle yet. Necessary before the first public download.
+- **Open: the copyright owner.** `NOTICE` says "Apoco", from `NSHumanReadableCopyright`. The legal name of the company is not confirmed.
