@@ -33,7 +33,8 @@ launchctl bootout "gui/$UID_/$LABEL" 2>/dev/null || true
 # long as that answer stays the same, so this is how the script knows whether a person is needed.
 # An ad-hoc answer names the binary's own hash and so never matches; one made with a certificate
 # (scripts/make-signing-identity.sh) names the bundle id and the certificate, and does.
-requirement() { codesign -d -r- "$1" 2>/dev/null | sed -n 's/^designated => //p'; }
+# A first install has no old bundle to read, and that is an empty answer, not a failure.
+requirement() { codesign -d -r- "$1" 2>/dev/null | sed -n 's/^designated => //p' || true; }
 WAS="$(requirement "$DEST")"
 NOW="$(requirement "$SRC")"
 
