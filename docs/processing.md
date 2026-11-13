@@ -1,6 +1,6 @@
 # Processing (the reader's side)
 
-Brainio Pen stops at the page. It captures pages, keeps them in `~/Brainio/pen`, and copies them to a bucket if one is connected; it does not transcribe. This page is the contract with whatever reads the pages, so the two halves stay aligned. Change what the app writes and this page changes with it.
+Open Smart Pen stops at the page. It captures pages, keeps them in `~/OpenSmartPen`, and copies them to a bucket if one is connected; it does not transcribe. This page is the contract with whatever reads the pages, so the two halves stay aligned. Change what the app writes and this page changes with it.
 
 The folder and the bucket have one layout. A reader on the Mac reads the folder; a reader anywhere else reads the bucket. All that follows applies to both, unless it says bucket.
 
@@ -8,7 +8,7 @@ The reader today is an agent that sweeps the bucket. The instructions it was giv
 
 ## What the app writes
 
-Under `~/Brainio/pen`, and the same under the bucket (and under the folder set in Settings → Sync if there is one):
+Under `~/OpenSmartPen`, and the same under the bucket (and under the folder set in Settings → Sync if there is one):
 
 ```
 books/<copy>/book.json        notebook title, paper size, first_page
@@ -16,7 +16,7 @@ books/<copy>/raw/p<N>.jsonl   strokes of one page (format: docs/stroke-format.md
 books/<copy>/pages/p<N>.png   image of that page, drawn from those strokes
 pens/<slug>.json              each pen's name, mode, default ink and width
 mode.jsonl, palette.json      which ink and width was in force when, and what each ink looks like
-brainio-pen-connected.txt     written once when the bucket is connected; not a note
+opensmartpen-connected.txt     written once when the bucket is connected; not a note
 ```
 
 - **One direction, with one exception.** The app writes under `books/`, `pens/` and the two ink files. In the bucket it never lists and never deletes, so anything the reader stores there is left alone. The one thing it reads is the transcript of a page that is open in the viewer (see below).
@@ -37,9 +37,9 @@ The limit of this: the transcript is made from the image, so a reader can tell w
 
 ## What the reader writes
 
-Transcripts go to `transcripts/<copy>/p<N>.md`, in the bucket for a reader of the bucket and in `~/Brainio/pen` for a reader on the Mac. Not under `books/`: that is the app's side, and a reader that sweeps for changed files would otherwise be woken by its own output.
+Transcripts go to `transcripts/<copy>/p<N>.md`, in the bucket for a reader of the bucket and in `~/OpenSmartPen` for a reader on the Mac. Not under `books/`: that is the app's side, and a reader that sweeps for changed files would otherwise be woken by its own output.
 
-The app shows them. When a page is open in the viewer with the transcript pane on (the button in the bar, or T), the app fetches that one file by name, shows it beside the ink, and asks again every 30 seconds while the pane is open. Each transcript fetched is kept at the same path under `~/Brainio/pen`, so it can be read offline. With no bucket connected, the pane shows the file in the folder. With a bucket connected, the bucket's transcript replaces the one in the folder, so use one reader for one page, not two. The path is therefore part of the contract: move the transcripts and the pane goes empty. The key needs permission to read as well as to write.
+The app shows them. When a page is open in the viewer with the transcript pane on (the button in the bar, or T), the app fetches that one file by name, shows it beside the ink, and asks again every 30 seconds while the pane is open. Each transcript fetched is kept at the same path under `~/OpenSmartPen`, so it can be read offline. With no bucket connected, the pane shows the file in the folder. With a bucket connected, the bucket's transcript replaces the one in the folder, so use one reader for one page, not two. The path is therefore part of the contract: move the transcripts and the pane goes empty. The key needs permission to read as well as to write.
 
 The pane draws Markdown a line at a time: `# ` as the title, `## ` as a heading (the reader uses it for when a part was written and which meeting it belongs to), `- ` as a bullet, and emphasis and `~~struck~~` inside a line. Line breaks are kept as written. Anything else is shown as plain text.
 
@@ -50,7 +50,7 @@ The pane draws Markdown a line at a time: `# ` as the title, `## ` as a heading 
 
 ## The instructions given to the reader
 
-Sent 2026-11-11. `<BUCKET>` and `<PREFIX>` were filled in.
+Sent 2026-11-11. `<BUCKET>` and `<PREFIX>` were filled in. The marker file had an earlier name then; it is `opensmartpen-connected.txt` since 2026-11-13, and the reader must be told.
 
 ```
 My smart pen writes to S3 bucket <BUCKET>, folder <PREFIX>. Add it to the sweep.
@@ -61,7 +61,7 @@ Layout (the Mac app only writes here; it never reads or deletes):
   books/<copy>/pages/p<N>.png   image of that page
   pens/<slug>.json              pen names
   mode.jsonl, palette.json      ink colour data (already drawn into the PNG)
-Ignore brainio-pen-connected.txt and the folder books/s3-o1013-b1-* (a control strip, not notes).
+Ignore opensmartpen-connected.txt and the folder books/s3-o1013-b1-* (a control strip, not notes).
 
 How it updates:
 - Pages upload 30 seconds after the last event from the pen. The jsonl goes first, the PNG second.

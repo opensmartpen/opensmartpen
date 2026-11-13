@@ -181,7 +181,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("png", nargs="?", help="a rendered page .png")
     ap.add_argument("--all", action="store_true", help="transcribe every rendered page")
-    ap.add_argument("--root", default="~/Brainio/pen", help="where the notes are kept")
+    ap.add_argument("--root", default="~/OpenSmartPen", help="where the notes are kept")
     ap.add_argument("--force", action="store_true", help="redo even if the transcription is current")
     a = ap.parse_args()
 

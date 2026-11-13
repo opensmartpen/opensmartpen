@@ -1,7 +1,7 @@
 # Stroke format (source of truth)
 
 One file per physical page, append-only JSON Lines. Each physical *copy* of a notebook is one
-folder under `~/Brainio/pen/books`, named by the surface identity the client reported and an id the
+folder under `~/OpenSmartPen/books`, named by the surface identity the client reported and an id the
 app generated (ADR-002); a page file sits in that copy's `raw/`, named as the client named the page:
 
 ```
@@ -34,7 +34,7 @@ Lines are appended in arrival order, which is not chronological: strokes written
 Every raw file opens with a header line, written when the file is created:
 
 ```jsonc
-{"t":"meta","v":1,"captured":1757530001000,"app":"brainio-pen-mac/0.2.0","sdk":"NISDK3/1.1.5"}
+{"t":"meta","v":1,"captured":1757530001000,"app":"opensmartpen-mac/0.2.0","sdk":"NISDK3/1.1.5"}
 ```
 
 - `v`: the format version. ADR-001 commits to the sequence of values in a dot, so anything that changes that sequence — or the meaning of a field already written — raises this number. A reader that meets a version it does not know should stop rather than guess.

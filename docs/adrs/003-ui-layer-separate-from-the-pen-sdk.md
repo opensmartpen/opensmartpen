@@ -3,7 +3,7 @@ id: 003
 title: The UI is a layer of its own, and design fixtures ship in nothing
 status: accepted
 tags: [macos, layering, design]
-summary: The macOS app splits into BrainioPenCore, BrainioPenUI (every view, no pen SDK, reaching the pen only through a PenLink protocol) and the app itself; the design window and its fixtures live in a separate executable that nothing else can import.
+summary: The macOS app splits into OpenSmartPenCore, OpenSmartPenUI (every view, no pen SDK, reaching the pen only through a PenLink protocol) and the app itself; the design window and its fixtures live in a separate executable that nothing else can import.
 ---
 
 # ADR-003: The UI is a layer of its own, and design fixtures ship in nothing
@@ -25,7 +25,7 @@ lines of make-believe among the code that derives the real thing. They were ther
 reason — `private(set)` on the published properties is scope-limited, so only code in that file
 could set them.
 
-The layering underneath had the same shape. `BrainioPenCore` was clean, but every view, the model
+The layering underneath had the same shape. `OpenSmartPenCore` was clean, but every view, the model
 and the pen SDK were one target. `PanelModel` held a `PenSession`, and `PenSession` imports
 NISDK3, so nothing about the panel could be built, run or tested without the vendor SDK.
 
@@ -33,19 +33,19 @@ NISDK3, so nothing about the panel could be built, run or tested without the ven
 
 Four targets, each unable to reach the one above it:
 
-- **`BrainioPenCore`** — the domain. Foundation only. Unchanged.
-- **`BrainioPenUI`** — every window and view, and the model. Knows the domain; knows nothing of the
+- **`OpenSmartPenCore`** — the domain. Foundation only. Unchanged.
+- **`OpenSmartPenUI`** — every window and view, and the model. Knows the domain; knows nothing of the
   pen SDK. It reaches the pen through `PenLink`, a protocol of plain values (`PenLinkState`,
   `DrainProgress`, `PenReport`), so the SDK's own types stop at the app layer.
-- **`BrainioPen`** — the app. `PenSession` is the only conformance to `PenLink`. It links NISDK3.
-- **`BrainioPenDesign`** (+ a thin `BrainioPenDesignApp`) — the design window and the fixtures,
-  built as `brainio-pen-design`, a separate app. Nothing else imports it.
+- **`OpenSmartPen`** — the app. `PenSession` is the only conformance to `PenLink`. It links NISDK3.
+- **`OpenSmartPenDesign`** (+ a thin `OpenSmartPenDesignApp`) — the design window and the fixtures,
+  built as `opensmartpen-design`, a separate app. Nothing else imports it.
 
 The model gives the design window one seam and no fixtures: `PanelModel.Snapshot`, every published
 property as a single value, and `apply(_:)`, which shows exactly what it is handed and derives
-nothing. The scenarios that build those snapshots live in `BrainioPenDesign`.
+nothing. The scenarios that build those snapshots live in `OpenSmartPenDesign`.
 
-`BRAINIO_PEN_DESIGN=1` is gone. Design mode is an app, not a flag.
+`OPENSMARTPEN_DESIGN=1` is gone. Design mode is an app, not a flag.
 
 ## Alternatives Considered
 
@@ -65,7 +65,7 @@ nothing. The scenarios that build those snapshots live in `BrainioPenDesign`.
 ## Consequences
 
 - The shipped binary contains no fixture and no design window. This is checkable: the fixture
-  strings do not appear in `strings .build/release/brainio-pen`.
+  strings do not appear in `strings .build/release/opensmartpen`.
 - The UI layer builds and runs with no pen, no Bluetooth and no SDK. Snapshot tests over
   `Scenario` are now possible; none are written yet.
 - What the UI layer exposes to the app is now a deliberate, public surface rather than everything

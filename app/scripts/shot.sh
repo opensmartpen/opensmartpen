@@ -5,14 +5,14 @@
 # it. This closes that loop — every window of one process, each to its own PNG, so the person (or
 # the agent) writing the view can look at what they made before calling it done.
 #
-#   scripts/shot.sh brainio-pen-design /tmp/shots
+#   scripts/shot.sh opensmartpen-design /tmp/shots
 #
 # Only windows belonging to the named process are captured. The screen around them is never in the
 # frame, which matters when somebody else's desktop is behind it.
 set -euo pipefail
 
-app="${1:-brainio-pen-design}"
-out="${2:-/tmp/brainio-shots}"
+app="${1:-opensmartpen-design}"
+out="${2:-/tmp/opensmartpen-shots}"
 mkdir -p "$out"
 
 # CoreGraphics knows every window, its owner and its size. `screencapture -l` then takes exactly

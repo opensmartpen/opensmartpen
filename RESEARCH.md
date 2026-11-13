@@ -1,6 +1,6 @@
 # Smart pen → digital notes: research and design critique
 
-Date: 2026-09-10. Sources: NeoSmartpen GitHub org (13 repos, READMEs, PDFs, source), neolab.net, App Store, DAM source and architecture docs at `~/git/dam/dam`, plus web research on the wider field. Items marked *unverified* were not confirmed against a primary source.
+Date: 2026-09-10. Sources: NeoSmartpen GitHub org (13 repos, READMEs, PDFs, source), neolab.net, App Store, plus web research on the wider field. Items marked *unverified* were not confirmed against a primary source.
 
 ## 1. What exists today from NeoLAB
 
@@ -79,40 +79,25 @@ N2 and M1 are discontinued.
 - **Stroke to SVG / notes to Markdown tooling**: rich for reMarkable (`rmc`, `remarks`, `rmapi-hwr`) and Supernote (`supernote-tool`); nothing maintained for Neo. Formats: W3C InkML, Wacom UIM, vendor JSON, SVG with per-path metadata.
 - **LLM OCR to Markdown pipelines**: `lucbeaulieu/claude-ocr-pipeline` (watched folder → Claude → Markdown + Reminders, 2026-03), Obsidian plugins `handwrite-obsidian` and `HandTranscriptMd` (Gemini).
 
-## 4. DAM as the backend: what the code actually offers
+## 4. Critique of the proposed design
 
-From `~/git/dam/dam` (Apache-2.0, Kubernetes platform for running agent harnesses).
-
-- **Auth for a device**: API keys `pk_…` via `dam auth token`, scopes `agents:read|operate|manage`, bindable to specific agents, sent as `Authorization: Bearer`. Keys cannot mint keys.
-- **Pushing files**:
-  - tRPC `files.upload` (`POST /api/trpc/files.upload`, body `{agentId, path, contentBase64, contentType?, overwrite?}`), needs `agents:operate`, 50 MB cap. **Does not wake a hibernated agent**; it dials the pod directly and fails when the pod is down.
-  - `POST /api/agents/:id/import` multipart tar bundle. **Wakes the agent** (`ensureReady`). Top-level replace into `~/work`.
-- **Waking**: tRPC `agents.wake` needs `agents:manage`. Wake polls pod readiness for up to two minutes.
-- **Running a turn**: `dam run <agent> -p … --async` speaks ACP over WebSocket to the relay (`/api/agents/:id/trpc-ws`), wakes the agent, and records the result. No plain-HTTP "submit prompt" route was found; an iOS client would need ACP over WS or a relay.
-- **Triggers**: cron/RRULE schedules (continuous or fresh session). **No file-change trigger exists.** The in-pod file watcher (`files-watch.ts`) serves the UI files panel only. Knowledge bases have a quiet-period publish watcher, but it is platform-owned and not reusable for arbitrary work.
-- **Hibernation**: idle agents scale to zero after the idle timeout; `0` disables it. A schedule firing every few minutes keeps the pod awake permanently and burns budget.
-- **Durability**: the workspace is one PVC per agent. Deleting the agent deletes the notes. Artifacts (library, shareable, versioned) and git are the durable outputs.
-- **Channels**: Slack and Telegram inbound messages wake the agent and start a turn. A Slack incoming webhook is therefore a working, if hacky, HTTPS trigger.
-
-## 5. Critique of the proposed design
-
-Proposed: iOS app ↔ pen over Bluetooth → DAM workspace holding one SVG per note plus one OCR file produced by Claude Code, regenerated with a debounce on every raw-file change.
+Proposed: iOS app ↔ pen over Bluetooth → an agent workspace holding one SVG per note plus one OCR file produced by Claude Code, regenerated with a debounce on every raw-file change.
 
 1. **The pen buffers; real-time is optional.** M1+ holds 1,000 pages. Sync-on-desk via the offline download API covers the "digitise my notes" goal with zero background-Bluetooth work. Real-time only matters if you want text while still writing.
-2. **The iOS app is the most expensive piece and may be unnecessary.** iOS-SDK3.0 also targets macOS. A Mac menubar app, or the Web SDK in Chrome, gives the same stroke stream with no signing, no background-mode limits, and `dam` CLI available locally for the DAM side. Build iOS last, if at all.
+2. **The iOS app is the most expensive piece and may be unnecessary.** iOS-SDK3.0 also targets macOS. A Mac menubar app, or the Web SDK in Chrome, gives the same stroke stream with no signing, no background-mode limits. Build iOS last, if at all.
 3. **SVG is a render, not a source.** Keep the raw dot stream (section/owner/book/page, x, y, force, dt, tilt) as the source of truth in an append-only JSONL or InkML file per page. Derive SVG, and derive PNG for the OCR step, since Claude reads images, not SVG paths. Appending to an SVG on every stroke is awkward; appending a JSONL line is natural.
 4. **The unit is the page, not the note.** Every dot carries a page id. Define note = group of pages by notebook and time gap (Neo Studio 2 uses 15 min) as a derived index, not as the storage unit.
 5. **Page geometry is a real gap.** Rendering needs the notebook's `.nproj` bounds. Home-printed Ncode PDFs are known geometry; bought notebooks (owner 27) are not published. Plan to infer bounds from the data or fetch nproj through the Web SDK's Firebase path.
-6. **DAM has no file-change trigger.** The debounce must live in the client. Recommended flow per quiet page: upload strokes via the import route (wakes the pod), then start one headless run. Alternatives: a schedule (keeps the pod awake, latency), or a Slack webhook bound to the agent.
-7. **DAM is the OCR worker, not the archive.** Have the agent commit strokes, SVG and Markdown to a git repository (or publish to the artifact library) so notes outlive the agent. Treat the PVC as a working copy.
+6. **The debounce must live in the client.** A hosted agent has no trigger for a changed file, so the client decides when a page is quiet and sends it.
+7. **The agent is the OCR worker, not the archive.** Keep strokes, SVG and Markdown somewhere that outlives the agent.
 8. **Use stroke recognition before image OCR.** Google ML Kit Digital Ink runs free and on-device with Czech support and uses the actual strokes, which beats image OCR on messy writing. Claude then cleans, structures and cross-checks against the PNG. Expect 6–12% character error on rushed handwriting and watch for confident hallucination; keep the image next to the text.
 9. **Debounce policy.** Re-transcribing a page on every stroke burst multiplies cost and drift. Transcribe when a page has been quiet for minutes, on page switch, or on pen sleep.
 10. **License.** iOS-SDK3.0 is GPL-3.0. Private use is fine; distributing the app (TestFlight included) means open-sourcing it or paying NeoLAB roughly $7,000 per year (2023 figure).
 11. **Paper supply is a lock-in.** Ncode notebooks or a colour laser printer at 600 dpi. Inkjet does not work.
 12. **Which pen?** Decides offline capacity, Bluetooth version and refill. M1+ (1,000 pages, D1 refills) fits the sync-on-desk model best; A1 has BT 5.0 but 160 pages and a proprietary refill.
 
-## 6. Suggested phasing
+## 5. Suggested phasing
 
-- **Phase 0, no pen**: define the stroke JSONL schema, write the stroke → SVG → PNG renderer with synthetic data, build the DAM agent skill (render, ML Kit or Claude transcription, commit to git), create the API key and verify the import route plus one headless run end to end.
-- **Phase 1, pen arrives**: connect via `web_pen_sdk` in Chrome or a small macOS Swift tool, download offline pages, push through the import route, run the OCR. Validate geometry and accuracy on real handwriting.
+- **Phase 0, no pen**: define the stroke JSONL schema, write the stroke → SVG → PNG renderer with synthetic data, build the transcription step (render, ML Kit or Claude transcription) and verify one run end to end.
+- **Phase 1, pen arrives**: connect via `web_pen_sdk` in Chrome or a small macOS Swift tool, download offline pages, run the OCR. Validate geometry and accuracy on real handwriting.
 - **Phase 2**: macOS menubar app for automatic sync when the pen is in range. Only then decide whether iOS real-time is worth it.

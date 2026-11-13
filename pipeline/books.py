@@ -8,7 +8,7 @@ section, owner and book, so their page 1s share an address.
 So each physical copy gets a folder of its own, named by the surface identity the client
 reported and an id the app generated (ADR-002):
 
-    ~/Brainio/pen/
+    ~/OpenSmartPen/
       mode.jsonl
       pens/pen.json
       books/

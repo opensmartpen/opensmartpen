@@ -3,59 +3,59 @@ import PackageDescription
 
 // Four layers, each one unable to reach the one above it — which is the point.
 //
-//   BrainioPenCore    the domain: strokes, books, pens, git. Foundation only.
-//   BrainioPenUI      every window and view. Knows the domain, knows nothing of the pen SDK.
-//   BrainioPen        the app: the pen SDK, the wiring, the menubar.
-//   BrainioPenDesign  fixtures and the design window. Nothing else can import it, so none of it
+//   OpenSmartPenCore    the domain: strokes, books, pens, git. Foundation only.
+//   OpenSmartPenUI      every window and view. Knows the domain, knows nothing of the pen SDK.
+//   OpenSmartPen        the app: the pen SDK, the wiring, the menubar.
+//   OpenSmartPenDesign  fixtures and the design window. Nothing else can import it, so none of it
 //                     can end up in the shipped app by accident.
 let package = Package(
-    name: "BrainioPen",
+    name: "OpenSmartPen",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "brainio-pen", targets: ["BrainioPen"]),
-        .executable(name: "brainio-pen-design", targets: ["BrainioPenDesignApp"]),
-        .library(name: "BrainioPenCore", targets: ["BrainioPenCore"]),
+        .executable(name: "opensmartpen", targets: ["OpenSmartPen"]),
+        .executable(name: "opensmartpen-design", targets: ["OpenSmartPenDesignApp"]),
+        .library(name: "OpenSmartPenCore", targets: ["OpenSmartPenCore"]),
     ],
     dependencies: [
         .package(url: "https://github.com/NeoSmartpen/iOS-SDK3.0.git", exact: "1.1.5"),
     ],
     targets: [
         .target(
-            name: "BrainioPenCore",
-            path: "Sources/BrainioPenCore"
+            name: "OpenSmartPenCore",
+            path: "Sources/OpenSmartPenCore"
         ),
         .target(
-            name: "BrainioPenUI",
-            dependencies: ["BrainioPenCore"],
-            path: "Sources/BrainioPenUI"
+            name: "OpenSmartPenUI",
+            dependencies: ["OpenSmartPenCore"],
+            path: "Sources/OpenSmartPenUI"
         ),
         .executableTarget(
-            name: "BrainioPen",
+            name: "OpenSmartPen",
             dependencies: [
-                "BrainioPenCore",
-                "BrainioPenUI",
+                "OpenSmartPenCore",
+                "OpenSmartPenUI",
                 .product(name: "NISDK3", package: "iOS-SDK3.0"),
             ],
-            path: "Sources/BrainioPen"
+            path: "Sources/OpenSmartPen"
         ),
         // A library rather than only an executable: fixtures a test target can also reach.
         .target(
-            name: "BrainioPenDesign",
-            dependencies: ["BrainioPenCore", "BrainioPenUI"],
-            path: "Sources/BrainioPenDesign"
+            name: "OpenSmartPenDesign",
+            dependencies: ["OpenSmartPenCore", "OpenSmartPenUI"],
+            path: "Sources/OpenSmartPenDesign"
         ),
         .executableTarget(
-            name: "BrainioPenDesignApp",
-            dependencies: ["BrainioPenDesign"],
-            path: "Sources/BrainioPenDesignApp"
+            name: "OpenSmartPenDesignApp",
+            dependencies: ["OpenSmartPenDesign"],
+            path: "Sources/OpenSmartPenDesignApp"
         ),
         .testTarget(
-            name: "BrainioPenCoreTests",
+            name: "OpenSmartPenCoreTests",
             // The UI layer too, for one thing only: the page image. It is the one piece of drawing
             // whose output nobody looks at — it goes to a model — so it is the one that has to be
             // checked by a test rather than by eye.
-            dependencies: ["BrainioPenCore", "BrainioPenUI"],
-            path: "Tests/BrainioPenCoreTests"
+            dependencies: ["OpenSmartPenCore", "OpenSmartPenUI"],
+            path: "Tests/OpenSmartPenCoreTests"
         ),
     ]
 )

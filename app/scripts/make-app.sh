@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
-# Build Brainio Pen in release mode and wrap it in a minimal .app bundle.
-# A bundle is needed for Bluetooth permission to be granted to Brainio Pen itself
+# Build Open Smart Pen in release mode and wrap it in a minimal .app bundle.
+# A bundle is needed for Bluetooth permission to be granted to Open Smart Pen itself
 # (not the terminal) and for macOS notifications to work.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 OUT="${1:-dist}"
-APP="$OUT/Brainio Pen.app"
-BUNDLE_ID="com.brainio.pen"
-VERSION="$(grep -o 'static let version = "[^"]*"' Sources/BrainioPen/AppDelegate.swift | cut -d'"' -f2)"
+APP="$OUT/Open Smart Pen.app"
+BUNDLE_ID="org.opensmartpen.app"
+VERSION="$(grep -o 'static let version = "[^"]*"' Sources/OpenSmartPen/AppDelegate.swift | cut -d'"' -f2)"
 
 # The build's own exit status decides, not whether a binary is lying around: a failed build with
 # yesterday's binary still in .build/release used to package yesterday's app and say "built".
 set -o pipefail
-swift build -c release --product brainio-pen 2>&1 | grep -E "error|Build complete" || {
+swift build -c release --product opensmartpen 2>&1 | grep -E "error|Build complete" || {
   status=$?
   # grep exits 1 when the build printed neither; only a build failure is fatal.
   [ "${PIPESTATUS[0]}" -eq 0 ] || { echo "build failed" >&2; exit 1; }
   [ "$status" -le 1 ] || exit "$status"
 }
-BIN=".build/release/brainio-pen"
+BIN=".build/release/opensmartpen"
 [ -x "$BIN" ] || { echo "build failed: $BIN missing" >&2; exit 1; }
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/brainio-pen"
+cp "$BIN" "$APP/Contents/MacOS/opensmartpen"
 # The icon is the menubar pencil; scripts/make-icon.swift draws it from the same path. Redrawn
 # every build, not cached: the whole point of generating it is that it cannot fall behind the
 # pencil it is copied from, and a stale .icns on disk would do exactly that.
@@ -50,34 +50,34 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleExecutable</key><string>brainio-pen</string>
+  <key>CFBundleExecutable</key><string>opensmartpen</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIconName</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>Brainio Pen</string>
-  <key>CFBundleDisplayName</key><string>Brainio Pen</string>
+  <key>CFBundleName</key><string>Open Smart Pen</string>
+  <key>CFBundleDisplayName</key><string>Open Smart Pen</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSBluetoothAlwaysUsageDescription</key>
-  <string>Brainio Pen connects to your Neo smartpen to sync handwritten notes.</string>
+  <string>Open Smart Pen connects to your Neo smartpen to sync handwritten notes.</string>
   <key>NSBluetoothPeripheralUsageDescription</key>
-  <string>Brainio Pen connects to your Neo smartpen to sync handwritten notes.</string>
+  <string>Open Smart Pen connects to your Neo smartpen to sync handwritten notes.</string>
   <key>NSHumanReadableCopyright</key><string>Apoco</string>
 </dict>
 </plist>
 PLIST
 
 # Signed with this Mac's own certificate when scripts/make-signing-identity.sh has made one, so the
-# signature says the same thing about every build — "com.brainio.pen, signed by this certificate"
+# signature says the same thing about every build — "org.opensmartpen.app, signed by this certificate"
 # — and the Bluetooth and notification grants carry over from one build to the next.
 #
 # Without one, ad hoc: enough to make the bundle launchable, and nothing more. That signature is
 # the binary's own hash, so every build is a different app to macOS and has to be allowed again.
-IDENTITY="${BRAINIO_PEN_SIGN_IDENTITY:-Brainio Pen Dev}"
+IDENTITY="${OPENSMARTPEN_SIGN_IDENTITY:-Open Smart Pen Dev}"
 if security find-identity -p codesigning 2>/dev/null | grep -q "\"$IDENTITY\""; then
   codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP" >/dev/null
   SIGNED="signed as \"$IDENTITY\"; grants carry over"
@@ -87,4 +87,4 @@ else
 fi
 echo "built $APP (v$VERSION), $SIGNED"
 echo "run:   open $APP"
-echo "logs:  log stream --predicate 'process == \"brainio-pen\"' --level info   (or run the binary directly for stderr)"
+echo "logs:  log stream --predicate 'process == \"opensmartpen\"' --level info   (or run the binary directly for stderr)"

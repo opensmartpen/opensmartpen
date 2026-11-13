@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Make a code-signing identity for Brainio Pen, once per Mac, so that a rebuild keeps its
+# Make a code-signing identity for Open Smart Pen, once per Mac, so that a rebuild keeps its
 # Bluetooth grant.
 #
 # macOS keys a permission grant to what the signature says the app *is*. An ad-hoc signature says
@@ -12,7 +12,7 @@
 # account is involved. make-app.sh uses it when it is there and signs ad hoc when it is not.
 set -euo pipefail
 
-NAME="${BRAINIO_PEN_SIGN_IDENTITY:-Brainio Pen Dev}"
+NAME="${OPENSMARTPEN_SIGN_IDENTITY:-Open Smart Pen Dev}"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 
 if security find-identity -p codesigning "$KEYCHAIN" | grep -q "\"$NAME\""; then
@@ -42,11 +42,11 @@ CONF
   -config "$TMP/cert.conf" -keyout "$TMP/key.pem" -out "$TMP/cert.pem" 2>/dev/null
 # A throwaway passphrase, because the keychain refuses a PKCS#12 that has none.
 /usr/bin/openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
-  -name "$NAME" -out "$TMP/identity.p12" -passout pass:brainio-pen
+  -name "$NAME" -out "$TMP/identity.p12" -passout pass:opensmartpen
 
 # -T lets codesign use the key. macOS still asks once, the first time it does; "Always Allow"
 # is the answer that makes it the last time.
-security import "$TMP/identity.p12" -k "$KEYCHAIN" -P brainio-pen -T /usr/bin/codesign >/dev/null
+security import "$TMP/identity.p12" -k "$KEYCHAIN" -P opensmartpen -T /usr/bin/codesign >/dev/null
 
 security find-identity -p codesigning "$KEYCHAIN" | grep -q "\"$NAME\"" || {
   echo "the identity was imported but the keychain does not list it for code signing" >&2

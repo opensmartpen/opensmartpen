@@ -40,7 +40,7 @@ PAPERS = {
 
 
 # Surface identities that are printed control surfaces rather than paper. Mirrors
-# Config.controlBooks in Brainio Pen; taps on them are kept as evidence but are never pages.
+# Config.controlBooks in Open Smart Pen; taps on them are kept as evidence but are never pages.
 CONTROL_BOOKS = {"s3/o1013/b1"}
 
 
@@ -370,7 +370,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("raw", nargs="?", help="a captured page .jsonl file")
     ap.add_argument("--all", action="store_true", help="render every captured page")
-    ap.add_argument("--root", default="~/Brainio/pen", help="where the notes are kept")
+    ap.add_argument("--root", default="~/OpenSmartPen", help="where the notes are kept")
     ap.add_argument("-o", "--out", help="output .svg path (single file only)")
     ap.add_argument("--png", action="store_true", help="also write a PNG next to the SVG")
     ap.add_argument("--crop", action="store_true", help="trim to the written area instead of the whole sheet")

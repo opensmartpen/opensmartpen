@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install "Brainio Pen.app" into ~/Applications and register a LaunchAgent so it starts at login
+# Install "Open Smart Pen.app" into ~/Applications and register a LaunchAgent so it starts at login
 # and is restarted if it exits. Run scripts/make-app.sh first.
 #
 # Bluetooth permission is granted in the middle of this, not after it, and the order is the whole
@@ -7,43 +7,27 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-SRC="${1:-dist/Brainio Pen.app}"
+SRC="${1:-dist/Open Smart Pen.app}"
 [ -d "$SRC" ] || { echo "$SRC not found; run scripts/make-app.sh" >&2; exit 1; }
 
 # This script copies a bundle; it does not build one. A bundle older than the code it was built
 # from installs an app that does not have the change you are installing it for, and says
 # "installed" while doing it — which has happened.
-if [ -n "$(find Sources -type f -newer "$SRC/Contents/MacOS/brainio-pen" -print -quit 2>/dev/null)" ]; then
+if [ -n "$(find Sources -type f -newer "$SRC/Contents/MacOS/opensmartpen" -print -quit 2>/dev/null)" ]; then
   echo "$SRC is older than Sources; run scripts/make-app.sh first" >&2
   exit 1
 fi
 
-DEST="$HOME/Applications/Brainio Pen.app"
-LABEL="com.brainio.pen"
+DEST="$HOME/Applications/Open Smart Pen.app"
+LABEL="org.opensmartpen.app"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
-LOGDIR="$HOME/Library/Logs/BrainioPen"
+LOGDIR="$HOME/Library/Logs/OpenSmartPen"
 
 UID_="$(id -u)"
 
 # Stop our own agent before touching any bundle it might be executing. KeepAlive is armed, so
 # deleting the binary out from under a live agent gets it respawned into an ENOENT.
 launchctl bootout "gui/$UID_/$LABEL" 2>/dev/null || true
-
-# Retire the PenBridge-era agent. Two agents would both own the pen and both commit to the notes
-# repo, which is worse than neither running.
-LEGACY_LABEL="com.apoco.penbridge"
-LEGACY_PLIST="$HOME/Library/LaunchAgents/$LEGACY_LABEL.plist"
-if [ -e "$LEGACY_PLIST" ] || launchctl print "gui/$UID_/$LEGACY_LABEL" >/dev/null 2>&1; then
-  echo "retiring $LEGACY_LABEL (the app was called PenBridge)"
-  launchctl bootout "gui/$UID_/$LEGACY_LABEL" 2>/dev/null || true
-  rm -f "$LEGACY_PLIST"
-  rm -rf "$HOME/Applications/PenBridge.app"
-fi
-# The bundle was briefly BrainioPen.app, before the name took its space.
-if [ -d "$HOME/Applications/BrainioPen.app" ]; then
-  echo "removing the earlier BrainioPen.app"
-  rm -rf "$HOME/Applications/BrainioPen.app"
-fi
 
 # What each signature says the app is, read before the old bundle goes. macOS keeps a grant for as
 # long as that answer stays the same, so this is how the script knows whether a person is needed.
@@ -64,12 +48,12 @@ cat > "$PLIST" <<PLIST
 <dict>
   <key>Label</key><string>${LABEL}</string>
   <key>ProgramArguments</key>
-  <array><string>${DEST}/Contents/MacOS/brainio-pen</string></array>
+  <array><string>${DEST}/Contents/MacOS/opensmartpen</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Interactive</string>
-  <key>StandardErrorPath</key><string>${LOGDIR}/brainio-pen.log</string>
-  <key>StandardOutPath</key><string>${LOGDIR}/brainio-pen.log</string>
+  <key>StandardErrorPath</key><string>${LOGDIR}/opensmartpen.log</string>
+  <key>StandardOutPath</key><string>${LOGDIR}/opensmartpen.log</string>
 </dict>
 </plist>
 PLIST
@@ -88,9 +72,9 @@ echo "installed $DEST"
 #
 # The grant is keyed to the code signature as well as the bundle id. When the new bundle's
 # signature says what the old one's did, the grant made for the old one still stands, there is
-# nothing to prompt for, and the agent can simply be started. BRAINIO_PEN_ASK=1 asks anyway, for
+# nothing to prompt for, and the agent can simply be started. OPENSMARTPEN_ASK=1 asks anyway, for
 # the day the grant has been revoked in System Settings.
-if [ -n "$NOW" ] && [ "$WAS" = "$NOW" ] && [ -z "${BRAINIO_PEN_ASK:-}" ]; then
+if [ -n "$NOW" ] && [ "$WAS" = "$NOW" ] && [ -z "${OPENSMARTPEN_ASK:-}" ]; then
   launchctl bootstrap "gui/$UID_" "$PLIST"
   echo "started $LABEL (same signature as before, so the Bluetooth grant carries over)"
 else
@@ -101,7 +85,7 @@ else
   if [ -t 0 ]; then
     printf 'Press Return once you have allowed it, and the agent will take over: '
     read -r _
-    pkill -f "$DEST/Contents/MacOS/brainio-pen" 2>/dev/null || true
+    pkill -f "$DEST/Contents/MacOS/opensmartpen" 2>/dev/null || true
     sleep 1
     launchctl bootstrap "gui/$UID_" "$PLIST"
     echo "started $LABEL"
@@ -109,11 +93,11 @@ else
     echo
     echo "Not started, because this is not a terminal and the prompt needs a person. Once you have"
     echo "allowed it, hand over to the agent with:"
-    echo "    pkill -f \"$DEST/Contents/MacOS/brainio-pen\""
+    echo "    pkill -f \"$DEST/Contents/MacOS/opensmartpen\""
     echo "    launchctl bootstrap gui/$UID_ \"$PLIST\""
   fi
 fi
 
 echo
-echo "log: $LOGDIR/brainio-pen.log"
+echo "log: $LOGDIR/opensmartpen.log"
 echo "stop: launchctl bootout gui/$UID_/$LABEL"

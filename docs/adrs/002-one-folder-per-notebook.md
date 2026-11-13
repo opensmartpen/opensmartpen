@@ -37,7 +37,7 @@ A surface identity exists only because the pen read the pattern printed on a she
 
 **A stroke is filed under its surface identity.** Only the client that sensed the surface can give one. We take the client's own and use nothing else. The format does not depend on Ncode. A client that senses another kind of surface brings its own surface identity, and the same format holds its strokes.
 
-**The root is `~/Brainio/pen`, where a person can see it.** The data stays outside the app, so you can delete the app and install it again. Brainio will have more products than the pen. Each one gets its own folder below `~/Brainio`, and none of them can disturb the others.
+**The root is `~/OpenSmartPen`, where a person can see it.** The data stays outside the app, so you can delete the app and install it again.
 
 macOS keeps the data of an application in `~/Library/Application Support`. We do not put these files there. That location is for data that a person must never open: caches, indexes, a database. These files are the opposite. They are the person's own notes, and we made them readable on purpose. A person opens the folder, reads a page, moves a book, and keeps a copy. A location that Finder hides works against all of those.
 
@@ -50,7 +50,7 @@ A person who disagrees moves the folder. The location is one field in the config
 Inside it, captured and derived stay apart. Everything in `pages/` can be deleted and made again. Nothing in `raw/` can.
 
 ```
-~/Brainio/pen/
+~/OpenSmartPen/
   mode.jsonl                        every setting, in time order
   pens/pen.json
   books/
@@ -95,7 +95,6 @@ The number a person counts to is not thrown away. `book.json` holds which sheet 
 - **Name the folder by the surface identity alone** — two copies of one product then share a folder, and their pages overwrite each other.
 - **Decide the copy late, from a date in the record** — nothing ever moves, but every reader must apply the boundary. One notebook also cannot be held apart from the rest.
 - **Ask the person when a new copy appears** — the app must run without attention. A question at the wrong moment is worse than a guess we can repair.
-- **Put the pen's data at `~/Brainio`** — a second Brainio product would then have to share that folder, or move the first one.
 - **Put the data in `~/Library/Application Support`** — the macOS convention, and the right one for data a person must never open. These are the person's notes, which is the opposite kind of data.
 - **Put the data in `~/Documents`** — the usual place for documents, and the usual place that syncs to iCloud. An append-only record uploaded on every line, and evicted when the disk fills, is a record we cannot trust.
 - **Put the title in the folder name** — a rename would then move every file and break every link into it.
