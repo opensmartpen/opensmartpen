@@ -21,6 +21,8 @@ let plate = NSRect(x: 100, y: 100, width: 824, height: 824)
 let cornerRadius: CGFloat = 185
 
 let ink = NSColor(calibratedWhite: 0.13, alpha: 1)
+let avatarViolet = NSColor(srgbRed: 0.545, green: 0.424, blue: 1, alpha: 1)
+let avatarPink = NSColor(srgbRed: 1, green: 0.722, blue: 0.851, alpha: 1)
 let plateTop = NSColor(calibratedRed: 0.98, green: 0.976, blue: 0.969, alpha: 1)
 let plateBottom = NSColor(calibratedRed: 0.902, green: 0.890, blue: 0.875, alpha: 1)
 
@@ -41,13 +43,29 @@ func drawIcon(into size: CGFloat, fullBleed: Bool = false) -> NSBitmapImageRep {
     let shape = fullBleed
         ? NSBezierPath(rect: plateRect)
         : NSBezierPath(roundedRect: plateRect, xRadius: cornerRadius * k, yRadius: cornerRadius * k)
-    NSGradient(starting: plateTop, ending: plateBottom)?.draw(in: shape, angle: -90)
+    if fullBleed {
+        // A profile picture is seen at 20 to 40 pixels, on a dark page and on a white one. The
+        // plate is near-white with a violet tint from the top right and a pink one from the
+        // bottom left: gentle, and still a shape of its own on a white page.
+        NSColor(srgbRed: 0.984, green: 0.980, blue: 1, alpha: 1).setFill()
+        shape.fill()
+        for (tint, at, reach) in [(avatarViolet, NSPoint(x: size, y: size), size * 1.0),
+                                  (avatarPink, NSPoint(x: 0, y: 0), size * 0.9)] {
+            NSGradient(starting: tint.withAlphaComponent(0.5), ending: tint.withAlphaComponent(0))?
+                .draw(fromCenter: at, radius: 0, toCenter: at, radius: reach, options: [])
+        }
+    } else {
+        NSGradient(starting: plateTop, ending: plateBottom)?.draw(in: shape, angle: -90)
+    }
 
     // The pencil from StatusIcon, on its own 16-unit grid, blown up to fill the plate.
     //
     // One number is not the menubar's: the 1.35 stroke. It is right at 17 points and reads as a
     // marker at 1024, so it is thinned to 1.0. The shape is what has to match.
-    let grid = plateRect.height * 0.60
+    // The profile picture has a bigger pencil with the menubar's own stroke: both were made for
+    // small sizes.
+    let grid = plateRect.height * (fullBleed ? 0.76 : 0.60)
+    let weight: CGFloat = fullBleed ? 1.35 : 1.0
     let u = grid / 16
     let ox = plateRect.midX - grid / 2
     let oy = plateRect.midY - grid / 2
@@ -70,7 +88,7 @@ func drawIcon(into size: CGFloat, fullBleed: Bool = false) -> NSBitmapImageRep {
     // outside the pencil at this size.
     ink.setStroke()
     for path in [body, ferrule] {
-        path.lineWidth = 1.0 * u
+        path.lineWidth = weight * u
         path.lineCapStyle = path === ferrule ? .butt : .round
         path.lineJoinStyle = .round
         path.stroke()

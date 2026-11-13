@@ -284,3 +284,4 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **No ink drop and no colour.** The drop means pages are waiting, and an icon must not claim a state.
 - **One icon file is committed:** `docs/logo.png`, 512 pixels, written by `scripts/make-icon.swift --logo ../docs/logo.png` from `app/`. The README and GitHub need a file; everything else is still generated at build time.
 - **A second picture fills the whole square:** `docs/avatar.png`, written by `--avatar`. A GitHub profile frames the picture itself, and the app icon's own margin showed there as a tile inside a tile.
+- **The profile picture has its own plate and a bigger pencil.** Near-white, with a violet tint from the top right and a pink one from the bottom left; the pencil is 76% of the square with the menubar stroke of 1.35. It is seen at 20 to 40 pixels, where the app icon's thin pencil was a grey mark. The app icon and the README logo did not change.
