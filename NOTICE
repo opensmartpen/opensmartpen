@@ -1,0 +1,25 @@
+Brainio Pen
+Copyright 2026 Apoco
+
+The source code in this repository is licensed under the Apache License,
+Version 2.0. See the LICENSE file.
+
+Third-party software
+--------------------
+
+The app in app/ links NISDK3, the Neo smartpen SDK for iOS and macOS:
+
+    https://github.com/NeoSmartpen/iOS-SDK3.0
+    Copyright 2017 NeoLAB Convergence, Inc.
+    License: GNU General Public License, version 3
+
+NISDK3 is not in this repository. The Swift package manager downloads it
+when the app is built.
+
+A built copy of the app contains NISDK3. For that reason a built copy of
+the app, as a whole, is distributed under the GNU General Public License,
+version 3. The source code in this repository stays under the Apache
+License, Version 2.0, and can be used under that license without NISDK3.
+
+Brainio Pen is not affiliated with NeoLAB Convergence, Inc. "Neo smartpen"
+and "Ncode" are trademarks of NeoLAB Convergence, Inc.
