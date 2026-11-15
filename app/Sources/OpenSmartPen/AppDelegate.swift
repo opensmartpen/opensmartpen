@@ -1,4 +1,6 @@
 import AppKit
+import ServiceManagement
+import UniformTypeIdentifiers
 import Foundation
 import OpenSmartPenCore
 import OpenSmartPenUI
@@ -113,6 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onShowLive = { [weak self] in self?.showViewer(nil) }
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
+        model.onAddPhoto = { [weak self] in self?.addPhoto() }
+        model.onDropPhoto = { [weak self] url in self?.addPhoto(file: url) }
         model.onOpenPage = { [weak self] page in self?.showViewer(page) }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         coordinator.onOfflineStored = { [weak self] pages in
@@ -133,6 +137,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let named = flag.split(separator: "=").dropFirst().first.map(String.init)
             showSettings(tab: SettingsTab.allCases.first { "\($0)" == named } ?? .sync)
         }
+        checkAgents()
+        applyStartAtLogin()
         model.refresh()
         refreshStatusButton()
 
@@ -141,8 +147,137 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // nothing quiet is a dictionary scan, so it costs nothing to ask.
         tickTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.coordinator.tick()
+            self?.checkAgents()
             self?.stateChanged()
         }
+    }
+
+    // MARK: - starting at login
+
+    /// Make macOS start the app at login, or stop it doing so, as the setting says.
+    ///
+    /// Only for an app in a bundle, which is what macOS registers. And not on a Mac where the
+    /// developer's LaunchAgent is installed: that already starts the app, and two starters would
+    /// start two copies, which would both take the pen.
+    private func applyStartAtLogin() {
+        guard Bundle.main.bundlePath.hasSuffix(".app") else { return }
+        let agent = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/org.opensmartpen.app.plist")
+        guard !FileManager.default.fileExists(atPath: agent.path) else {
+            Log.debug("started by the LaunchAgent; the login item is left alone")
+            return
+        }
+        let service = SMAppService.mainApp
+        do {
+            if config.startAtLogin, service.status != .enabled {
+                try service.register()
+                Log.info("the app starts at login")
+            } else if !config.startAtLogin, service.status == .enabled {
+                try service.unregister()
+                Log.info("the app no longer starts at login")
+            }
+        } catch {
+            Log.warn("could not change whether the app starts at login: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - the agents, and pages that are pictures
+
+    private var agentRecords: [AgentRecord] = []
+    private var agentsAsked = Date.distantPast
+    private let agentQueue = DispatchQueue(label: "org.opensmartpen.app.agent")
+
+    private var photoImport: PhotoImportController?
+
+    /// The menu behind the photo tile: a file, the sample while there is no Photos notebook, and
+    /// below them what macOS adds for each iPhone or iPad near this Mac. It opens where the person
+    /// clicked, in the panel, and the panel stays until it closes.
+    private func addPhoto() {
+        let menu = PhotoImportController()
+        menu.addEntry("Upload Photo\u{2026}") { [weak self] in self?.uploadPhoto() }
+        if books.current(for: PhotoPages.surface) == nil {
+            menu.addEntry("Add Sample Page") { [weak self] in self?.addSample() }
+        }
+        menu.onImage = { [weak self] data, ext in self?.file(photo: data, ext: ext, show: true) }
+        menu.onFinish = { [weak self] in self?.photoImport = nil }
+        photoImport = menu
+        panel?.staysOpen = true
+        menu.onMenuClosed = { [weak self] in
+            self?.panel?.staysOpen = false
+            self?.panel?.dismiss()
+        }
+        menu.show()
+    }
+
+    /// A file dropped on the photo tile, or on the pen in the menu bar. Only a picture is taken.
+    private func addPhoto(file url: URL) {
+        guard let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image),
+              let data = try? Data(contentsOf: url) else {
+            Log.warn("\(url.lastPathComponent) is not a picture; not added")
+            return
+        }
+        file(photo: data, ext: url.pathExtension, show: true)
+    }
+
+    /// A picture of a page from a file.
+    private func uploadPhoto() {
+        panel?.dismiss()
+        NSApp.activate(ignoringOtherApps: true)
+        let chooser = NSOpenPanel()
+        chooser.allowedContentTypes = [.image]
+        chooser.allowsMultipleSelection = true
+        chooser.message = "Choose a photo of a page. Each photo becomes a page in the notebook \u{201C}Photos\u{201D}."
+        chooser.prompt = "Add"
+        guard chooser.runModal() == .OK else { return }
+        for url in chooser.urls.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            guard let data = try? Data(contentsOf: url) else {
+                Log.warn("could not read \(url.lastPathComponent)")
+                continue
+            }
+            file(photo: data, ext: url.pathExtension.isEmpty ? "jpg" : url.pathExtension, show: true)
+        }
+    }
+
+    /// The page the app brings itself, for a person with no pen and no photo at hand who wants to
+    /// see an agent read something. Offered only until the Photos notebook exists: the notebook
+    /// is made when the first picture is filed, and not before.
+    private func addSample() {
+        panel?.dismiss()
+        if let picture = SamplePicture.png() { file(photo: picture, ext: "png", show: true) }
+    }
+
+    /// A photo is complete when it arrives: there is no pen to wait for. So it is drawn and sent now.
+    private func file(photo: Data, ext: String, show: Bool) {
+        guard let page = PhotoPages.add(image: photo, ext: ext, books: books, root: config.dataURL,
+                                        app: Self.clientID) else { return }
+        Log.info("a photo is filed as \(page)")
+        coordinator.recoverPending()
+        coordinator.publish(pages: [page], reason: "photo") { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.model.refreshRecent()
+                if show { self?.showViewer(page) }
+            }
+        }
+    }
+
+    /// Read the agents' records: from the folder each time, from the bucket once a minute.
+    private func checkAgents() {
+        model.agentSentence = Agents.sentence(folder: config.dataURL,
+                                              bucket: config.s3Account()?.destination)
+        if let client = sync.connection, Date().timeIntervalSince(agentsAsked) > 60 {
+            agentsAsked = Date()
+            let root = config.dataURL
+            agentQueue.async { [weak self] in
+                Agents.fetch(root: root, client: client)
+                DispatchQueue.main.async { self?.showAgents() }
+            }
+        }
+        showAgents()
+    }
+
+    private func showAgents() {
+        agentRecords = Agents.load(root: config.dataURL)
+        model.setAgents(agentRecords, changed: Agents.lastChange(root: config.dataURL))
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -155,6 +290,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePanel)
+        // A picture dropped on the pen in the menu bar is added as a page. The panel cannot take
+        // a drop from the Finder itself: it closes at the click that starts the drag.
+        statusItem.button?.window?.registerForDraggedTypes([.fileURL])
+        statusItem.button?.window?.delegate = self
 
         panelHost = NSHostingController(rootView: StatusPanel(model: model, now: panelNow))
         panel = MenuBarPanel(content: panelHost)
@@ -245,6 +384,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.lastUpload = coordinator.lastPublish?.date
         status.lastFiles = coordinator.lastPublish?.files ?? 0
         status.error = coordinator.lastError
+        status.agents = agentRecords.map(\.name)
+        status.agentSentence = model.agentSentence
         if store.sync != status { store.sync = status }
     }
 
@@ -265,6 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let bucketChanged = updated.s3 != config.s3 || sync.isConnected != (updated.s3Account() != nil)
                 config = updated
                 coordinator.quietWindow = updated.quietSeconds
+                applyStartAtLogin()
                 if bucketChanged { connectBucket() }
                 stateChanged()
             }
@@ -360,5 +502,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelHost?.rootView = StatusPanel(model: model, now: panelNow)
         panel?.resizeToContent()
         pinnedPanel?.render(now: panelNow)
+    }
+}
+
+// MARK: - a picture dropped on the menu bar
+
+extension AppDelegate: NSWindowDelegate {
+    private func pictures(in info: NSDraggingInfo) -> [URL] {
+        let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+                                                       options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        return urls.filter { UTType(filenameExtension: $0.pathExtension)?.conforms(to: .image) == true }
+    }
+
+    @objc func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        pictures(in: sender).isEmpty ? [] : .copy
+    }
+
+    @objc func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = pictures(in: sender)
+        for url in urls.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) { addPhoto(file: url) }
+        return !urls.isEmpty
     }
 }

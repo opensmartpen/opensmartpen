@@ -2,6 +2,8 @@
 
 # Open Smart Pen
 
+Website: [opensmartpen.org](https://opensmartpen.org/)
+
 An open-source macOS menubar app for Neo smartpens. It captures what the pen writes on Ncode paper and keeps it as plain files in `~/OpenSmartPen`: the strokes of each page and a PNG of it. If you connect an S3 bucket, the same files are copied there.
 
 The app does not transcribe. An agent of your choice, for example Claude Code or Codex, reads the folder or the bucket and writes the text. `docs/processing.md` is the contract with that agent.

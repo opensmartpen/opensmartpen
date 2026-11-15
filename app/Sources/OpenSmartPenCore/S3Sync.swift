@@ -8,7 +8,8 @@ import Foundation
 ///
 /// A captured page goes up as two files — the strokes, then the PNG that `PagePictures` keeps
 /// beside them — so that whatever reads the bucket can look at a page without knowing how to draw
-/// one. The PNG is the last thing to arrive, which makes it the one to listen for.
+/// one. The PNG arrives after its strokes, and `last-modified.txt` after every PNG of the batch,
+/// so that one small file is the one to listen for.
 ///
 /// With no bucket connected this does nothing and says everything went well. That is deliberate:
 /// the app is whole without a bucket, and the day one is connected every file already on disk is
@@ -172,6 +173,7 @@ public final class S3Sync: Publishing {
         case "jsonl": return "application/x-ndjson"
         case "json": return "application/json"
         case "png": return "image/png"
+        case "txt": return "text/plain; charset=utf-8"
         default: return "application/octet-stream"
         }
     }

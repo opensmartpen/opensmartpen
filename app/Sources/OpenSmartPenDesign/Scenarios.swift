@@ -61,6 +61,11 @@ public enum Scenario: String, CaseIterable {
         let lamy = Self.label("LAMY digital paper", 6)
         let pad = Self.label("Ncode A4 pad", 3)
         var s = Self.base(now: now)
+        s.agents = [PanelModel.AgentRow(id: 0, name: "Claude Code", alive: "alive 3 min ago", behind: false,
+                                        url: URL(string: "https://example.com")),
+                    PanelModel.AgentRow(id: 1, name: "Codex", alive: "alive 2 days ago", behind: true)]
+        s.recent.append(Self.book("s0-o0-b0-0b8951", PhotoPages.title,
+                                  PageID(section: 0, owner: 0, book: 0, page: 1), binding: .pad))
 
         switch self {
         case .synced:
@@ -91,6 +96,9 @@ public enum Scenario: String, CaseIterable {
             s.lastPublish = nil
             s.recent = []
             s.status = .asleep
+            s.agents = []
+            s.asksForAgent = true
+            s.offersSample = true
         case .newNotebook:
             // A fresh pad is not announced, it simply appears: a second row with the same title
             // and a folder of its own. Nothing is asked, and no notice is posted (ADR-002).

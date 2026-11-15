@@ -111,6 +111,8 @@ public final class Viewer: ObservableObject {
     /// knows it — and the model needs it to keep zoom anchored and pan honest.
     private(set) var viewport: CGSize = .zero
     @Published private(set) var strokes: [Int: [DrawnStroke]] = [:]
+    /// The picture of a page that arrived as a photo, by human page. Such a page has no strokes.
+    @Published private(set) var photos: [Int: NSImage] = [:]
     /// The stroke under the pen, kept apart so it can be drawn before it is finished.
     @Published private(set) var wet: [InkPoint] = []
     @Published private(set) var wetPage: Int?
@@ -397,6 +399,7 @@ public final class Viewer: ObservableObject {
             let human = book.humanPage(ref.page.page)
             guard strokes[human] != nil else { continue }
             strokes[human] = nil
+            photos[human] = nil
             if isOnScreen(human) { loadIfNeeded(human) }
         }
     }
@@ -459,6 +462,11 @@ public final class Viewer: ObservableObject {
         guard strokes[human] == nil, let ref = ref(for: human) else { return }
         let raw = RawReader.strokes(at: books.rawFile(for: ref), page: ref.page)
         strokes[human] = raw.map { drawn($0) }
+        if raw.isEmpty, let photo = PhotoPages.image(of: ref, root: repo) {
+            // The page picture when it is there: it is already turned the right way up.
+            let picture = repo.appendingPathComponent(PagePictures.imagePath(for: ref))
+            photos[human] = NSImage(contentsOf: picture) ?? NSImage(contentsOf: photo)
+        }
     }
 
     /// Resolve one raw stroke into something drawable. The pen always reports black, so the colour
@@ -899,6 +907,14 @@ private struct Sheet: View {
 
         Canvas { context, _ in
             context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+            if let photo = viewer.photos[page], photo.size.width > 0, photo.size.height > 0 {
+                // Whole, and as large as the sheet allows. A photo has its own proportions.
+                let fit = min(size.width / photo.size.width, size.height / photo.size.height)
+                let drawn = CGSize(width: photo.size.width * fit, height: photo.size.height * fit)
+                context.draw(Image(nsImage: photo),
+                             in: CGRect(x: (size.width - drawn.width) / 2, y: (size.height - drawn.height) / 2,
+                                        width: drawn.width, height: drawn.height))
+            }
             for stroke in viewer.strokes[page] ?? [] {
                 draw(stroke.points, in: context, scale: scale, colour: stroke.colour, lift: lift)
             }

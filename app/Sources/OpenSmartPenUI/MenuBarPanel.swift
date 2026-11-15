@@ -118,9 +118,13 @@ public final class MenuBarPanel: NSPanel {
         onClose?()
     }
 
+    /// True while something the panel itself opened has the keyboard focus, such as a menu at
+    /// the mouse. The panel then stays where it is, so what opened reads as part of it.
+    public var staysOpen = false
+
     public override func resignKey() {
         super.resignKey()
-        dismiss()
+        if !staysOpen { dismiss() }
     }
 
     /// Escape closes it, as it closes a menu.

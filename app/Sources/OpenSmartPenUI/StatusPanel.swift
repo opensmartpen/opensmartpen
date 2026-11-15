@@ -68,6 +68,8 @@ public struct StatusPanel: View {
                 // list below, one row further down, and the countdown beside it answered a
                 // question about a thing the app finishes on its own. What survives of it is the
                 // mark on that notebook in the list.
+                if model.asksForAgent { section { connectAgent } }
+                if !model.agents.isEmpty { section(inset: 5) { agents } }
                 if case let .failing(_, _, error) = model.status { section { failure(error) } }
                 if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
                 if !model.recent.isEmpty { section(inset: 5) { recent } }
@@ -96,9 +98,15 @@ public struct StatusPanel: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
         } else {
-            wakeHint
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
+            // No pen yet, but a page can still come in as a picture.
+            HStack(alignment: .top, spacing: 6) {
+                wakeHint
+                Spacer(minLength: 0)
+                PhotoTile(tap: model.addPhoto, drop: model.dropPhoto)
+                    .padding(.trailing, 22)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
         }
     }
 
@@ -130,6 +138,7 @@ public struct StatusPanel: View {
                         model.toggleExpanded(pen.id)
                     }
                 }
+                PhotoTile(tap: model.addPhoto, drop: model.dropPhoto)
                 Spacer(minLength: 0)
             }
             if let pen = model.expanded {
@@ -225,6 +234,58 @@ public struct StatusPanel: View {
                     .buttonStyle(InkButtonStyle(filled: true))
                 Button("Log", action: model.openLog)
                     .buttonStyle(InkButtonStyle(filled: false))
+            }
+        }
+    }
+
+    /// Shown until an agent has transcribed the sample page. The app captures and stops; without
+    /// an agent a page never becomes text, and nothing else in the panel would say why.
+    private var connectAgent: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Connect your agent")
+                .font(.system(size: 11.5, weight: .medium))
+            Text("Your agent turns pages into text. Copy the instructions and paste them into it.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
+                .buttonStyle(InkButtonStyle(filled: true))
+        }
+    }
+
+    /// Who reads the pages. A dot for each: the accent while it keeps up, grey when pages changed
+    /// more than two hours ago and it has not looked since.
+    private var agents: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("Agents")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 9)
+                .padding(.bottom, 2)
+            ForEach(model.agents) { agent in
+                Button { model.open(agent) } label: {
+                    HStack(spacing: 9) {
+                        Circle()
+                            .fill(agent.behind ? Color.primary.opacity(0.25) : Ink.accent)
+                            .frame(width: 7, height: 7)
+                            .frame(width: 15)
+                        Text(agent.name)
+                            .font(.system(size: 13))
+                            .foregroundStyle(agent.behind ? .secondary : .primary)
+                            .lineLimit(1)
+                        Spacer(minLength: 6)
+                        Text(agent.alive)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(agent.url == nil)
+                .help(agent.url?.absoluteString ?? "")
             }
         }
     }
@@ -333,7 +394,7 @@ private struct RecentRow: View {
                 // book, the way an owed badge belongs to an app icon — put it at the start of
                 // the line instead and it reads as a bullet, and the title it sits beside is not
                 // the thing it is about.
-                PaperMark(binding: book.binding)
+                PaperMark(binding: book.binding, photo: book.page.folder.surface == PhotoPages.surface)
                     .frame(width: 15, height: 15)
                     .overlay(alignment: .topTrailing) {
                         // top:-1, right:-3 against the 15-point mark, as in the design.
@@ -501,6 +562,50 @@ private struct BatteryBar: View {
 ///
 /// Which pen is in your hand is reported, not asked for: picking one up opens it. A click is
 /// only for looking at a pen you are not holding, or for putting the controls away.
+/// The other way a page comes in: as a picture. It stands with the pens because it is one of
+/// them in the only sense the row cares about, a place pages come from. A click opens the menu
+/// of ways to add one; a picture dropped on it is added.
+private struct PhotoTile: View {
+    let tap: () -> Void
+    let drop: (URL) -> Void
+    @State private var targeted = false
+
+    var body: some View {
+        Button(action: tap) {
+            VStack(spacing: 0) {
+                Image(systemName: "camera")
+                    .font(.system(size: 14.5, weight: .regular))
+                    .frame(height: 17)
+                Text("Photo")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .lineLimit(1)
+                    .padding(.top, 4)
+                Color.clear.frame(height: 5).padding(.top, 4)
+            }
+            .foregroundStyle(targeted ? Ink.accent : Color.primary)
+            .opacity(targeted ? 1 : 0.55)
+            .padding(.horizontal, 4)
+            .padding(.top, 7)
+            .padding(.bottom, 6)
+            .frame(width: 64)
+            .background(RoundedRectangle(cornerRadius: 7)
+                .strokeBorder(targeted ? Ink.accent : Color.clear, style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Add a photo of a page, or drop one here")
+        .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    DispatchQueue.main.async { drop(url) }
+                }
+            }
+            return true
+        }
+    }
+}
+
 private struct PenTile: View {
     let pen: PanelModel.PenRow
     let open: Bool
@@ -619,11 +724,31 @@ private extension Color {
 /// them, which is the other thing the approximation got wrong.
 private struct PaperMark: View {
     let binding: KnownBooks.Binding
+    /// The notebook of pages that arrived as pictures. It is not paper, so it is not drawn as paper.
+    var photo = false
 
     var body: some View {
         Canvas { context, canvas in
             let k = canvas.width / 16          // the design's viewBox, scaled to the frame
             let ink = Color.secondary
+
+            if photo {
+                // A picture in a frame: a sun and a hill, in the same line as the paper marks.
+                let frame = CGRect(x: 1.8 * k, y: 3 * k, width: 12.4 * k, height: 10 * k)
+                context.stroke(Path(roundedRect: frame, cornerRadius: 1.6 * k),
+                               with: .color(ink), lineWidth: 1.1 * k)
+                context.fill(Path(ellipseIn: CGRect(x: 4.1 * k, y: 5.2 * k, width: 2.3 * k, height: 2.3 * k)),
+                             with: .color(ink))
+                var hill = Path()
+                hill.move(to: CGPoint(x: 2.6 * k, y: 12 * k))
+                hill.addLine(to: CGPoint(x: 6.4 * k, y: 9 * k))
+                hill.addLine(to: CGPoint(x: 8.4 * k, y: 10.6 * k))
+                hill.addLine(to: CGPoint(x: 11 * k, y: 7.6 * k))
+                hill.addLine(to: CGPoint(x: 13.6 * k, y: 10.4 * k))
+                context.stroke(hill, with: .color(ink),
+                               style: StrokeStyle(lineWidth: 1.1 * k, lineCap: .round, lineJoin: .round))
+                return
+            }
 
             switch binding {
             case .bound:

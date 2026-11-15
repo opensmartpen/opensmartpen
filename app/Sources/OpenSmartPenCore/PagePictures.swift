@@ -26,11 +26,24 @@ public final class PagePictures: Publishing {
         self.next = next
     }
 
+    /// The one file that says the pages changed: `last-modified.txt`, at the top of the folder.
+    /// An agent reads this file alone to learn whether there is anything to look at.
+    public static let timePath = "last-modified.txt"
+    /// The version of the rules an agent was given. Raised only when the layout, the order or
+    /// the meaning of a file changes, so an agent knows its instructions are out of date.
+    public static let rulesVersion = 1
+    /// The clock, so a test can hold it.
+    public var now: () -> Date = Date.init
+
     /// Draw each of these pages, then send the files on. A page is drawn every time it is
     /// published, because it is published when it has been written on. The file is only replaced
     /// when the picture is different, so a retry does not wake an agent for nothing.
+    ///
+    /// When a picture did change, the time file is written after the last of them, and it is the
+    /// last file sent on: whoever sees it change finds every page already there.
     public func publish(paths: [String]) throws -> Int {
         var seen = Set<String>()
+        var changed = false
         for path in paths where seen.insert(path).inserted {
             guard let page = PageRef(rawRelativePath: path), let png = image(of: page) else { continue }
             let url = root.appendingPathComponent(Self.imagePath(for: page))
@@ -38,8 +51,21 @@ public final class PagePictures: Publishing {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
             try png.write(to: url, options: .atomic)
+            changed = true
         }
-        return try next.publish(paths: paths)
+        let time = root.appendingPathComponent(Self.timePath)
+        if changed { try Self.timeFile(at: now()).write(to: time, options: .atomic) }
+        let exists = FileManager.default.fileExists(atPath: time.path)
+        return try next.publish(paths: exists ? paths + [Self.timePath] : paths)
+    }
+
+    /// Two lines: when a page picture last changed, and the version of the rules. The time is
+    /// compared with the one seen last, never with a clock, so it has milliseconds: two changes
+    /// in one second are still two different values.
+    static func timeFile(at date: Date) -> Data {
+        let format = ISO8601DateFormatter()
+        format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return Data("changed: \(format.string(from: date))\nrules: \(rulesVersion)\n".utf8)
     }
 
     /// What has not been sent, and also every page whose picture is missing or older than its

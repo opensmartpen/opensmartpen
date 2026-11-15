@@ -254,6 +254,8 @@ public final class PanelModel: ObservableObject {
             width = mode.width
         }
         isPublishing = coordinator.isPublishing
+        let sample = books.current(for: PhotoPages.surface) == nil
+        if offersSample != sample { offersSample = sample }
 
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
         // and the macOS Bluetooth menu sets the convention: a battery for what is connected,
@@ -435,6 +437,80 @@ public final class PanelModel: ObservableObject {
     /// Called by the app delegate when the pinned window opens or closes.
     public func setPinned(_ pinned: Bool) { isPinned = pinned }
 
+    // MARK: the agents
+
+    /// One agent, as the panel shows it.
+    public struct AgentRow: Identifiable, Equatable {
+        public let id: Int
+        public var name: String
+        /// "alive 2 min ago".
+        public var alive: String
+        /// Pages changed more than two hours ago and it has not looked since.
+        public var behind: Bool
+        public var url: URL?
+
+        public init(id: Int, name: String, alive: String, behind: Bool, url: URL? = nil) {
+            self.id = id
+            self.name = name
+            self.alive = alive
+            self.behind = behind
+            self.url = url
+        }
+    }
+
+    /// The agents that keep a record in the folder or the bucket. Empty shows "Connect your agent".
+    @Published public private(set) var agents: [AgentRow] = []
+    /// False hides the "connect" action, whatever the list holds. The design window's resting state.
+    @Published public private(set) var asksForAgent = false
+    /// True for a moment after the sentence was copied, so the button can say so.
+    @Published private(set) var agentSentenceCopied = false
+    /// What a person gives their agent. Set by the app delegate, which knows the folder and the bucket.
+    public var agentSentence = ""
+
+    /// Called by the app delegate when it has read the agents' records.
+    public func setAgents(_ records: [AgentRecord], changed: Date?, now: Date = Date()) {
+        let rows = records.map {
+            AgentRow(id: $0.number, name: $0.name, alive: Self.ago($0.alive, now: now),
+                     behind: $0.isBehind(changed: changed, now: now), url: $0.url)
+        }
+        if agents != rows { agents = rows }
+        if asksForAgent != rows.isEmpty { asksForAgent = rows.isEmpty }
+    }
+
+    static func ago(_ date: Date, now: Date) -> String {
+        let seconds = max(0, now.timeIntervalSince(date))
+        switch seconds {
+        case ..<90: return "alive now"
+        case ..<5400: return "alive \(Int(seconds / 60)) min ago"
+        case ..<172_800: return "alive \(Int(seconds / 3600)) h ago"
+        default: return "alive \(Int(seconds / 86400)) days ago"
+        }
+    }
+
+    func open(_ agent: AgentRow) {
+        guard let url = agent.url else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    public func copyAgentSentence() {
+        guard !agentSentence.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(agentSentence, forType: .string)
+        agentSentenceCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.agentSentenceCopied = false }
+    }
+
+    /// Set by the app delegate, which owns the menu and the windows it leads to.
+    public var onAddPhoto: (() -> Void)?
+    /// A file was dropped on the photo tile.
+    public var onDropPhoto: ((URL) -> Void)?
+    /// True until the Photos notebook exists. The sample page is for a person who has nothing
+    /// else to show an agent, and that stops being so with the first picture.
+    @Published public private(set) var offersSample = false
+
+    func addPhoto() { onAddPhoto?() }
+    func dropPhoto(_ url: URL) { onDropPhoto?(url) }
+
     // MARK: things to do
 
     public func publishNow() {
@@ -510,6 +586,10 @@ public final class PanelModel: ObservableObject {
         /// The pen whose settings are open, by MAC, as if you had clicked its tile. Nil is the
         /// resting state: nothing opens on its own.
         public var openPen: String?
+        /// The agents shown. With none, and `asksForAgent`, the panel asks for one.
+        public var agents: [AgentRow] = []
+        public var asksForAgent = false
+        public var offersSample = false
 
         public init() {}
     }
@@ -533,6 +613,10 @@ public final class PanelModel: ObservableObject {
         width = snapshot.width
         palette = snapshot.palette
         chosenPen = snapshot.openPen
+        agents = snapshot.agents
+        asksForAgent = snapshot.asksForAgent
+        offersSample = snapshot.offersSample
+        agentSentence = "Read the setup text and set yourself up."
         markActiveBook()
     }
 }

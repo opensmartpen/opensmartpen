@@ -10,6 +10,7 @@ public struct AppInfo {
     public var sdk: String
     public var configURL: URL
     public var logURL: URL
+    public var websiteURL = URL(string: "https://opensmartpen.org/")!
     public var sourceURL = URL(string: "https://github.com/opensmartpen/opensmartpen")!
     /// The source of the pen SDK this build links, at the version `Package.swift` pins. The built
     /// app is GPL-3.0 because of it, and the GPL asks that a copy says where that source is.
@@ -38,6 +39,10 @@ public struct SyncStatus: Equatable {
     public var lastFiles = 0
     /// Why the last attempt failed, or nil when it did not.
     public var error: String?
+    /// The agents that keep a record, by name. Empty when none is connected.
+    public var agents: [String] = []
+    /// What a person gives their agent to set it up.
+    public var agentSentence = ""
 
     public init() {}
 }
@@ -512,6 +517,7 @@ private struct BooksTab: View {
 
 /// Where the pages go. One bucket, proved by writing to it, and the two rules for when.
 private struct SyncTab: View {
+    @State private var agentCopied = false
     @ObservedObject var store: SettingsStore
     @State private var confirmingDisconnect = false
 
@@ -541,6 +547,25 @@ private struct SyncTab: View {
                      + "such as Cloudflare R2 or MinIO.")
             }
             .autocorrectionDisabled()
+
+            Section {
+                LabeledContent(store.sync.agents.isEmpty ? "Not connected"
+                               : store.sync.agents.joined(separator: ", ")) {
+                    Button(agentCopied ? "Copied" : "Copy Instructions") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(store.sync.agentSentence, forType: .string)
+                        agentCopied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { agentCopied = false }
+                    }
+                    .disabled(store.sync.agentSentence.isEmpty)
+                }
+            } header: {
+                Text("Agent")
+            } footer: {
+                Note("Open Smart Pen does not turn handwriting into text. An agent of your choice "
+                     + "does, for example Claude Code or Codex. Copy the instructions and paste "
+                     + "them into your agent. It is connected when it has written its name beside your pages.")
+            }
 
             Section {
                 Picker("Upload after", selection: $store.config.quietSeconds) {
@@ -666,6 +691,14 @@ private struct GeneralTab: View {
                      + "deleted and installed again without losing a page.")
             }
 
+            Section {
+                Toggle("Start at login", isOn: $store.config.startAtLogin)
+                    .onChange(of: store.config.startAtLogin) { _ in store.saveConfig() }
+            } footer: {
+                Note("The app must be running to take pages from a pen. With this on, it starts "
+                     + "when you log in to this Mac.")
+            }
+
             Section("Warnings") {
                 LabeledContent("Battery is low at") {
                     Text("\(store.config.lowBatteryPercent)%").monospacedDigit()
@@ -722,6 +755,9 @@ private struct AboutTab: View {
             }
             Section {
                 LabeledContent("Copyright", value: "Apoco")
+                LabeledContent("Website") {
+                    Link("opensmartpen.org", destination: store.info.websiteURL)
+                }
                 LabeledContent("Source") {
                     Link("github.com/opensmartpen/opensmartpen", destination: store.info.sourceURL)
                 }

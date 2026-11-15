@@ -120,22 +120,73 @@ final class PublishTests: XCTestCase {
         func png(for ref: PageRef) -> Data? { drawn += 1; return Data(text(ref).utf8) }
     }
 
-    func testAPageGoesUpAsItsStrokesAndThenItsPicture() throws {
+    func testAPageGoesUpAsItsStrokesThenItsPictureThenTheTime() throws {
         let pictures = PagePictures(root: notes, next: try makeSync())
+        pictures.imaging = Drawer()
+        pictures.now = { Date(timeIntervalSince1970: 1_700_000_000.25) }
+        let flow = makeFlow(publisher: pictures)
+        let a = PageID(section: 3, owner: 27, book: 5, page: 7)
+        flow.coordinator.ingestLive([stroke(a, start: 1)])
+        let refA = try ref(a, flow.books)
+
+        XCTAssertEqual(try pictures.publish(paths: [refA.rawRelativePath]), 3)
+        let image = "books/\(refA.folder.name)/pages/p7.png"
+        XCTAssertEqual(bucket.paths, [key(refA.rawRelativePath), key(image), key("last-modified.txt")],
+                       "the time is last, so it is the one to listen for")
+        XCTAssertEqual(bucket.objects[key(image)], Data("png of \(refA.description)".utf8))
+        XCTAssertEqual(try Data(contentsOf: notes.appendingPathComponent(image)), bucket.objects[key(image)],
+                       "the folder and the bucket hold the same picture")
+        let time = Data("changed: 2023-11-14T22:13:20.250Z\nrules: \(PagePictures.rulesVersion)\n".utf8)
+        XCTAssertEqual(bucket.objects[key("last-modified.txt")], time)
+        XCTAssertEqual(try Data(contentsOf: notes.appendingPathComponent("last-modified.txt")), time)
+    }
+
+    /// The time says when a picture changed, not when the app last tried. An agent compares it
+    /// with the one it saw last, so a value that moves for nothing is a wasted wake.
+    func testTheTimeMovesOnlyWhenAPictureChanged() throws {
+        let pictures = PagePictures(root: notes, next: try makeSync())
+        let drawer = Drawer()
+        pictures.imaging = drawer
+        var clock = Date(timeIntervalSince1970: 1_700_000_000)
+        pictures.now = { clock }
+        let flow = makeFlow(publisher: pictures)
+        let a = PageID(section: 3, owner: 27, book: 5, page: 7)
+        flow.coordinator.ingestLive([stroke(a, start: 1)])
+        let refA = try ref(a, flow.books)
+        let time = notes.appendingPathComponent(PagePictures.timePath)
+
+        _ = try pictures.publish(paths: [refA.rawRelativePath])
+        let first = try Data(contentsOf: time)
+
+        clock = clock.addingTimeInterval(60)
+        XCTAssertEqual(try pictures.publish(paths: [refA.rawRelativePath]), 0, "same picture: nothing goes up")
+        XCTAssertEqual(try Data(contentsOf: time), first)
+
+        clock = clock.addingTimeInterval(60)
+        drawer.text = { _ in "more ink" }
+        _ = try pictures.publish(paths: [refA.rawRelativePath])
+        XCTAssertNotEqual(try Data(contentsOf: time), first)
+        XCTAssertEqual(bucket.paths.last, key("last-modified.txt"))
+    }
+
+    /// The network was down when the pictures were drawn. The time goes up with the retry, and
+    /// still says when the pages changed.
+    func testATimeThatDidNotArriveGoesUpWithTheRetry() throws {
+        let sync = try makeSync(connected: false)
+        let pictures = PagePictures(root: notes, next: sync)
         pictures.imaging = Drawer()
         let flow = makeFlow(publisher: pictures)
         let a = PageID(section: 3, owner: 27, book: 5, page: 7)
         flow.coordinator.ingestLive([stroke(a, start: 1)])
         let refA = try ref(a, flow.books)
 
-        XCTAssertEqual(try pictures.publish(paths: [refA.rawRelativePath]), 2)
-        let image = "books/\(refA.folder.name)/pages/p7.png"
-        XCTAssertEqual(bucket.paths, [key(refA.rawRelativePath), key(image)],
-                       "the picture is last, so it is the one to listen for")
-        XCTAssertEqual(bucket.objects[key(image)], Data("png of \(refA.description)".utf8))
-        XCTAssertEqual(bucket.requests.last?.value(forHTTPHeaderField: "content-type"), "image/png")
-        XCTAssertEqual(try Data(contentsOf: notes.appendingPathComponent(image)), bucket.objects[key(image)],
-                       "the folder and the bucket hold the same picture")
+        XCTAssertEqual(try pictures.publish(paths: [refA.rawRelativePath]), 0)
+        let written = try Data(contentsOf: notes.appendingPathComponent(PagePictures.timePath))
+
+        let connected = PagePictures(root: notes, next: try makeSync())
+        connected.imaging = Drawer()
+        XCTAssertEqual(try connected.publish(paths: [refA.rawRelativePath]), 3)
+        XCTAssertEqual(bucket.objects[key("last-modified.txt")], written)
     }
 
     /// An agent on this Mac needs the picture as much as one behind a bucket does.

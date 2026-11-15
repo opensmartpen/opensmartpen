@@ -21,6 +21,9 @@ public struct Config: Codable, Equatable {
     /// Delete a notebook from pen memory once its strokes are synced: uploaded when a bucket is
     /// connected, on this Mac's disk when none is.
     public var deleteFromPenAfterPublish: Bool = true
+    /// Start the app when this person logs in. On unless they turn it off: a pen that is written
+    /// with while the app is not running keeps its pages to itself until somebody remembers.
+    public var startAtLogin: Bool = true
     /// The bucket everything is copied to. Empty until one is connected in Settings, and until
     /// then the notes simply stay on this Mac. The secret key is not here: it is in `s3-secret`
     /// beside this file (`S3Secret`).
@@ -71,6 +74,7 @@ public struct Config: Codable, Equatable {
         }
         penPassword = try c.decodeIfPresent(String.self, forKey: .penPassword)
         deleteFromPenAfterPublish = try c.decodeIfPresent(Bool.self, forKey: .deleteFromPenAfterPublish) ?? d.deleteFromPenAfterPublish
+        startAtLogin = try c.decodeIfPresent(Bool.self, forKey: .startAtLogin) ?? d.startAtLogin
         penAutoPowerOn = try c.decodeIfPresent(Bool.self, forKey: .penAutoPowerOn)
         penAutoPowerOffMinutes = try c.decodeIfPresent(Int.self, forKey: .penAutoPowerOffMinutes)
         penCapPowerOff = try c.decodeIfPresent(Bool.self, forKey: .penCapPowerOff)
@@ -98,6 +102,7 @@ public struct Config: Codable, Equatable {
         case dataPath, quietSeconds, pairedPens, penMac, penPeripheralId, penPassword
         case deleteFromPenAfterPublish, s3, penAutoPowerOn, penAutoPowerOffMinutes
         case penCapPowerOff, controlBooks, lowBatteryPercent, memoryWarnPercent, sdkDebugLog
+        case startAtLogin
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -107,6 +112,7 @@ public struct Config: Codable, Equatable {
         try c.encode(pairedPens, forKey: .pairedPens)
         try c.encodeIfPresent(penPassword, forKey: .penPassword)
         try c.encode(deleteFromPenAfterPublish, forKey: .deleteFromPenAfterPublish)
+        try c.encode(startAtLogin, forKey: .startAtLogin)
         if !s3.isEmpty { try c.encode(s3, forKey: .s3) }
         try c.encodeIfPresent(penAutoPowerOn, forKey: .penAutoPowerOn)
         try c.encodeIfPresent(penAutoPowerOffMinutes, forKey: .penAutoPowerOffMinutes)

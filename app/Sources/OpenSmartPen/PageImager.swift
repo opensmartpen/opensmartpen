@@ -1,6 +1,7 @@
 import OpenSmartPenCore
 import OpenSmartPenUI
 import Foundation
+import ImageIO
 
 /// Draws a captured page as a PNG, kept in the notes folder beside its strokes and sent to the
 /// bucket with them.
@@ -29,6 +30,9 @@ final class PageImager: PageImaging {
 
     func png(for ref: PageRef) -> Data? {
         guard !controlBooks.contains(ref.folder.surface) else { return nil }
+        // A photo is its own picture. It is only made the size an agent reads best, and turned
+        // the way the camera says is up.
+        if let photo = PhotoPages.image(of: ref, root: root) { return Self.png(fromPhoto: photo) }
         let strokes = RawReader.strokes(at: books.rawFile(for: ref), page: ref.page)
         guard !strokes.isEmpty else { return nil }
         // Read fresh: a colour added to palette.json takes effect on the next page drawn, without
@@ -40,5 +44,22 @@ final class PageImager: PageImaging {
                                            })
         else { return nil }
         return PageImage.png(raster)
+    }
+
+    /// The longest side a page picture is given. A model scales anything longer back down.
+    static let longestSide = 1568
+
+    static func png(fromPhoto url: URL) -> Data? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: longestSide,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        let out = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? out as Data : nil
     }
 }
