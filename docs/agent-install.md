@@ -26,7 +26,7 @@ transcripts/                  yours: one text file for each page
 agents/<n>.json               yours: who you are, and when you were last alive
 ```
 
-The app writes all of it except `transcripts/` and `agents/`. Do not write under `books/`. Ignore `books/s3-o1013-b1-*` (a printed control strip, not notes), `pens/`, `mode.jsonl`, `palette.json` and `opensmartpen-connected.txt`.
+The app writes all of it except `transcripts/` and `agents/`. Do not write under `books/`. Ignore `books/s3-o1013-b1-*` (a printed control strip, not notes), `pens/`, `mode.jsonl` and `palette.json`.
 
 Not each page comes from a pen. The notebook "Photos" holds pages that arrived as a picture. Such a page has no strokes: its `raw/p<N>.jsonl` has one line `"t":"image"` that names the picture as it arrived, in the same folder. Its page picture is in `pages/` as for each other page, and you transcribe it the same way. The notebook exists only when the person added a picture. Its first page can be a sample page that the app offers.
 

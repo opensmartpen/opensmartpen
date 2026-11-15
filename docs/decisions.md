@@ -314,3 +314,11 @@ Every panel until this point was written, packaged, installed, and then judged b
 - Open: a webhook. An agent could leave an address in its `agents/<n>.json`, and the app would call it after `last-modified.txt` changes, with the same two lines and no page content. It would save an agent in the cloud from polling. It is a notice, not a start: the agent still decides what to do. Against it: the app would call an address written by whoever can write to the bucket, and `AGENTS.md` says the app makes no calls to an agent platform, so that rule would need a new wording first.
 - Not done: a general interface for more pens. There is no second pen to test it against, and the Neo SDK is already in three files. For that day, the form we reached: the source adds raw data, reads it back, and says when a page is done with its picture.
 
+
+## 2026-11-15 — Connecting a bucket writes nothing in it
+
+- **Decided (the owner):** the connection test must only test the connection. It wrote a small file, `opensmartpen-connected.txt`, and a test file in somebody's bucket is litter that every agent then has to be told to ignore.
+- **How:** `S3Client.check` asks for a file that the app never writes, and reads how the bucket says no. "No such file" is a pass. "Access denied" is also a pass: the keys are real, and a key that can only write gets that answer. A wrong key, a wrong secret, a wrong region and "no such bucket" fail, each in the bucket's own words.
+- **What it gives up:** it does not prove that the key may write. Only a write proves that. A key that may not write shows at the first upload, as a notification.
+- **Checked against a real bucket** (an S3-compatible service, not Amazon): right keys pass, a wrong secret is refused with 403, a bucket that is not there is refused.
+- **For an agent:** nothing to do. A bucket connected before this date can still hold the old marker file; it is not a note.

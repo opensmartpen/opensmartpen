@@ -142,6 +142,44 @@ public final class S3Client {
     /// Read one file. Nil when there is no such file, which is an answer and not a failure: a
     /// page nobody has transcribed yet has no transcript. Blocks, like `put`.
     public func get(_ relativePath: String, now: Date = Date()) throws -> Data? {
+        let response = try ask(for: relativePath, now: now)
+        if response.status == 404 { return nil }
+        guard (200..<300).contains(response.status) else { throw Self.refusal(response) }
+        return response.body
+    }
+
+    /// Prove the keys, the bucket and the region, and leave nothing in the bucket.
+    ///
+    /// It asks for a file that the app never writes. What matters is how the bucket says no:
+    ///
+    /// - "there is no such file" means the keys, the bucket and the region are all correct;
+    /// - "access denied" means the keys are real and the bucket is there, but this key may not
+    ///   read. A key that can only write is such a key, and it is enough to upload;
+    /// - any other answer is a wrong key, a wrong secret, a wrong bucket or a wrong region, and
+    ///   the bucket says which.
+    ///
+    /// It does not prove that the key may write. Only a write can prove that, and a test that
+    /// writes leaves a file in a bucket that belongs to somebody. A key that may not write shows
+    /// at the first upload, as a notification.
+    public func check(now: Date = Date()) throws {
+        let response = try ask(for: Self.checkPath, now: now)
+        if (200..<300).contains(response.status) { return }
+        let code = Self.tag("Code", in: String(decoding: response.body, as: UTF8.self))
+        if response.status == 404, code != "NoSuchBucket" { return }
+        if response.status == 403, code == "AccessDenied" { return }
+        throw Self.refusal(response)
+    }
+
+    /// The file the connection test asks for. The app never writes it.
+    public static let checkPath = "opensmartpen-connection-test"
+
+    private static func refusal(_ response: (status: Int, body: Data)) -> S3Error {
+        let text = String(decoding: response.body, as: UTF8.self)
+        return .refused(status: response.status, code: tag("Code", in: text), message: tag("Message", in: text))
+    }
+
+    /// One signed GET, answered or unreachable. What the answer means is the caller's business.
+    private func ask(for relativePath: String, now: Date) throws -> (status: Int, body: Data) {
         let url = account.url(forKey: account.key(for: relativePath))
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -158,29 +196,10 @@ public final class S3Client {
             request.setValue(value, forHTTPHeaderField: name)
         }
         switch transport.send(request, body: Data()) {
-        case let .failure(error):
-            throw S3Error.unreachable(error.localizedDescription)
-        case let .success(response):
-            if response.status == 404 { return nil }
-            guard (200..<300).contains(response.status) else {
-                let text = String(decoding: response.body, as: UTF8.self)
-                throw S3Error.refused(status: response.status, code: Self.tag("Code", in: text),
-                                      message: Self.tag("Message", in: text))
-            }
-            return response.body
+        case let .failure(error): throw S3Error.unreachable(error.localizedDescription)
+        case let .success(response): return response
         }
     }
-
-    /// Prove the bucket, the region and both keys in one go, by doing the one thing the app does:
-    /// writing a file. Asking the bucket a question instead would need a permission the app has
-    /// no other use for.
-    public func check(app: String, now: Date = Date()) throws {
-        let stamp = ISO8601DateFormatter().string(from: now)
-        try put(Self.checkPath, data: Data("\(app) could write here at \(stamp)\n".utf8),
-                contentType: "text/plain", now: now)
-    }
-
-    public static let checkPath = "opensmartpen-connected.txt"
 
     func signedPut(_ relativePath: String, data: Data, contentType: String, now: Date) -> URLRequest {
         let url = account.url(forKey: account.key(for: relativePath))

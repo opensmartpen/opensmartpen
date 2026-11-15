@@ -17,7 +17,6 @@ books/<copy>/pages/p<N>.png   image of that page, drawn from those strokes
 pens/<slug>.json              each pen's name, mode, default ink and width
 mode.jsonl, palette.json      which ink and width was in force when, and what each ink looks like
 last-modified.txt             when a page picture last changed, and the version of these rules
-opensmartpen-connected.txt     written once when the bucket is connected; not a note
 ```
 
 - **One direction, with one exception.** The app writes under `books/`, `pens/` and the two ink files. In the bucket it never lists and never deletes, so anything the agent stores there is left alone. The one thing it reads is the transcript of a page that is open in the viewer (see below).
@@ -62,7 +61,7 @@ The setup text carries the same version number as `last-modified.txt`: change th
 
 ## The instructions given to the agent
 
-Sent 2026-11-11, before `last-modified.txt` existed, so they say to trigger on the PNG. That still works. An agent that should use the time file must be told about it. `<BUCKET>` and `<PREFIX>` were filled in. The marker file had an earlier name then; it is `opensmartpen-connected.txt` since 2026-11-13, and the agent must be told.
+Sent 2026-11-11, before `last-modified.txt` existed, so they say to trigger on the PNG. That still works. An agent that should use the time file must be told about it. `<BUCKET>` and `<PREFIX>` were filled in. They name a marker file to ignore. The app wrote one when a bucket was connected, until 2026-11-15; it writes none now. A bucket connected before then can still hold the old file, and it is not a note.
 
 ```
 My smart pen writes to S3 bucket <BUCKET>, folder <PREFIX>. Add it to the sweep.

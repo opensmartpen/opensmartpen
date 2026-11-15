@@ -140,7 +140,7 @@ one captured file and could only be repaired by cutting it.
 |---|---|---|
 | `dataPath` | `~/OpenSmartPen` | Where the notes are kept. |
 | `quietSeconds` | `30` | Seconds with no event from any pen before the waiting pages are uploaded. |
-| `s3` | none | The bucket: `bucket`, `region`, `accessKeyId`, and optionally `prefix` (a folder in the bucket) and `endpoint` (for a service other than Amazon S3). Set in Settings → Sync, which proves it by writing a file before saving it. The secret key is not here: it is in `s3-secret` beside this file, mode 0600. |
+| `s3` | none | The bucket: `bucket`, `region`, `accessKeyId`, and optionally `prefix` (a folder in the bucket) and `endpoint` (for a service other than Amazon S3). Set in Settings → Sync, which tests the connection before saving it. The secret key is not here: it is in `s3-secret` beside this file, mode 0600. |
 | `penMac`, `penPeripheralId` | none | Filled in automatically on first pairing. Delete both (or use the menu) to pair another pen. |
 | `penPassword` | none | PIN for a locked pen. Sent once per connection; never retried, because repeated wrong PINs factory-reset the pen. |
 | `deleteFromPenAfterPublish` | `true` | Free pen memory once a notebook is synced: uploaded when a bucket is connected, on this Mac's disk when none is. |
@@ -171,8 +171,9 @@ is different. A PNG that is missing or older than its strokes is drawn again at 
 
 What has been uploaded is remembered in `~/.config/opensmartpen/s3-uploaded.json`, by file size and
 date, for one bucket. Connect a different bucket — or delete that file — and everything on disk is
-uploaded again. Connecting writes one small file, `opensmartpen-connected.txt`, to prove the bucket
-and the keys.
+uploaded again. Connecting tests the keys, the bucket and the region, and writes nothing: it asks
+for a file that does not exist and reads how the bucket says no. It does not prove that the key may
+write; a key that may not shows at the first upload, as a notification.
 
 ## Transcripts
 

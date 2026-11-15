@@ -77,10 +77,42 @@ final class S3Tests: XCTestCase {
             + "<Message>The request signature we calculated does not match.</Message></Error>")
         let client = S3Client(account: try XCTUnwrap(S3Account(settings: settings(), secret: "s")),
                               transport: bucket)
-        XCTAssertThrowsError(try client.check(app: "Open Smart Pen")) { error in
+        XCTAssertThrowsError(try client.check()) { error in
             XCTAssertEqual(error as? S3Error, .refused(status: 403, code: "SignatureDoesNotMatch",
                 message: "The request signature we calculated does not match."))
             XCTAssertTrue(error.localizedDescription.hasPrefix("The bucket refused the keys."))
+        }
+    }
+
+    /// The bucket belongs to its owner. Testing the connection asks one question and leaves
+    /// nothing behind.
+    func testTheConnectionTestWritesNothing() throws {
+        let bucket = FakeBucket()
+        let client = S3Client(account: try XCTUnwrap(S3Account(settings: settings(), secret: "s")),
+                              transport: bucket)
+        try client.check()
+        XCTAssertEqual(bucket.requests.map(\.httpMethod), ["GET"])
+        XCTAssertTrue(bucket.objects.isEmpty)
+    }
+
+    /// A key that can only write cannot read, and it is still enough to upload. The bucket says
+    /// "access denied" to it, which is a different answer from a wrong key or a wrong secret.
+    func testAKeyThatMayNotReadStillConnects() throws {
+        let bucket = FakeBucket()
+        bucket.refusal = (403, "<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>")
+        let client = S3Client(account: try XCTUnwrap(S3Account(settings: settings(), secret: "s")),
+                              transport: bucket)
+        XCTAssertNoThrow(try client.check())
+    }
+
+    /// "No such file" is the answer we hope for. "No such bucket" has the same status and is not.
+    func testAMissingBucketIsNotAMissingFile() throws {
+        let bucket = FakeBucket()
+        bucket.refusal = (404, "<Error><Code>NoSuchBucket</Code><Message>The specified bucket does not exist</Message></Error>")
+        let client = S3Client(account: try XCTUnwrap(S3Account(settings: settings(), secret: "s")),
+                              transport: bucket)
+        XCTAssertThrowsError(try client.check()) { error in
+            XCTAssertTrue(error.localizedDescription.hasPrefix("There is no such bucket."))
         }
     }
 
@@ -114,15 +146,42 @@ final class S3Tests: XCTestCase {
         s.prefix = "open smart pen test"
         let account = try XCTUnwrap(S3Account(settings: s, secret: env["OPENSMARTPEN_TEST_S3_SECRET"]))
         let client = S3Client(account: account)
-        try client.check(app: "Open Smart Pen tests")
+        try client.check()
         try client.put("books/s3-o27-b450-abcdef/raw/p1.jsonl", data: Data("{\"v\":1}\n".utf8),
                        contentType: "application/x-ndjson")
 
         // And the wrong secret is refused, in words.
         let wrong = S3Client(account: try XCTUnwrap(S3Account(settings: s, secret: "not the secret")))
-        XCTAssertThrowsError(try wrong.check(app: "Open Smart Pen tests")) { error in
+        XCTAssertThrowsError(try wrong.check()) { error in
             guard case .refused(403, _, _) = error as? S3Error else { return XCTFail("\(error)") }
         }
+    }
+
+    /// The connection test alone against a real bucket, which writes nothing there. Skipped
+    /// unless asked for:
+    ///
+    ///     OPENSMARTPEN_TEST_S3_CHECK=1 plus the bucket variables above.
+    func testARealBucketAnswersTheConnectionTest() throws {
+        let env = ProcessInfo.processInfo.environment
+        guard env["OPENSMARTPEN_TEST_S3_CHECK"] != nil, let bucket = env["OPENSMARTPEN_TEST_S3_BUCKET"] else {
+            throw XCTSkip("set OPENSMARTPEN_TEST_S3_CHECK and the bucket variables to run this")
+        }
+        var s = S3Settings()
+        s.bucket = bucket
+        s.accessKeyId = env["OPENSMARTPEN_TEST_S3_KEY_ID"] ?? ""
+        s.region = env["OPENSMARTPEN_TEST_S3_REGION"] ?? s.region
+        s.endpoint = env["OPENSMARTPEN_TEST_S3_ENDPOINT"] ?? ""
+        let right = S3Client(account: try XCTUnwrap(S3Account(settings: s, secret: env["OPENSMARTPEN_TEST_S3_SECRET"])))
+        XCTAssertNoThrow(try right.check())
+
+        let wrong = S3Client(account: try XCTUnwrap(S3Account(settings: s, secret: "not the secret")))
+        XCTAssertThrowsError(try wrong.check()) { error in
+            guard case .refused(403, _, _) = error as? S3Error else { return XCTFail("\(error)") }
+        }
+
+        s.bucket = bucket + "-no-such-bucket-opensmartpen"
+        let nowhere = S3Client(account: try XCTUnwrap(S3Account(settings: s, secret: env["OPENSMARTPEN_TEST_S3_SECRET"])))
+        XCTAssertThrowsError(try nowhere.check(), "a bucket that is not there must not pass")
     }
 
     // MARK: transcripts

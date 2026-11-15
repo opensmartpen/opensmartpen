@@ -161,10 +161,10 @@ public final class SettingsStore: ObservableObject {
     /// The fields say something other than what is saved.
     var s3Edited: Bool { s3Draft != config.s3 || s3SecretDraft != savedSecret }
 
-    /// Prove what is in the fields by writing one small file with it, and only then keep it.
+    /// Prove what is in the fields by asking the bucket one question, and only then keep it.
     ///
-    /// The test is the save. A bucket that was never written to is not a setting, it is a guess,
-    /// and the app would find that out an hour later in a notification.
+    /// The test is the save. A bucket that never answered is not a setting, it is a guess. The
+    /// test writes nothing: the bucket belongs to its owner, and a test file in it is litter.
     @MainActor
     func connectS3() async {
         guard let account = S3Account(settings: s3Draft, secret: s3SecretDraft) else {
@@ -173,9 +173,8 @@ public final class SettingsStore: ObservableObject {
         }
         s3State = .checking
         let client = S3Client(account: account)
-        let app = info.name
         let outcome: Result<Void, Error> = await Task.detached {
-            Result { try client.check(app: app) }
+            Result { try client.check() }
         }.value
         switch outcome {
         case .success:
@@ -515,7 +514,7 @@ private struct BooksTab: View {
 
 // MARK: - sync
 
-/// Where the pages go. One bucket, proved by writing to it, and the two rules for when.
+/// Where the pages go. One bucket, proved by asking it, and the two rules for when.
 private struct SyncTab: View {
     @State private var agentCopied = false
     @ObservedObject var store: SettingsStore
@@ -613,7 +612,7 @@ private struct SyncTab: View {
             switch store.s3State {
             case .checking:
                 ProgressView().controlSize(.small)
-                Text("Writing a test file…").foregroundStyle(.secondary)
+                Text("Testing the connection…").foregroundStyle(.secondary)
             case let .failed(why):
                 Label(why, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(Ink.critical)
