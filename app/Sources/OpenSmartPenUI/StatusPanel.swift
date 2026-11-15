@@ -98,15 +98,9 @@ public struct StatusPanel: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
         } else {
-            // No pen yet, but a page can still come in as a picture.
-            HStack(alignment: .top, spacing: 6) {
-                wakeHint
-                Spacer(minLength: 0)
-                PhotoTile(tap: model.addPhoto, drop: model.dropPhoto)
-                    .padding(.trailing, 22)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
+            wakeHint
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
         }
     }
 
@@ -138,7 +132,6 @@ public struct StatusPanel: View {
                         model.toggleExpanded(pen.id)
                     }
                 }
-                PhotoTile(tap: model.addPhoto, drop: model.dropPhoto)
                 Spacer(minLength: 0)
             }
             if let pen = model.expanded {
@@ -324,6 +317,7 @@ public struct StatusPanel: View {
                 // become key, so the keystrokes it advertised often did nothing — and a
                 // shortcut that fails half the time is worse than no shortcut at all. The
                 // handler stays; only the promise is gone.
+                MenuItem(title: "Add Photo…", action: model.addPhoto)
                 MenuItem(title: "Settings…", action: model.openConfig)
                 MenuItem(title: "Quit") { NSApp.terminate(nil) }
             }
@@ -562,50 +556,6 @@ private struct BatteryBar: View {
 ///
 /// Which pen is in your hand is reported, not asked for: picking one up opens it. A click is
 /// only for looking at a pen you are not holding, or for putting the controls away.
-/// The other way a page comes in: as a picture. It stands with the pens because it is one of
-/// them in the only sense the row cares about, a place pages come from. A click opens the menu
-/// of ways to add one; a picture dropped on it is added.
-private struct PhotoTile: View {
-    let tap: () -> Void
-    let drop: (URL) -> Void
-    @State private var targeted = false
-
-    var body: some View {
-        Button(action: tap) {
-            VStack(spacing: 0) {
-                Image(systemName: "camera")
-                    .font(.system(size: 14.5, weight: .regular))
-                    .frame(height: 17)
-                Text("Photo")
-                    .font(.system(size: 10.5, weight: .medium))
-                    .lineLimit(1)
-                    .padding(.top, 4)
-                Color.clear.frame(height: 5).padding(.top, 4)
-            }
-            .foregroundStyle(targeted ? Ink.accent : Color.primary)
-            .opacity(targeted ? 1 : 0.55)
-            .padding(.horizontal, 4)
-            .padding(.top, 7)
-            .padding(.bottom, 6)
-            .frame(width: 64)
-            .background(RoundedRectangle(cornerRadius: 7)
-                .strokeBorder(targeted ? Ink.accent : Color.clear, style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help("Add a photo of a page, or drop one here")
-        .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
-            for provider in providers {
-                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                    guard let url else { return }
-                    DispatchQueue.main.async { drop(url) }
-                }
-            }
-            return true
-        }
-    }
-}
-
 private struct PenTile: View {
     let pen: PanelModel.PenRow
     let open: Bool

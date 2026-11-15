@@ -116,7 +116,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.onAddPhoto = { [weak self] in self?.addPhoto() }
-        model.onDropPhoto = { [weak self] url in self?.addPhoto(file: url) }
         model.onOpenPage = { [weak self] page in self?.showViewer(page) }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         coordinator.onOfflineStored = { [weak self] pages in
@@ -189,14 +188,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var photoImport: PhotoImportController?
 
-    /// The menu behind the photo tile: a file, the sample while there is no Photos notebook, and
-    /// below them what macOS adds for each iPhone or iPad near this Mac. It opens where the person
-    /// clicked, in the panel, and the panel stays until it closes.
+    /// One entry in the panel, one menu at the mouse: a file, the sample while there is no Photos
+    /// notebook, and below them what macOS adds for each iPhone or iPad near this Mac. The panel
+    /// stays until the menu closes.
     private func addPhoto() {
         let menu = PhotoImportController()
-        menu.addEntry("Upload Photo\u{2026}") { [weak self] in self?.uploadPhoto() }
+        menu.addEntry("Choose a File\u{2026}") { [weak self] in self?.uploadPhoto() }
         if books.current(for: PhotoPages.surface) == nil {
-            menu.addEntry("Add Sample Page") { [weak self] in self?.addSample() }
+            menu.addEntry("Use the Sample Page") { [weak self] in self?.addSample() }
         }
         menu.onImage = { [weak self] data, ext in self?.file(photo: data, ext: ext, show: true) }
         menu.onFinish = { [weak self] in self?.photoImport = nil }
@@ -209,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.show()
     }
 
-    /// A file dropped on the photo tile, or on the pen in the menu bar. Only a picture is taken.
+    /// A file dropped on the pen in the menu bar. Only a picture is taken.
     private func addPhoto(file url: URL) {
         guard let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image),
               let data = try? Data(contentsOf: url) else {

@@ -254,8 +254,6 @@ public final class PanelModel: ObservableObject {
             width = mode.width
         }
         isPublishing = coordinator.isPublishing
-        let sample = books.current(for: PhotoPages.surface) == nil
-        if offersSample != sample { offersSample = sample }
 
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
         // and the macOS Bluetooth menu sets the convention: a battery for what is connected,
@@ -500,16 +498,10 @@ public final class PanelModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.agentSentenceCopied = false }
     }
 
-    /// Set by the app delegate, which owns the menu and the windows it leads to.
+    /// Set by the app delegate, which owns the menu this opens.
     public var onAddPhoto: (() -> Void)?
-    /// A file was dropped on the photo tile.
-    public var onDropPhoto: ((URL) -> Void)?
-    /// True until the Photos notebook exists. The sample page is for a person who has nothing
-    /// else to show an agent, and that stops being so with the first picture.
-    @Published public private(set) var offersSample = false
 
     func addPhoto() { onAddPhoto?() }
-    func dropPhoto(_ url: URL) { onDropPhoto?(url) }
 
     // MARK: things to do
 
@@ -589,7 +581,6 @@ public final class PanelModel: ObservableObject {
         /// The agents shown. With none, and `asksForAgent`, the panel asks for one.
         public var agents: [AgentRow] = []
         public var asksForAgent = false
-        public var offersSample = false
 
         public init() {}
     }
@@ -615,7 +606,6 @@ public final class PanelModel: ObservableObject {
         chosenPen = snapshot.openPen
         agents = snapshot.agents
         asksForAgent = snapshot.asksForAgent
-        offersSample = snapshot.offersSample
         agentSentence = "Read the setup text and set yourself up."
         markActiveBook()
     }

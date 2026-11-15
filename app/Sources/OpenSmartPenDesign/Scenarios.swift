@@ -98,7 +98,6 @@ public enum Scenario: String, CaseIterable {
             s.status = .asleep
             s.agents = []
             s.asksForAgent = true
-            s.offersSample = true
         case .newNotebook:
             // A fresh pad is not announced, it simply appears: a second row with the same title
             // and a folder of its own. Nothing is asked, and no notice is posted (ADR-002).
