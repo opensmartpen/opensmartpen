@@ -28,7 +28,11 @@ in use at once, and a panel sized for a fourth is too wide every day for a case 
 
 ## Build and run
 
-Requires Xcode 15+ (Swift 5.9) on macOS 13+. Depends on NeoLAB's `NISDK3` (GPL-3.0) via SwiftPM, pinned to tag 1.1.5.
+Requires Xcode with Swift 6.4 on macOS 13+. Depends on NeoLAB's `NISDK3` (GPL-3.0) via SwiftPM, pinned to tag 1.1.5, and on the OpenTelemetry SDK for Swift (Apache-2.0), 2.6.0.
+
+The Swift version comes from the OpenTelemetry SDK. The SDK itself needs Swift 6.0, and `Package.resolved` was made with Swift 6.4: some of the packages it pins say they need 6.2 or 6.4. With an older toolchain, `swift package update` should find versions that fit; nobody tested that. The first build downloads about 25 packages, because the SDK's package names its gRPC exporter too. Only the HTTP exporter, `swift-protobuf` and `swift-log` are compiled into the app.
+
+The command line tools without Xcode build `OpenSmartPenCore` and nothing else: they have no plugin for SwiftUI's `@State` and no XCTest.
 
 ```sh
 cd app
@@ -163,6 +167,7 @@ one captured file and could only be repaired by cutting it.
 | `memoryWarnPercent` | `70` | Notify when pen memory usage reaches this level. |
 | `controlBooks` | `["s3/o1013/b1"]` | Printed control surfaces rather than paper to write on. Taps on them are kept as evidence and decoded as settings, but they are never pages. |
 | `sdkDebugLog` | `false` | Print the SDK's protocol log. |
+| `telemetry` | `{"enabled": true}` | What the app reports to its makers: `enabled`, and optionally `endpoint` (the collector) and `headers`. With no `endpoint` here and none in the environment, nothing is sent. See [Telemetry](#telemetry). |
 
 ## The bucket
 
@@ -202,13 +207,23 @@ under `~/OpenSmartPen` so it can be read offline.
 In the viewer, ⌘+ and ⌘− zoom, ⌘0 shows the whole page again, and scroll or pinch zooms about the
 pointer. While a zoom is moving the page is stretched, and it is redrawn sharp when it stops.
 
+## Telemetry
+
+The app reports how it is used and what goes wrong, with the OpenTelemetry SDK, as OTLP over HTTP: events and log lines to `/v1/logs`, spans to `/v1/traces`. `../docs/telemetry.md` is the list of everything that is sent and of the `OTEL_*` variables the app reads.
+
+- **On unless turned off**, in Settings → General or with `telemetry.enabled` in the config. At the first start that would send something, a window tells the person. Until it is answered, events are kept in memory and nothing leaves the Mac.
+- **No collector, no telemetry.** The address built into the app (`TelemetryPlan.builtInEndpoint`) is empty until the project has a collector.
+- **To test against a local collector:** put `"telemetry": {"enabled": true, "endpoint": "http://localhost:4318"}` in the config. The installed app is started by launchd and does not see the variables of a shell; a binary started from a terminal does.
+- **In the code:** `Telemetry` in `OpenSmartPenCore` is what every layer calls (`Telemetry.event`, `Telemetry.span`). It knows nothing of OpenTelemetry. `OTelTelemetry` in the app target is the only file that imports the SDK. A line written with `Log.warn` or `Log.error` is sent too, so it must not carry a name a person gave to something; `telemetry: false` keeps a line on the Mac.
+- **Files:** `~/.config/opensmartpen/telemetry.json` holds the install id and whether the person was told. `~/Library/Caches/org.opensmartpen.app/telemetry` is the queue of what is not sent yet.
+
 ## Layout
 
 Four layers, each unable to reach the one above it. See [ADR-003](../docs/adrs/003-ui-layer-separate-from-the-pen-sdk.md).
 
-- `Sources/OpenSmartPenCore` — no SDK dependency, no AppKit, fully unit-tested: models and JSONL serialisation, `StrokeAssembler` (dots → strokes), `RawStore` (append-only files), `QuietTracker` (what is pending and when it publishes), `Notebook`/`PageNaming` (how a page is described to a person), `S3Client` and `SigV4` (put a file in a bucket, with no AWS SDK), `PagePictures` (the PNG of each page, kept in the folder), `S3Sync` (what has been uploaded and what has not), `SyncCoordinator` (write, track, upload, back off, notify), `Config`, notifiers.
+- `Sources/OpenSmartPenCore` — no SDK dependency, no AppKit, fully unit-tested: models and JSONL serialisation, `StrokeAssembler` (dots → strokes), `RawStore` (append-only files), `QuietTracker` (what is pending and when it publishes), `Notebook`/`PageNaming` (how a page is described to a person), `S3Client` and `SigV4` (put a file in a bucket, with no AWS SDK), `PagePictures` (the PNG of each page, kept in the folder), `S3Sync` (what has been uploaded and what has not), `SyncCoordinator` (write, track, upload, back off, notify), `Config`, notifiers, `Telemetry` (what the app reports, with no SDK behind it), `TelemetryPlan` (where it goes), `CrashReport` (a crash, read from the report macOS wrote).
 - `Sources/OpenSmartPenUI` — every window and view, and no SDK: `PanelModel` (one observable snapshot fed by the existing `onChange` closures), `StatusPanel` (SwiftUI), `StatusIcon` (the pencil and its states), `Viewer`, the pinned and menubar panels, the settings window. `PenLink` is the whole of what it knows about a pen — a protocol of plain values, so the layer builds and runs with no pen and no SDK linked in.
-- `Sources/OpenSmartPen` — the app: `PenSession` (NISDK3 delegates, connection and drain state machine, and the only conformance to `PenLink`), `SDKMapping`, `AppDelegate` (status item and popover), `UserNotifier`.
+- `Sources/OpenSmartPen` — the app: `PenSession` (NISDK3 delegates, connection and drain state machine, and the only conformance to `PenLink`), `SDKMapping`, `AppDelegate` (status item and popover), `UserNotifier`, `OTelTelemetry` (the OpenTelemetry SDK, and the only file that imports it).
 - `Sources/OpenSmartPenDesign` + `Sources/OpenSmartPenDesignApp` — the design window and its fixtures, and the `opensmartpen-design` executable that opens it. Nothing else imports these, so none of it ships.
 - `Tests/OpenSmartPenCoreTests` — the bucket is a dictionary in these, so the suite needs no network. `S3Tests` checks the signing against the worked example in the AWS documentation, and has one test that writes to a real bucket when `OPENSMARTPEN_TEST_S3_BUCKET` (and `_KEY_ID`, `_SECRET`, optionally `_REGION` and `_ENDPOINT`) are set.
 

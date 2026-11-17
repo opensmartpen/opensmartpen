@@ -23,4 +23,8 @@ Terms used in this project, kept precise. Update inline when a term is resolved.
 - **Publish** — hand a quiet page's raw file on for processing. The destination is undecided; a publish must confirm, because pen memory is cleared only after it does.
 - **Transcription** — the Markdown text derived from a page by handwriting recognition (stroke-based or image-based).
 - **Agent** — the program on the other side that works with the files the app wrote, in the folder or in the bucket, and writes the transcription. For example Claude Code, Codex or Claude Desktop. Not a part of the app; `docs/processing.md` is the contract with it.
+- **Telemetry** — what the app reports to its makers about how it is used and what goes wrong. Never what was written. On unless the person turns it off, and the person is told before anything is sent. `docs/telemetry.md` is the list.
+- **Telemetry event** — one thing the app reports: a click, a pen that connected, a problem. Not an **Event**: an event is captured from a client and kept in raw; a telemetry event is about the app and is kept by the collector.
+- **Install id** — a random id for one install of the app on one Mac, sent with all telemetry. Kept outside the app, so it stays when the app is installed again. It says "the same install" and nothing about the person.
+- **Collector** — the server that takes the telemetry. The project has none yet.
 - **Note** — a user-meaningful grouping of pages (by book, time gap, or marker). Derived and not yet defined; see `docs/decisions.md`.

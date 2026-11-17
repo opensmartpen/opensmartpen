@@ -1,6 +1,10 @@
 import Foundation
 
 /// Minimal timestamped logger to stderr. The app is a background utility; the log is for debugging.
+///
+/// A warning or an error also goes to `Telemetry`, which sends it to the makers of the app when
+/// the person allows that. So a line at those two levels must not carry a name a person gave to
+/// something, a file name or a title. A line that must carry one says `telemetry: false`.
 public enum Log {
     public static var verbose = false
     private static let fmt: DateFormatter = {
@@ -13,12 +17,16 @@ public enum Log {
         write("INFO", message())
     }
 
-    public static func warn(_ message: @autoclosure () -> String) {
-        write("WARN", message())
+    public static func warn(_ message: @autoclosure () -> String, telemetry: Bool = true) {
+        let text = message()
+        write("WARN", text)
+        if telemetry { Telemetry.problem(.warn, text) }
     }
 
-    public static func error(_ message: @autoclosure () -> String) {
-        write("ERROR", message())
+    public static func error(_ message: @autoclosure () -> String, telemetry: Bool = true) {
+        let text = message()
+        write("ERROR", text)
+        if telemetry { Telemetry.problem(.error, text) }
     }
 
     public static func debug(_ message: @autoclosure () -> String) {

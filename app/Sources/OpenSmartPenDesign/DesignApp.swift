@@ -8,7 +8,8 @@ import OpenSmartPenUI
 /// Usually that window is the panel in every state. With `--settings` it is the settings window
 /// instead, on fixtures in a temporary folder: `--settings=sync` opens it on a tab, and adding
 /// `--bucket` shows it as it is once a bucket is connected. With `--viewer=<notes>:<copy>:<page>`
-/// it is the viewer, on a real page, reading only.
+/// it is the viewer, on a real page, reading only. With `--notice` it is the window that tells a
+/// person about telemetry.
 public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindowController?
 
@@ -42,6 +43,10 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
             }
             controller = ViewerWindowController(viewer: viewer)
             controller.window?.delegate = self
+        } else if arguments.contains("--notice") {
+            let notice = TelemetryNoticeController(installId: "3f2a9c1e-7b4d-4e6a-9c0d-5a1b2c3d4e5f")
+            notice.onAnswer = { _ in NSApp.terminate(nil) }
+            controller = notice
         } else {
             controller = DesignWindowController()
         }
@@ -93,6 +98,7 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
         var info = AppInfo(version: "0.0.0", sdk: "NISDK3 1.1.5",
                            configURL: root.appendingPathComponent("config.json"),
                            logURL: root.appendingPathComponent("opensmartpen.log"))
+        info.installId = "3f2a9c1e-7b4d-4e6a-9c0d-5a1b2c3d4e5f"
         // The design window is a bare binary and carries no license texts. A packaged app does,
         // and that is the state worth looking at, so the fixture stands in for the folder.
         info.licensesURL = root

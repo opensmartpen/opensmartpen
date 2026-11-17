@@ -145,6 +145,7 @@ public final class Viewer: ObservableObject {
         didSet {
             guard showsTranscript != oldValue else { return }
             UserDefaults.standard.set(showsTranscript, forKey: "viewer.transcript")
+            Telemetry.event("ui.viewer.transcript", ["transcript.shown": .bool(showsTranscript)])
             onTranscriptToggle?(showsTranscript)
             refreshTranscript()
         }
@@ -164,7 +165,9 @@ public final class Viewer: ObservableObject {
             transcriptPage = nil
             return
         }
-        if transcriptPage != ref {
+        // Only the first answer for a page is reported: the pane asks again every 30 seconds.
+        let firstLook = transcriptPage != ref
+        if firstLook {
             transcriptPage = ref
             transcript = store.cached(for: ref)
         }
@@ -173,6 +176,16 @@ public final class Viewer: ObservableObject {
             guard let self, self.transcriptPage == ref else { return }
             self.fetchingTranscript = false
             if self.transcript != answer { self.transcript = answer }
+            if firstLook {
+                // Whether an agent has written the text of this page. Not the text.
+                let state: TelemetryValue
+                switch answer {
+                case .text: state = "text"
+                case .none: state = "none"
+                case .unavailable: state = "unavailable"
+                }
+                Telemetry.event("transcript.looked_up", ["transcript.state": state])
+            }
         }
     }
 

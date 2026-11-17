@@ -59,6 +59,9 @@ public final class SyncCoordinator {
     private let workQueue = DispatchQueue(label: "org.opensmartpen.app.publish")
     private var nextRetry: Date = .distantPast
     private var inFlight = false
+    /// Strokes written since the last upload that went well: how much was written in a sitting,
+    /// as a number. Telemetry gets the number with the upload, and never a stroke.
+    private var strokesSince = (live: 0, offline: 0)
 
     public init(store: RawStore, router: PageRouter, tracker: QuietTracker, publisher: Publishing,
                 notifier: Notifier, quietWindow: TimeInterval) {
@@ -89,6 +92,7 @@ public final class SyncCoordinator {
         }
         if !recovered.isEmpty {
             Log.info("recovered \(recovered.count) unsent page(s): \(recovered.map(\.description).sorted().joined(separator: ", "))")
+            Telemetry.event("sync.recovered", ["sync.pages": .int(recovered.count)])
         }
         return recovered
     }
@@ -101,6 +105,7 @@ public final class SyncCoordinator {
         do {
             let pages = try write(strokes, now: now)
             tracker.touch(admit(pages), at: now)
+            strokesSince.live += strokes.count
             Log.debug("live: \(strokes.count) stroke(s) on \(pages.map(\.description).sorted().joined(separator: ", "))")
         } catch {
             Log.error("writing live strokes failed: \(error)")
@@ -117,6 +122,7 @@ public final class SyncCoordinator {
         do {
             let pages = Set(admit(try write(strokes, now: now)))
             tracker.markQuiet(pages)
+            strokesSince.offline += strokes.count
             Log.info("offline: \(strokes.count) stroke(s) on \(pages.count) page(s)")
             onOfflineStored?(pages)
             return pages
@@ -142,6 +148,7 @@ public final class SyncCoordinator {
             Log.info(String(format: "control tap on %@ at x %.2f y %.2f cells -> %@",
                             s.page.description, x, y, describe(button)))
             if let button { modeLog?.record(button, at: s.start, client: .pen, tap: s.id) }
+            Telemetry.event("control.tap", ["control.button": .string(describe(button))])
             onControlTap?(s)
         }
     }
@@ -202,19 +209,44 @@ public final class SyncCoordinator {
         let paths = untrackedRawPaths() + sorted.map(\.rawRelativePath)
         Log.debug("sync (\(reason)): \(sorted.map(\.description).joined(separator: ", "))")
         inFlight = true
+        let written = strokesSince
+        let attributes: [String: TelemetryValue] = [
+            "sync.reason": .string(Self.kind(of: reason)),
+            "sync.pages": .int(sorted.count),
+            "sync.failures_before": .int(consecutiveFailures),
+            "strokes.live": .int(written.live),
+            "strokes.offline": .int(written.offline),
+        ]
         workQueue.async { [self] in
             let result: Result<Int, Error>
             do {
-                result = .success(try publisher.publish(paths: paths))
+                result = .success(try Telemetry.span("sync.publish", attributes) { span in
+                    let files = try publisher.publish(paths: paths)
+                    span.set("sync.files", .int(files))
+                    return files
+                })
             } catch {
                 result = .failure(error)
             }
             DispatchQueue.main.async {
                 self.inFlight = false
+                if case .success = result {
+                    // Only what was counted before the upload began. Strokes that arrived
+                    // during it belong to the next one.
+                    self.strokesSince.live -= written.live
+                    self.strokesSince.offline -= written.offline
+                }
                 self.finish(result, snapshot: snapshot, pages: sorted.count, now: now)
                 completion?(result)
             }
         }
+    }
+
+    /// Why an upload began, as one of four words. The reason itself is a sentence for the log.
+    static func kind(of reason: String) -> String {
+        if reason.hasPrefix("no pen event") { return "quiet" }
+        if reason.hasPrefix("offline drain") { return "drain" }
+        return reason == "photo" || reason == "manual" ? reason : "other"
     }
 
     /// Files that belong in the bucket but never enter the tracker: control-surface taps, the

@@ -199,7 +199,17 @@ public final class BookRegistry {
                                 widthMM: width, heightMM: height,
                                 binding: known?.binding ?? .pad,
                                 startedAt: startedAt, decidedBy: decidedBy)
-        return save(record) ? record : nil
+        guard save(record) else { return nil }
+        // The paper, by the code printed on it: a product, not a person's notebook. Whether the
+        // app knew the product says which papers people use that it has no size for.
+        var attributes: [String: TelemetryValue] = [
+            "book.surface": .string(surface),
+            "book.known": .bool(known != nil),
+            "book.copies": .int(copies(of: surface).count),
+        ]
+        if let decidedBy { attributes["book.copy_signal"] = .string(decidedBy.rawValue) }
+        Telemetry.event("book.added", attributes)
+        return record
     }
 
     /// Write a record back. The title is free to change and nothing moves, because the folder is
