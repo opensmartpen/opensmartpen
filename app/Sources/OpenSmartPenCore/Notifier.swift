@@ -11,6 +11,22 @@ public struct Notice {
         self.title = title
         self.body = body
     }
+
+    /// The key without the pen it is about: `battery` for `battery-9c7bd2000001`. A notice about
+    /// one pen ends in that pen's address, or in the identifier Bluetooth gave it.
+    public var kind: String {
+        key.replacingOccurrences(of: Self.penSuffix, with: "", options: .regularExpression)
+    }
+
+    /// The address of the pen the notice is about, when the key ends in one.
+    public var penMac: String? {
+        guard let range = key.range(of: "-[0-9a-f]{12}$", options: .regularExpression) else { return nil }
+        return String(key[range].dropFirst())
+    }
+
+    private static let penSuffix = "-([0-9a-f]{12}|[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12})$"
+    /// Notices that are news, not problems.
+    static let goodNews: Set<String> = ["paired", "new-pen", "publish-recovered"]
 }
 
 public protocol Notifier: AnyObject {
@@ -36,7 +52,13 @@ public final class DedupingNotifier: Notifier {
         if let last = lastSent[notice.key], t.timeIntervalSince(last) < window { return }
         lastSent[notice.key] = t
         // Every notice also goes to the log, so a run without notification permission is still diagnosable.
-        Log.warn("notice[\(notice.key)] \(notice.title): \(notice.body)")
+        // The words stay on this Mac: they name the pen as the person named it. Telemetry gets
+        // which notice it was, and for which pen.
+        Log.warn("notice[\(notice.key)] \(notice.title): \(notice.body)", telemetry: false)
+        var attributes: [String: TelemetryValue] = ["notice.key": .string(notice.kind)]
+        if let mac = notice.penMac { attributes["pen.mac"] = .string(mac) }
+        Telemetry.event("notice.posted", attributes,
+                        level: Notice.goodNews.contains(notice.kind) ? .info : .warn)
         inner.post(notice)
     }
 

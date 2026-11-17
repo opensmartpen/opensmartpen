@@ -18,6 +18,10 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/NeoSmartpen/iOS-SDK3.0.git", exact: "1.1.5"),
+        // Telemetry. Only the app target links these: the domain and the UI speak to a small
+        // protocol of our own (`Telemetry` in OpenSmartPenCore) and know nothing of the SDK.
+        .package(url: "https://github.com/open-telemetry/opentelemetry-swift-core.git", from: "2.6.0"),
+        .package(url: "https://github.com/open-telemetry/opentelemetry-swift.git", from: "2.6.0"),
     ],
     targets: [
         .target(
@@ -35,6 +39,10 @@ let package = Package(
                 "OpenSmartPenCore",
                 "OpenSmartPenUI",
                 .product(name: "NISDK3", package: "iOS-SDK3.0"),
+                .product(name: "OpenTelemetryApi", package: "opentelemetry-swift-core"),
+                .product(name: "OpenTelemetrySdk", package: "opentelemetry-swift-core"),
+                .product(name: "OpenTelemetryProtocolExporterHTTP", package: "opentelemetry-swift"),
+                .product(name: "PersistenceExporter", package: "opentelemetry-swift"),
             ],
             path: "Sources/OpenSmartPen"
         ),

@@ -21,5 +21,22 @@ the app, as a whole, is distributed under the GNU General Public License,
 version 3. The source code in this repository stays under the Apache
 License, Version 2.0, and can be used under that license without NISDK3.
 
+The app also links these packages, for telemetry. The Swift package manager
+downloads them when the app is built. All are licensed under the Apache
+License, Version 2.0:
+
+    OpenTelemetry SDK for Swift
+    https://github.com/open-telemetry/opentelemetry-swift
+    https://github.com/open-telemetry/opentelemetry-swift-core
+    Copyright The OpenTelemetry Authors
+
+    Swift Protobuf (with the Runtime Library Exception)
+    https://github.com/apple/swift-protobuf
+    Copyright Apple Inc. and the project authors
+
+    Swift Log
+    https://github.com/apple/swift-log
+    Copyright Apple Inc. and the Swift Logging API project authors
+
 Open Smart Pen is not affiliated with NeoLAB Convergence, Inc. "Neo smartpen"
 and "Ncode" are trademarks of NeoLAB Convergence, Inc.

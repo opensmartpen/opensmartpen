@@ -40,6 +40,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelTimer: Timer?
     private var panelNow = Date()
 
+    // Telemetry: what this Mac remembers about it, the SDK while it is sending, and the window
+    // that tells the person. See `docs/telemetry.md`.
+    private var telemetryState = TelemetryState()
+    private var telemetrySink: OTelTelemetry?
+    private var telemetryNotice: TelemetryNoticeController?
+    private let startedAt = Date()
+    private var lastHeartbeat = Date()
+    private var reportedAgents: Int?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.verbose = ProcessInfo.processInfo.environment["OPENSMARTPEN_VERBOSE"] != nil
 
@@ -54,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                  body: "\(configURL.path): \(error.localizedDescription). Running with defaults."))
         }
         Log.info("Open Smart Pen \(Self.version) starting; notes \(config.dataURL.path); config \(configURL.path)")
+        // Before anything else is made, so that what the rest of the start does is counted.
+        prepareTelemetry()
 
         // The notes live in the folder. The bucket is a copy of it, made as pages go quiet, and
         // the list of what has been copied sits beside the config: it is a fact about this Mac.
@@ -148,7 +159,184 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.coordinator.tick()
             self?.checkAgents()
             self?.stateChanged()
+            self?.heartbeat()
         }
+
+        var start = snapshot()
+        start["app.launch"] = .string(launchKind)
+        start["app.start_at_login"] = .bool(config.startAtLogin)
+        start["sync.quiet_seconds"] = .double(config.quietSeconds)
+        start["pen.free_memory_after_sync"] = .bool(config.deleteFromPenAfterPublish)
+        start["install.age_days"] = .int(Int(Date().timeIntervalSince(telemetryState.created) / 86400))
+        Telemetry.event("app.start", start)
+        // After the first turn of the run loop, so the window comes up on a finished app.
+        DispatchQueue.main.async { [weak self] in self?.showTelemetryNoticeIfOwed() }
+    }
+
+    // MARK: - telemetry
+
+    private var configDirectory: URL { configURL.deletingLastPathComponent() }
+
+    /// Read the install id and decide what telemetry does in this run: nothing, wait for the
+    /// person to be told, or send.
+    private func prepareTelemetry() {
+        telemetryState = TelemetryState.load(directory: configDirectory)
+        hidePrivateText()
+        switch TelemetryPlan.resolve(settings: config.telemetry) {
+        case let .off(reason):
+            Log.info("telemetry is off: \(reason)")
+        case let .on(plan):
+            if telemetryState.noticed == nil {
+                // Nothing leaves this Mac before the person has been told. What happens until
+                // then is kept in memory, and sent or thrown away by what they answer.
+                Telemetry.hold()
+                Log.info("telemetry waits until the person has been told about it")
+            } else {
+                startTelemetry(plan)
+            }
+        }
+    }
+
+    private func startTelemetry(_ plan: TelemetryPlan) {
+        guard telemetrySink == nil else { return }
+        for note in plan.notes { Log.info("telemetry: \(note)") }
+        let sink = OTelTelemetry(plan: plan,
+                                 resource: OTelTelemetry.resource(plan: plan, installId: telemetryState.installId),
+                                 queue: OTelTelemetry.queueLocation)
+        telemetrySink = sink
+        Telemetry.start(sink)
+        let host = (plan.logs ?? plan.traces)?.host ?? "?"
+        Log.info("telemetry goes to \(host); install \(telemetryState.installId). Turn it off in Settings → General")
+        reportCrashes()
+    }
+
+    /// Stop sending, and delete what was waiting to be sent.
+    private func stopTelemetry() {
+        Telemetry.stop()
+        telemetrySink?.shutdown()
+        telemetrySink = nil
+        OTelTelemetry.emptyQueue()
+    }
+
+    /// The setting changed, in the settings window or in the notice.
+    private func applyTelemetry() {
+        hidePrivateText()
+        switch TelemetryPlan.resolve(settings: config.telemetry) {
+        case let .off(reason):
+            if telemetrySink != nil || !config.telemetry.enabled { Log.info("telemetry is off: \(reason)") }
+            stopTelemetry()
+        case let .on(plan):
+            // A person who turns it on in Settings has read what it is, there.
+            if telemetryState.noticed == nil {
+                telemetryState.noticed = Date()
+                telemetryState.save(directory: configDirectory)
+            }
+            telemetryNotice?.close()
+            startTelemetry(plan)
+        }
+    }
+
+    /// The bucket, its folder and its key id never leave in an error message, nor does a notes
+    /// folder that is somewhere other than the home folder.
+    private func hidePrivateText() {
+        var scrubber = TelemetryScrubber()
+        scrubber.hide(config.s3.bucket, as: "bucket")
+        scrubber.hide(config.s3.prefix, as: "folder")
+        scrubber.hide(config.s3.accessKeyId, as: "key-id")
+        scrubber.hide(config.s3.endpoint, as: "endpoint")
+        if let host = config.s3Account()?.endpoint.host, !host.hasSuffix("amazonaws.com") {
+            scrubber.hide(host, as: "endpoint")
+        }
+        if !config.dataURL.path.hasPrefix(scrubber.home) { scrubber.hide(config.dataURL.path, as: "notes") }
+        Telemetry.scrubber = scrubber
+    }
+
+    /// Tell the person, once, that the app reports to its makers, and let them turn it off.
+    /// Only when the app would in fact send: a build with no collector has nothing to say.
+    private func showTelemetryNoticeIfOwed() {
+        guard telemetryState.noticed == nil, telemetryNotice == nil, config.telemetry.enabled,
+              case .on = TelemetryPlan.resolve(settings: config.telemetry) else { return }
+        let notice = TelemetryNoticeController(installId: telemetryState.installId)
+        notice.onAnswer = { [weak self] keep in self?.telemetryNoticeAnswered(keep: keep) }
+        telemetryNotice = notice
+        NSApp.activate(ignoringOtherApps: true)
+        notice.showWindow(nil)
+        notice.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func telemetryNoticeAnswered(keep: Bool) {
+        telemetryNotice = nil
+        guard telemetryState.noticed == nil else { return }
+        telemetryState.noticed = Date()
+        telemetryState.save(directory: configDirectory)
+        if !keep {
+            // The file is read again first: the pen session and the settings window write it too.
+            var latest = (try? Config.loadOrCreate(at: configURL)) ?? config
+            latest.telemetry.enabled = false
+            do { try latest.save(to: configURL) } catch { Log.error("saving config failed: \(error)") }
+            config.telemetry.enabled = false
+            settingsStore?.adopt(telemetry: config.telemetry)
+            Log.info("telemetry was turned off in the notice; nothing was sent")
+        }
+        applyTelemetry()
+    }
+
+    /// Crashes since the last start, read from the reports macOS wrote. Off the main thread: the
+    /// folder holds the reports of every process this person runs.
+    private func reportCrashes() {
+        let since = telemetryState.crashesReadTo ?? telemetryState.created
+        let process = ProcessInfo.processInfo.processName
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let now = Date()
+            let reports = CrashReport.recent(in: CrashReport.directory, process: process, after: since)
+            for report in reports {
+                Telemetry.event("app.crash", [
+                    "exception.type": .string(report.kind),
+                    "exception.message": .string(report.message),
+                    "exception.stacktrace": .string(report.stack),
+                    "crash.incident_id": .string(report.incident),
+                    "crash.app_version": .string(report.appVersion),
+                    "crash.os_version": .string(report.osVersion),
+                    "crash.binary_uuid": .string(report.binaryUUID),
+                ], level: .fatal, body: "\(report.kind): \(report.message)", time: report.time)
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if !reports.isEmpty { Log.info("reported \(reports.count) crash(es) of an earlier run") }
+                self.telemetryState.crashesReadTo = now
+                self.telemetryState.save(directory: self.configDirectory)
+            }
+        }
+    }
+
+    /// How things stand, in numbers. Sent at the start and every few hours, so an app that runs
+    /// for a month is still counted as one that is in use.
+    private func snapshot() -> [String: TelemetryValue] {
+        [
+            "pens.paired": .int(config.pairedPens.count),
+            "pens.connected": .int(session?.connections.filter(\.isConnected).count ?? 0),
+            "bucket.connected": .bool(sync?.isConnected ?? false),
+            "agents.count": .int(agentRecords.count),
+            "books.count": .int(books?.books.count ?? 0),
+            "pages.pending": .int(coordinator?.pendingPages.count ?? 0),
+            "app.uptime_seconds": .int(Int(Date().timeIntervalSince(startedAt))),
+        ]
+    }
+
+    private static let heartbeatEvery: TimeInterval = 6 * 60 * 60
+
+    private func heartbeat() {
+        guard Date().timeIntervalSince(lastHeartbeat) >= Self.heartbeatEvery else { return }
+        lastHeartbeat = Date()
+        Telemetry.event("app.heartbeat", snapshot())
+    }
+
+    /// What started this run: the developer's LaunchAgent, the app as a bundle, or a bare binary.
+    private var launchKind: String {
+        guard Bundle.main.bundlePath.hasSuffix(".app") else { return "binary" }
+        let agent = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/org.opensmartpen.app.plist")
+        return FileManager.default.fileExists(atPath: agent.path) ? "launchagent" : "bundle"
     }
 
     // MARK: - starting at login
@@ -192,12 +380,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// notebook, and below them what macOS adds for each iPhone or iPad near this Mac. The panel
     /// stays until the menu closes.
     private func addPhoto() {
+        Telemetry.event("ui.photo.menu")
         let menu = PhotoImportController()
         menu.addEntry("Choose a File\u{2026}") { [weak self] in self?.uploadPhoto() }
         if books.current(for: PhotoPages.surface) == nil {
             menu.addEntry("Use the Sample Page") { [weak self] in self?.addSample() }
         }
-        menu.onImage = { [weak self] data, ext in self?.file(photo: data, ext: ext, show: true) }
+        menu.onImage = { [weak self] data, ext in self?.file(photo: data, ext: ext, from: "device", show: true) }
         menu.onFinish = { [weak self] in self?.photoImport = nil }
         photoImport = menu
         panel?.staysOpen = true
@@ -212,10 +401,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func addPhoto(file url: URL) {
         guard let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image),
               let data = try? Data(contentsOf: url) else {
-            Log.warn("\(url.lastPathComponent) is not a picture; not added")
+            // The name of a person's file stays in the log on this Mac.
+            Log.warn("\(url.lastPathComponent) is not a picture; not added", telemetry: false)
+            Telemetry.event("photo.rejected", ["photo.source": "drop", "photo.reason": "not a picture"], level: .warn)
             return
         }
-        file(photo: data, ext: url.pathExtension, show: true)
+        file(photo: data, ext: url.pathExtension, from: "drop", show: true)
     }
 
     /// A picture of a page from a file.
@@ -230,10 +421,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard chooser.runModal() == .OK else { return }
         for url in chooser.urls.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             guard let data = try? Data(contentsOf: url) else {
-                Log.warn("could not read \(url.lastPathComponent)")
+                Log.warn("could not read \(url.lastPathComponent)", telemetry: false)
+                Telemetry.event("photo.rejected", ["photo.source": "file", "photo.reason": "unreadable"], level: .warn)
                 continue
             }
-            file(photo: data, ext: url.pathExtension.isEmpty ? "jpg" : url.pathExtension, show: true)
+            file(photo: data, ext: url.pathExtension.isEmpty ? "jpg" : url.pathExtension, from: "file", show: true)
         }
     }
 
@@ -242,14 +434,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is made when the first picture is filed, and not before.
     private func addSample() {
         panel?.dismiss()
-        if let picture = SamplePicture.png() { file(photo: picture, ext: "png", show: true) }
+        if let picture = SamplePicture.png() { file(photo: picture, ext: "png", from: "sample", show: true) }
     }
 
     /// A photo is complete when it arrives: there is no pen to wait for. So it is drawn and sent now.
-    private func file(photo: Data, ext: String, show: Bool) {
+    ///
+    /// `source` is where it came from, for telemetry: a file, a drop on the menu bar, the sample,
+    /// or an iPhone or iPad.
+    private func file(photo: Data, ext: String, from source: String, show: Bool) {
         guard let page = PhotoPages.add(image: photo, ext: ext, books: books, root: config.dataURL,
                                         app: Self.clientID) else { return }
         Log.info("a photo is filed as \(page)")
+        Telemetry.event("photo.added", ["photo.source": .string(source), "photo.format": .string(ext.lowercased()),
+                                        "photo.bytes": .int(photo.count)])
         coordinator.recoverPending()
         coordinator.publish(pages: [page], reason: "photo") { [weak self] _ in
             DispatchQueue.main.async {
@@ -276,11 +473,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showAgents() {
         agentRecords = Agents.load(root: config.dataURL)
-        model.setAgents(agentRecords, changed: Agents.lastChange(root: config.dataURL))
+        let changed = Agents.lastChange(root: config.dataURL)
+        model.setAgents(agentRecords, changed: changed)
+        // How many agents, and how many are behind. Not their names: an agent writes its own.
+        if reportedAgents != agentRecords.count {
+            if reportedAgents != nil {
+                Telemetry.event("agents.changed", [
+                    "agents.count": .int(agentRecords.count),
+                    "agents.behind": .int(agentRecords.filter { $0.isBehind(changed: changed) }.count),
+                ])
+            }
+            reportedAgents = agentRecords.count
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         Log.info("Open Smart Pen stopping")
+        Telemetry.event("app.stop", snapshot())
+        // What has gathered goes to the queue on disk now. What does not reach the collector
+        // before the process ends is sent at the next start.
+        telemetrySink?.flush()
     }
 
     // MARK: status item
@@ -302,7 +514,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The panel no longer carries a Sync now button — the countdowns already say when it
             // happens by itself — but the lid-closing case is real, so the shortcut stays.
             case "s": self?.model.publishNow(); return true
-            case "q": NSApp.terminate(nil); return true
+            case "q":
+                Telemetry.event("ui.quit")
+                NSApp.terminate(nil)
+                return true
             default: return false
             }
         }
@@ -395,18 +610,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindow == nil {
             let log = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Logs/OpenSmartPen/opensmartpen.log")
-            let info = AppInfo(version: Self.version, sdk: Self.sdkVersion.replacingOccurrences(of: "/", with: " "),
+            var info = AppInfo(version: Self.version, sdk: Self.sdkVersion.replacingOccurrences(of: "/", with: " "),
                                configURL: configURL, logURL: log)
+            info.installId = telemetryState.installId
             let store = SettingsStore(pens: pens, books: books, config: config, configURL: configURL,
                                       info: info, link: session)
             settingsStore = store
             store.onConfigChange = { [weak self] updated in
                 guard let self else { return }
                 let bucketChanged = updated.s3 != config.s3 || sync.isConnected != (updated.s3Account() != nil)
+                let telemetryChanged = updated.telemetry != config.telemetry
                 config = updated
                 coordinator.quietWindow = updated.quietSeconds
                 applyStartAtLogin()
                 if bucketChanged { connectBucket() }
+                // A bucket's name is hidden from the moment it is connected. Only a change to the
+                // telemetry setting itself turns telemetry on or off.
+                hidePrivateText()
+                if telemetryChanged { applyTelemetry() }
                 stateChanged()
             }
             // A new title is a changed file with no page to carry it, so it is sent now.
@@ -420,6 +641,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if let tab {
             settingsWindow?.select(tab)
         }
+        Telemetry.event("ui.settings.opened")
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.showWindow(nil)
         settingsWindow?.window?.makeKeyAndOrderFront(nil)
@@ -432,12 +654,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pinnedPanel.close()          // windowWillClose does the rest
             return
         }
+        Telemetry.event("ui.panel.pinned")
         let origin = panel.isVisible ? panel.frame : nil
         panel?.dismiss()
         let controller = PinnedPanelController(model: model, now: panelNow, from: origin)
         controller.onClose = { [weak self] in
             self?.pinnedPanel = nil
             self?.model.setPinned(false)
+            Telemetry.event("ui.panel.unpinned")
             self?.syncPanelTimer()
         }
         pinnedPanel = controller
@@ -459,6 +683,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             viewerWindow = ViewerWindowController(viewer: viewer)
         }
         if let page { viewer.show(page: page) } else { viewer.goLatest() }
+        Telemetry.event("ui.viewer.opened", ["viewer.target": .string(page == nil ? "latest" : "page")])
         NSApp.activate(ignoringOtherApps: true)
         viewerWindow?.showWindow(nil)
         viewerWindow?.retitle()
@@ -473,6 +698,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         guard let button = statusItem.button else { return }
+        Telemetry.event("ui.panel.opened")
         session.requestSettingRefresh()
         model.refreshRecent()
         tickPanel()

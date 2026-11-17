@@ -75,6 +75,7 @@ public final class PanelModel: ObservableObject {
 
     func toggleExpanded(_ mac: String) {
         chosenPen = chosenPen == mac ? nil : mac
+        if chosenPen != nil { Telemetry.event("ui.panel.pen_opened") }
     }
 
     /// A pen that has left the list cannot stay open. Called from `refresh` once the rows are built.
@@ -90,6 +91,7 @@ public final class PanelModel: ObservableObject {
     func choose(ink: InkColor, for pen: PenRow) {
         if pen.active { choose(ink: ink); return }
         guard let registry = live?.pens, var record = registry.record(mac: pen.id) else { return }
+        Telemetry.event("ui.ink.chosen", ["ink.color": .string(ink.rawValue), "ink.target": "pen default"])
         record.ink = ink
         registry.save(record)
         refresh()
@@ -98,6 +100,7 @@ public final class PanelModel: ObservableObject {
     func choose(width: LineWidth, for pen: PenRow) {
         if pen.active { choose(width: width); return }
         guard let registry = live?.pens, var record = registry.record(mac: pen.id) else { return }
+        Telemetry.event("ui.width.chosen", ["ink.width": .string(width.rawValue), "ink.target": "pen default"])
         record.width = width
         registry.save(record)
         refresh()
@@ -487,6 +490,7 @@ public final class PanelModel: ObservableObject {
 
     func open(_ agent: AgentRow) {
         guard let url = agent.url else { return }
+        Telemetry.event("ui.agent.opened")
         NSWorkspace.shared.open(url)
     }
 
@@ -494,6 +498,7 @@ public final class PanelModel: ObservableObject {
         guard !agentSentence.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(agentSentence, forType: .string)
+        Telemetry.event("ui.agent.copy_instructions", ["ui.source": "panel"])
         agentSentenceCopied = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.agentSentenceCopied = false }
     }
@@ -506,11 +511,13 @@ public final class PanelModel: ObservableObject {
     // MARK: things to do
 
     public func publishNow() {
+        Telemetry.event("ui.sync_now", ["ui.source": "panel"])
         live?.coordinator.publishAll()
     }
 
     func openNotes() {
         guard let repo = live?.config.dataURL else { return }
+        Telemetry.event("ui.notes.opened", ["ui.source": "panel"])
         NSWorkspace.shared.open(repo)
     }
 
@@ -522,6 +529,7 @@ public final class PanelModel: ObservableObject {
     /// Where the LaunchAgent sends stderr. Falls back to revealing the notes folder when the app
     /// was started by hand and the log is only on the terminal.
     func openLog() {
+        Telemetry.event("ui.log.opened", ["ui.source": "panel"])
         let log = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Logs/OpenSmartPen/opensmartpen.log")
         if FileManager.default.fileExists(atPath: log.path) {
@@ -535,12 +543,14 @@ public final class PanelModel: ObservableObject {
     /// one file, one writer, and the renderer cannot tell which of the two a change came from.
     func choose(ink: InkColor) {
         guard let log = live?.coordinator.modeLog else { return }
+        Telemetry.event("ui.ink.chosen", ["ink.color": .string(ink.rawValue), "ink.target": "writing now"])
         log.record(.ink(ink), at: Int(Date().timeIntervalSince1970 * 1000), client: .app)
         refresh()
     }
 
     func choose(width: LineWidth) {
         guard let log = live?.coordinator.modeLog else { return }
+        Telemetry.event("ui.width.chosen", ["ink.width": .string(width.rawValue), "ink.target": "writing now"])
         log.record(.width(width), at: Int(Date().timeIntervalSince1970 * 1000), client: .app)
         refresh()
     }
