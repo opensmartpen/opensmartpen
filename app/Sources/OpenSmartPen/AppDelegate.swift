@@ -158,7 +158,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.coordinator.tick()
             self?.checkAgents()
             self?.stateChanged()
+            self?.installUpdateIfQuiet()
         }
+    }
+
+    // MARK: - updates
+
+    /// An update that is downloaded waits here for a moment that nobody notices, and then the app
+    /// restarts itself. See `UpdateMoment` for what such a moment is.
+    private func installUpdateIfQuiet() {
+        guard let updater, updater.isWaiting else { return }
+        let moment = UpdateMoment(
+            lastPenActivity: coordinator.lastActivity,
+            pendingPages: coordinator.pendingPages.count,
+            isPublishing: coordinator.isPublishing,
+            isCopyingFromPen: session.connections.contains { $0.drain != nil || $0.state == .connecting },
+            // Not the pinned panel: a person can keep that one open all day.
+            windowIsOpen: panelTimer != nil
+                || settingsWindow?.window?.isVisible == true
+                || viewerWindow?.window?.isVisible == true)
+        guard moment.isQuiet() else { return }
+        session.letGoForRestart()
+        updater.installNow()
     }
 
     // MARK: - starting at login

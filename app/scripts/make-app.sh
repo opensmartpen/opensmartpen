@@ -55,13 +55,15 @@ cp "$SDK_LICENSE" "$APP/Contents/Resources/Licenses/NISDK3-GPL-3.0.txt"
 cp .build/artifacts/sparkle/Sparkle/LICENSE "$APP/Contents/Resources/Licenses/Sparkle-LICENSE.txt"
 
 # Only a release has an update feed: scripts/package.sh gives the address and the public key of
-# the feed's signatures. Without them the app has no updater at all, so a development build does
+# the feed's signatures. A release checks each day and downloads a new version with no window;
+# Updater.swift then installs it at a quiet moment. Without them the app has no updater at all, so a development build does
 # not offer to replace itself with the last release.
 UPDATE_KEYS=""
 if [ -n "${OPENSMARTPEN_FEED_URL:-}" ] && [ -n "${OPENSMARTPEN_FEED_KEY:-}" ]; then
   UPDATE_KEYS="<key>SUFeedURL</key><string>${OPENSMARTPEN_FEED_URL}</string>
   <key>SUPublicEDKey</key><string>${OPENSMARTPEN_FEED_KEY}</string>
-  <key>SUEnableAutomaticChecks</key><true/>"
+  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUAutomaticallyUpdate</key><true/>"
 fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST

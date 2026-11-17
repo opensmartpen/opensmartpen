@@ -137,8 +137,20 @@ final class PenSession: NSObject {
     }
 
     private func willSleep() {
-        systemAsleep = true
         Log.info("Mac is going to sleep; letting \(links.count) pen(s) go so they store what is written")
+        letGo()
+    }
+
+    /// Before the app restarts itself for an update. The same reason as before sleep: a pen with
+    /// no link stores what is written, and the app that starts next copies it from pen memory.
+    /// Nothing connects again in this process.
+    func letGoForRestart() {
+        Log.info("the app is about to restart; letting \(links.count) pen(s) go so they store what is written")
+        letGo()
+    }
+
+    private func letGo() {
+        systemAsleep = true
         if scanning {
             PenFinder.shared.scanStop()
             scanning = false
