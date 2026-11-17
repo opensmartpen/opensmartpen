@@ -49,6 +49,10 @@ verify_app() {
   # The GPL asks that each copy of the binary carries the license.
   [ -f "$app/Contents/Resources/Licenses/NISDK3-GPL-3.0.txt" ] ||
     fail "$app does not carry the license texts"
+  # A release without the feed is an app that never hears of the next release.
+  /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$app/Contents/Info.plist" >/dev/null 2>&1 &&
+    /usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$app/Contents/Info.plist" >/dev/null 2>&1 ||
+    fail "$app has no update feed"
   echo "ok      $app"
 }
 
@@ -57,6 +61,14 @@ zips=(release/*.zip)
 dmgs=(release/*.dmg)
 [ "${#zips[@]}" -eq 1 ] || fail "expected one zip in release/, found ${#zips[@]}"
 [ "${#dmgs[@]}" -eq 1 ] || fail "expected one DMG in release/, found ${#dmgs[@]}"
+
+# The feed must name the zip that is here, at the size it has: an installed app refuses another.
+[ -f release/appcast.xml ] || fail "release/appcast.xml is missing"
+grep -q "$(basename "${zips[0]}")\"" release/appcast.xml || fail "the feed does not name ${zips[0]}"
+grep -q "length=\"$(stat -f %z "${zips[0]}")\"" release/appcast.xml ||
+  fail "the feed gives another size than ${zips[0]} has"
+grep -q 'sparkle:edSignature="' release/appcast.xml || fail "the feed has no signature"
+echo "ok      release/appcast.xml"
 
 # ditto keeps the signature's extended attributes, which unzip drops.
 ditto -x -k "${zips[0]}" "$work/zip"

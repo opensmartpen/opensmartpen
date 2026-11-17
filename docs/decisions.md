@@ -338,7 +338,7 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **Seen:** an unsigned build makes both files, the DMG holds the app, the Applications link and the license texts, and the verify script refuses it. **The signed path ran on 2026-11-17,** from the trial tag `v0.2.0-test1`: Apple accepted the app and the DMG, the verify script passed, and Gatekeeper on another Mac accepts the downloaded DMG as "Notarized Developer ID".
 - **Not seen: the app under the hardened runtime.** A release is the first build that has it. Bluetooth and the photo from an iPhone must be tried on the first signed build.
 - **The credentials are in the environment** (2026-11-17). The certificate came from the Brainio secrets; the API key is new and is named `opensmartpen` in App Store Connect.
-- Open: updates. Planned: Sparkle in the app, with "Check for Updates…", and a Homebrew cask that points at the zip.
+- Open: a Homebrew cask that points at the zip.
 
 ## 2026-11-17 — One sample on unknown paper is not a notebook
 
@@ -347,3 +347,17 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **The fix.** The record is made after six samples in a row on the same unknown paper, about a twentieth of a second of writing. One sample is left to the router, which drops it and says so in the log. The first six samples of the first stroke in a new notebook are not drawn live; the stroke is whole once the pen lifts.
 - **Not done.** The stray sample is not moved to the page being written on. Its notebook was read wrongly, so its position may be too.
 
+
+
+## 2026-11-17 — A release updates itself
+
+- **Decided:** a release has Sparkle in it. It checks a feed one time each day, shows the new version with a link to its notes, and installs it when the person agrees. Settings → About has "Check for Updates…" and a switch for the automatic check.
+- **Only a release has the feed.** `scripts/package.sh` writes the address of the feed and the public key into the bundle; `scripts/make-app.sh` on its own does not. A development build has no updater, so it cannot replace itself with the last release.
+- **The feed is a file of the newest published release:** `releases/latest/download/appcast.xml`. It names one version, and the zip of that release. A draft or a trial release is not the newest release, so no installed app sees one. The feed can be read only when the repository is public.
+- **The update is signed two times.** The Developer ID says who made the app. A second key (EdDSA, Sparkle's own) signs the zip, and an installed app refuses a zip that the key did not sign. The private half is the secret `SPARKLE_PRIVATE_KEY`; the public half is `FEED_KEY` in `scripts/package.sh` and is not a secret.
+- **The check sends nothing.** It is one request for a public file. Sparkle's system profile is off.
+- **The UI layer does not know Sparkle.** `Updater` is in the app target and hands the About tab three closures. This is the rule of ADR-003, applied to a second library.
+- **Every bundle carries the framework,** because the binary links it. `make-app.sh` signs the parts of Sparkle from the inside out, then the app.
+- **Seen:** the app builds, an unsigned package has the framework and a valid signature, and the About tab shows the two rows in the design window. **Not seen:** an update. That needs the key, a public repository and two releases.
+- Open: `FEED_KEY` is empty until the key is made. Until then a release has no updater, and `verify-release.sh` refuses it.
+- Open: the alert of an automatic check in a menubar app. Sparkle can show it behind other windows; it has a "gentle reminder" for this, not used yet.

@@ -48,7 +48,7 @@ Running the bare binary with `swift run` also works for debugging (stderr log, A
 ### A release
 
 ```sh
-scripts/package.sh                 # release/OpenSmartPen-<version>.dmg and .zip
+scripts/package.sh                 # release/OpenSmartPen-<version>.dmg, .zip and appcast.xml
 OPENSMARTPEN_TEAM_ID=<team> scripts/verify-release.sh   # refuses a build Gatekeeper will not open
 ```
 
@@ -57,7 +57,8 @@ names of the credentials are at the top of `scripts/package.sh`.
 
 A public release is made by GitHub, not on a Mac: set `AppDelegate.version`, merge, and push the
 tag `v<version>`. The workflow `.github/workflows/release.yml` packages, verifies, and makes a
-draft release with the two files. Read the draft and publish it.
+draft release with the files. Read the draft and publish it. An installed release finds the new
+one by itself, from `appcast.xml` of the newest published release.
 
 ### Bluetooth permission
 

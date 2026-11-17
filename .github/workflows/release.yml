@@ -1,7 +1,7 @@
 name: Release
 
-# Builds the app from a version tag, signs and notarises it, and puts the DMG and the zip on a
-# draft release. A person reads the draft and publishes it; nothing is public before that.
+# Builds the app from a version tag, signs and notarises it, and puts the DMG, the zip and the
+# update feed on a draft release. A person reads the draft and publishes it; nothing is public before that.
 
 on:
   push:
@@ -39,12 +39,15 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          # The update feed names the files of this tag.
+          OPENSMARTPEN_RELEASE_TAG: ${{ github.ref_name }}
       # Refuses an unsigned or unnotarised build, so a run without the secrets publishes nothing.
       - run: app/scripts/verify-release.sh
         env:
           OPENSMARTPEN_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       - run: >
-          gh release create "$GITHUB_REF_NAME" app/release/*.dmg app/release/*.zip
+          gh release create "$GITHUB_REF_NAME" app/release/*.dmg app/release/*.zip app/release/appcast.xml
           --draft --verify-tag --generate-notes --title "Open Smart Pen ${GITHUB_REF_NAME#v}"
         env:
           GH_TOKEN: ${{ github.token }}

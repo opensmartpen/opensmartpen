@@ -18,6 +18,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/NeoSmartpen/iOS-SDK3.0.git", exact: "1.1.5"),
+        // The updater of a packaged release. Only the app target links it.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
     ],
     targets: [
         .target(
@@ -35,6 +37,7 @@ let package = Package(
                 "OpenSmartPenCore",
                 "OpenSmartPenUI",
                 .product(name: "NISDK3", package: "iOS-SDK3.0"),
+                .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/OpenSmartPen"
         ),

@@ -96,6 +96,8 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
         // The design window is a bare binary and carries no license texts. A packaged app does,
         // and that is the state worth looking at, so the fixture stands in for the folder.
         info.licensesURL = root
+        // The same for the updater: only a release has one, and its rows must be looked at.
+        info.updates = UpdateControls(check: {}, isAutomatic: { true }, setAutomatic: { _ in })
         let store = SettingsStore(pens: pens, books: books, config: config,
                                   configURL: info.configURL, info: info, secretURL: secret)
         if bucket {

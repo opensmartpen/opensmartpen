@@ -2,6 +2,20 @@ import AppKit
 import OpenSmartPenCore
 import SwiftUI
 
+/// The updater, as the About tab uses it. Closures, because the updater is in the layer above.
+public struct UpdateControls {
+    public var check: () -> Void
+    public var isAutomatic: () -> Bool
+    public var setAutomatic: (Bool) -> Void
+
+    public init(check: @escaping () -> Void, isAutomatic: @escaping () -> Bool,
+                setAutomatic: @escaping (Bool) -> Void) {
+        self.check = check
+        self.isAutomatic = isAutomatic
+        self.setAutomatic = setAutomatic
+    }
+}
+
 /// What the About tab says about this build, and where its files are. Handed in by the app,
 /// because the version and the SDK are facts of the layer above this one.
 public struct AppInfo {
@@ -21,6 +35,9 @@ public struct AppInfo {
               FileManager.default.fileExists(atPath: url.path) else { return nil }
         return url
     }()
+
+    /// Nil for a build with no update feed: a development build, or a bare binary.
+    public var updates: UpdateControls?
 
     public init(version: String, sdk: String, configURL: URL, logURL: URL) {
         self.version = version
@@ -730,6 +747,7 @@ private struct GeneralTab: View {
 
 private struct AboutTab: View {
     @ObservedObject var store: SettingsStore
+    @State private var checksAutomatically = false
 
     var body: some View {
         Page(store: store) {
@@ -751,6 +769,16 @@ private struct AboutTab: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
+            }
+            if let updates = store.info.updates {
+                Section {
+                    LabeledContent("Updates") {
+                        Button("Check for Updates…") { updates.check() }
+                    }
+                    Toggle("Check automatically", isOn: $checksAutomatically)
+                        .onChange(of: checksAutomatically) { updates.setAutomatic($0) }
+                }
+                .onAppear { checksAutomatically = updates.isAutomatic() }
             }
             Section {
                 LabeledContent("Copyright", value: "Apoco")
