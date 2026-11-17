@@ -46,18 +46,15 @@ Tested with the Neo smartpen A1 and the LAMY Safari Ncode, on NeoLAB Ncode A4 pa
 
 ### 1. Install the app
 
-There is no signed download yet. Build the app from the source. You need Xcode 15 or later.
+Download the newest [`OpenSmartPen-<version>.dmg`](https://github.com/opensmartpen/opensmartpen/releases/latest), open it, and drag Open Smart Pen to the Applications folder. Then open the app.
 
-```sh
-git clone https://github.com/opensmartpen/opensmartpen.git
-cd opensmartpen/app
-swift test                         # optional: the tests need no pen and no network
-scripts/make-signing-identity.sh   # once for each Mac
-scripts/make-app.sh                # makes dist/"Open Smart Pen.app"
-scripts/install-launchagent.sh     # installs the app and starts it at login
-```
+- macOS asks one time for the Bluetooth permission. Allow it; without it the pen cannot connect.
+- The app is in the menu bar, as a pencil. It has no window of its own and no icon in the Dock.
+- The app starts when you log in, and it updates itself. A new version installs with no window, at a moment when no pen is writing. Settings → About has the switch for this, and "Check for Updates…".
 
-Run the last script from a terminal the first time. It opens the app one time from the Finder, so that macOS can ask you for the Bluetooth permission. [`app/README.md`](app/README.md) has the details.
+The download is signed by Apoco s.r.o. and notarised by Apple.
+
+To build the app from the source, see [`app/README.md`](app/README.md).
 
 ### 2. Add a page
 
