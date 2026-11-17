@@ -322,3 +322,20 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **What it gives up:** it does not prove that the key may write. Only a write proves that. A key that may not write shows at the first upload, as a notification.
 - **Checked against a real bucket** (an S3-compatible service, not Amazon): right keys pass, a wrong secret is refused with 403, a bucket that is not there is refused.
 - **For an agent:** nothing to do. A bucket connected before this date can still hold the old marker file; it is not a note.
+
+## 2026-11-16 — A release is a signed DMG, made from a tag
+
+- **Decided (the owner):** the same shape as the Brainio desktop app: package, verify, publish. The signer is Brainsoft s.r.o. (team `WDDLH339C8`), with the Developer ID that signs the Brainio desktop app. macOS names Brainsoft s.r.o. as the developer of the app.
+- **The repository is public, so the credentials are in a GitHub environment, `release`, that accepts only `v*` tags.** A pull request from a fork gets no secrets, and a branch cannot use them. The API key for notarisation is a key of this repository's own, so it can be revoked alone.
+- **Three parts.** `scripts/package.sh` makes `release/OpenSmartPen-<version>.dmg` and `.zip`. `scripts/verify-release.sh` refuses a build that Gatekeeper will not open. `.github/workflows/release.yml` runs both on a `v<version>` tag and puts the two files on a draft release.
+- **A draft, not a release.** A person reads it and publishes it. A tag alone makes nothing public.
+- **The tag must agree with `AppDelegate.version`.** The version has one home, and a tag that says something else is refused.
+- **A release on a tag, not on each merge.** Brainio releases each merge to an internal channel. A public user must not get a build for each merge.
+- **GitHub Releases, not a bucket.** The project is open and that page is where a person looks. It serves a download only when the repository is public.
+- **The DMG is signed and notarised too,** not only the app in it. Gatekeeper judges the disk image first.
+- **Without the Apple credentials the build is unsigned and says so.** It is not signed with the certificate of the Mac: a release is from the Developer ID or it is not a release.
+- **The secrets have Brainio's names** (`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`), in a GitHub environment `release`. The team id is the variable `APPLE_TEAM_ID`.
+- **Seen:** an unsigned build makes both files, the DMG holds the app, the Applications link and the license texts, and the verify script refuses it. **Not seen:** the signed path. There is no Developer ID yet, so the keychain import, the notarisation and the workflow have not run.
+- **Not seen: the app under the hardened runtime.** A release is the first build that has it. Bluetooth and the photo from an iPhone must be tried on the first signed build.
+- **The credentials are in the environment** (2026-11-17). The certificate came from the Brainio secrets; the API key is new and is named `opensmartpen` in App Store Connect.
+- Open: updates. Planned: Sparkle in the app, with "Check for Updates…", and a Homebrew cask that points at the zip.

@@ -79,7 +79,16 @@ PLIST
 # the binary's own hash, so every build is a different app to macOS and has to be allowed again.
 IDENTITY="${OPENSMARTPEN_SIGN_IDENTITY:-Open Smart Pen Dev}"
 if security find-identity -p codesigning 2>/dev/null | grep -q "\"$IDENTITY\""; then
-  codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" "$APP" >/dev/null
+  # A Developer ID is the identity of a public release (scripts/package.sh). Apple notarises only
+  # code that has the hardened runtime and a timestamp from Apple's server, so both go on here.
+  # The certificate of this Mac gets neither: a timestamp needs the network, and a development
+  # build must also work without it.
+  RELEASE_FLAGS=()
+  case "$IDENTITY" in
+    "Developer ID Application:"*) RELEASE_FLAGS=(--options runtime --timestamp) ;;
+  esac
+  codesign --force --sign "$IDENTITY" --identifier "$BUNDLE_ID" \
+    ${RELEASE_FLAGS[@]+"${RELEASE_FLAGS[@]}"} "$APP" >/dev/null
   SIGNED="signed as \"$IDENTITY\"; grants carry over"
 else
   codesign --force --sign - --identifier "$BUNDLE_ID" "$APP" >/dev/null
