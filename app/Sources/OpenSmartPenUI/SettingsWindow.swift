@@ -775,8 +775,10 @@ private struct AboutTab: View {
                     LabeledContent("Updates") {
                         Button("Check for Updates…") { updates.check() }
                     }
-                    Toggle("Check automatically", isOn: $checksAutomatically)
+                    Toggle("Update automatically", isOn: $checksAutomatically)
                         .onChange(of: checksAutomatically) { updates.setAutomatic($0) }
+                    Note("A new version installs by itself, with no window, at a moment when "
+                         + "no pen is writing. The app starts again and the pen connects again.")
                 }
                 .onAppear { checksAutomatically = updates.isAutomatic() }
             }

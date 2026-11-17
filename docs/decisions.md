@@ -370,3 +370,15 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **The certificate ends on 2027-12-17.** An app signed before that date keeps working. A release after it needs a new certificate.
 - **Seen:** a trial release was signed with it, and Apple accepted the app and the DMG.
 - **The signed app was used on a Mac** (2026-11-17), from the DMG of a trial release: the pen connected and its writing arrived, a photo came from an iPhone, and Settings → About showed the update rows. This is the first build under the hardened runtime, and it needed no entitlement. The check for updates gave an error, which is correct while the repository is private and has no published release.
+
+## 2026-11-17 — An update is quiet
+
+- **Decided (the owner):** an update must not show a window, and each installed app must get it. A window from a menubar app is too much, and it can also open behind other windows and be missed.
+- **Sparkle downloads with no window, and the app installs.** Sparkle would install when the app quits, and a menubar app does not quit for weeks. So `Updater` takes the install over (`willInstallUpdateOnQuit`) and restarts the app at a quiet moment.
+- **A quiet moment** (`UpdateMoment`): no pen has reported anything for ten minutes, no page waits for upload, no upload runs, no pen is connecting or being copied, and the panel, the settings and the viewer are closed. The pinned panel does not count: a person can keep it open all day.
+- **The pens are let go before the restart,** as before sleep. A pen with no link stores what is written, and the app that starts next copies it.
+- **One switch, "Update automatically", on by default.** It sets the check and the download together. A check that finds a version and does not download it shows a window, which is what this decision removes. Off: the app looks only when a person clicks "Check for Updates…", and that click shows Sparkle's window.
+- **No notification after an update.** The About tab has the version and the log has the line.
+- **What it costs:** a bad release reaches each user with no click. The guard is the draft: a person reads a release and publishes it. Sparkle can also give a release to a part of the users first; not used yet.
+- **Not seen: an update.** The rule for the moment has tests. The download, the hand-over from Sparkle and the restart have not run; they need a public repository and two published releases.
+- Open: on a Mac with the developer's LaunchAgent, Sparkle and launchd would each start the app after an update. A development build has no updater, so this is only a release that was installed with `install-launchagent.sh`.
