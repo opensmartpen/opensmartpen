@@ -45,6 +45,20 @@ After that, a build signed with the same certificate is installed and started wi
 
 Running the bare binary with `swift run` also works for debugging (stderr log, AppleScript notifications), but Bluetooth permission is then attributed to the terminal and macOS notifications are unavailable. Set `OPENSMARTPEN_VERBOSE=1` for debug logging.
 
+### A release
+
+```sh
+scripts/package.sh                 # release/OpenSmartPen-<version>.dmg and .zip
+OPENSMARTPEN_TEAM_ID=<team> scripts/verify-release.sh   # refuses a build Gatekeeper will not open
+```
+
+Without the Apple credentials the build is unsigned, and `verify-release.sh` refuses it. The
+names of the credentials are at the top of `scripts/package.sh`.
+
+A public release is made by GitHub, not on a Mac: set `AppDelegate.version`, merge, and push the
+tag `v<version>`. The workflow `.github/workflows/release.yml` packages, verifies, and makes a
+draft release with the two files. Read the draft and publish it.
+
 ### Bluetooth permission
 
 macOS offers the Bluetooth prompt **only to an app launched from the Finder**. One started by

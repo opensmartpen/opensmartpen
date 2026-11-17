@@ -1,0 +1,50 @@
+name: Release
+
+# Builds the app from a version tag, signs and notarises it, and puts the DMG and the zip on a
+# draft release. A person reads the draft and publishes it; nothing is public before that.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# One release at a time.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    # Holds the Apple credentials.
+    environment: release
+    timeout-minutes: 45
+    permissions:
+      # To make the draft release and upload to it.
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Refuses a tag that AppDelegate.version does not agree with. A tag can carry a suffix after
+      # a dash, as v0.2.0-test1 does: a trial of this workflow, for the same version.
+      - run: |
+          version="${GITHUB_REF_NAME#v}"
+          app/scripts/package.sh --version "${version%%-*}"
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      # Refuses an unsigned or unnotarised build, so a run without the secrets publishes nothing.
+      - run: app/scripts/verify-release.sh
+        env:
+          OPENSMARTPEN_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      - run: >
+          gh release create "$GITHUB_REF_NAME" app/release/*.dmg app/release/*.zip
+          --draft --verify-tag --generate-notes --title "Open Smart Pen ${GITHUB_REF_NAME#v}"
+        env:
+          GH_TOKEN: ${{ github.token }}
