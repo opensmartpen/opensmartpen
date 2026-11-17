@@ -336,7 +336,7 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **Without the Apple credentials the build is unsigned and says so.** It is not signed with the certificate of the Mac: a release is from the Developer ID or it is not a release.
 - **The secrets have Brainio's names** (`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`), in a GitHub environment `release`. The team id is the variable `APPLE_TEAM_ID`.
 - **Seen:** an unsigned build makes both files, the DMG holds the app, the Applications link and the license texts, and the verify script refuses it. **The signed path ran on 2026-11-17,** from the trial tag `v0.2.0-test1`: Apple accepted the app and the DMG, the verify script passed, and Gatekeeper on another Mac accepts the downloaded DMG as "Notarized Developer ID".
-- **Not seen: the app under the hardened runtime.** A release is the first build that has it. Bluetooth and the photo from an iPhone must be tried on the first signed build.
+- **The app under the hardened runtime was tried on 2026-11-17;** see the entry of that date on the signer.
 - **The credentials are in the environment** (2026-11-17). The certificate came from the Brainio secrets; the API key is new and is named `opensmartpen` in App Store Connect.
 - Open: a Homebrew cask that points at the zip.
 
@@ -369,3 +369,4 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **The team id did not change,** so macOS keeps the Bluetooth permission of an app that was signed with the earlier certificate.
 - **The certificate ends on 2027-12-17.** An app signed before that date keeps working. A release after it needs a new certificate.
 - **Seen:** a trial release was signed with it, and Apple accepted the app and the DMG.
+- **The signed app was used on a Mac** (2026-11-17), from the DMG of a trial release: the pen connected and its writing arrived, a photo came from an iPhone, and Settings → About showed the update rows. This is the first build under the hardened runtime, and it needed no entitlement. The check for updates gave an error, which is correct while the repository is private and has no published release.
