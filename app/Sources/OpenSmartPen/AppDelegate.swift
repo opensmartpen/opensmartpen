@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// So a new notebook is only looked up when the pen moves to a different one, rather than on
     /// every dot.
     private var lastSeenBook: String?
+    private var firstInk = FirstInk()
     private var viewer: Viewer!
     private var viewerWindow: ViewerWindowController?
     private var pinnedPanel: PinnedPanelController?
@@ -101,12 +102,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // quiet, and a pen that is tapping is not quiet.
             coordinator.penActive()
             guard !controlBooks.contains(page.surface) else { return }
-            // A notebook Open Smart Pen has never met gets a record the moment a page arrives from it,
-            // so its pages stop being anonymous and start being rendered. Silent on purpose:
-            // writing is never interrupted to ask a question.
+            // A notebook Open Smart Pen has never met gets a record as soon as real writing
+            // arrives from it, so its pages stop being anonymous and start being rendered. Silent
+            // on purpose: writing is never interrupted to ask a question. Not at the first
+            // sample, though. Near the edge of a sheet the pen now and then reads the wrong
+            // notebook for one sample, and a record made from that is a notebook of one dot.
             if lastSeenBook != page.surface {
+                if books.current(for: page.surface) == nil {
+                    guard firstInk.isNotebook(page.surface) else { return }
+                    books.ensureRecord(for: page)
+                }
                 lastSeenBook = page.surface
-                books.ensureRecord(for: page)
             }
             viewer.receive(page: page, dot: dot, event: event)
         }

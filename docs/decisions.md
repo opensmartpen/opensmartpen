@@ -322,3 +322,11 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **What it gives up:** it does not prove that the key may write. Only a write proves that. A key that may not write shows at the first upload, as a notification.
 - **Checked against a real bucket** (an S3-compatible service, not Amazon): right keys pass, a wrong secret is refused with 403, a bucket that is not there is refused.
 - **For an agent:** nothing to do. A bucket connected before this date can still hold the old marker file; it is not a note.
+
+## 2026-11-17 — One sample on unknown paper is not a notebook
+
+- **What was seen.** On 2026-11-16, while a pen wrote near the edge of a sheet, three notebooks appeared in two seconds, each with one page of one dot. A fourth was older. The pen had reported some 330 samples it could not read in the same minutes. Each stray dot had the right page number and a wrong notebook: near the edge the pen sees part of the printed pattern, and now and then reads the notebook wrongly.
+- **Why the rule that existed did not stop it.** The router already refused to make a notebook from a speck. But the app made the notebook's record at the first live sample, so the screen could show the writing, and by the time the stroke reached the router the notebook existed, and a speck on a notebook that exists is kept.
+- **The fix.** The record is made after six samples in a row on the same unknown paper, about a twentieth of a second of writing. One sample is left to the router, which drops it and says so in the log. The first six samples of the first stroke in a new notebook are not drawn live; the stroke is whole once the pen lifts.
+- **Not done.** The stray sample is not moved to the page being written on. Its notebook was read wrongly, so its position may be too.
+
