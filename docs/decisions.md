@@ -359,5 +359,5 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **The UI layer does not know Sparkle.** `Updater` is in the app target and hands the About tab three closures. This is the rule of ADR-003, applied to a second library.
 - **Every bundle carries the framework,** because the binary links it. `make-app.sh` signs the parts of Sparkle from the inside out, then the app.
 - **Seen:** the app builds, an unsigned package has the framework and a valid signature, and the About tab shows the two rows in the design window. **Not seen:** an update. That needs the key, a public repository and two releases.
-- Open: `FEED_KEY` is empty until the key is made. Until then a release has no updater, and `verify-release.sh` refuses it.
+- **The key was made on 2026-11-17.** The private half is in the login keychain of the Mac that made it (account `opensmartpen`) and in the `release` environment. A copy belongs in a password manager: without it, installed apps cannot take the next update.
 - Open: the alert of an automatic check in a menubar app. Sparkle can show it behind other windows; it has a "gentle reminder" for this, not used yet.

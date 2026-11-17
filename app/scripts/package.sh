@@ -31,7 +31,7 @@ REPO_URL="https://github.com/opensmartpen/opensmartpen"
 FEED_URL="$REPO_URL/releases/latest/download/appcast.xml"
 # The public half of SPARKLE_PRIVATE_KEY. It goes into every release, and an installed app takes
 # only an update that the private half signed. Not a secret. Empty: a release has no updater.
-FEED_KEY=""
+FEED_KEY="ENkHxtk6jiHzJ/CzNEN/+5VD3rxoucSBtXGNAsoo8JI="
 
 want=
 while [ $# -gt 0 ]; do
