@@ -96,6 +96,8 @@ public enum Scenario: String, CaseIterable {
             s.lastPublish = nil
             s.recent = []
             s.status = .asleep
+            // Never paired means no pen in the row: this is a person who has no pen yet.
+            s.pens = []
             s.agents = []
             s.asksForAgent = true
             s.newAgents = [PanelModel.NewAgent(id: "claude-code", title: "Claude Code",

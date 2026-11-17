@@ -90,6 +90,10 @@ public struct StatusPanel: View {
         .frame(width: 252)
     }
 
+    /// No pen has ever connected and there is no page: a person who is here for the first time
+    /// and may not have a pen at all. The panel then leads with the one thing they can do.
+    private var startsWithoutAPen: Bool { model.pens.isEmpty && model.recent.isEmpty }
+
     /// Whatever goes at the very top: the pens, or — before any pen has ever connected — the one
     /// sentence that gets you a pen.
     @ViewBuilder private var top: some View {
@@ -98,9 +102,31 @@ public struct StatusPanel: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
         } else {
-            wakeHint
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
+            VStack(alignment: .leading, spacing: 9) {
+                // Nothing written yet, and no pen: the one thing a person can do now is add a
+                // page some other way, so that is what the panel leads with.
+                if startsWithoutAPen {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("Start without a pen")
+                            .font(.system(size: 11.5, weight: .medium))
+                        Text("Add a photo of a handwritten page. Your agent reads it like a page from a pen.")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button(action: model.addPhoto) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "camera").font(.system(size: 11))
+                                Text("Add a Photo")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(InkButtonStyle(filled: true))
+                    }
+                }
+                wakeHint
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
         }
     }
 
@@ -254,12 +280,14 @@ public struct StatusPanel: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(InkButtonStyle(filled: agent.recommended))
+                    // One filled button in the panel at a time: the next thing to do. With no
+                    // page yet that is adding one, and an agent has nothing to read.
+                    .buttonStyle(InkButtonStyle(filled: agent.recommended && !startsWithoutAPen))
                 }
                 caption("Or use an agent you have")
             }
             Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
-                .buttonStyle(InkButtonStyle(filled: model.newAgents.isEmpty))
+                .buttonStyle(InkButtonStyle(filled: model.newAgents.isEmpty && !startsWithoutAPen))
         }
     }
 
@@ -286,7 +314,8 @@ public struct StatusPanel: View {
     }
 
     private var wakeHint: some View {
-        Text("Press the pen's button to wake it, and keep it near this Mac.")
+        Text(model.recent.isEmpty ? "Have a pen? Press its button to wake it, and keep it near this Mac."
+             : "Press the pen's button to wake it, and keep it near this Mac.")
             .font(.system(size: 11.5))
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -319,7 +348,10 @@ public struct StatusPanel: View {
                 // become key, so the keystrokes it advertised often did nothing — and a
                 // shortcut that fails half the time is worse than no shortcut at all. The
                 // handler stays; only the promise is gone.
-                MenuItem(title: "Add Photo…", action: model.addPhoto)
+                // Not twice: while the top of the panel leads with it, it is not here too.
+                if !startsWithoutAPen {
+                    MenuItem(title: "Add Photo…", symbol: "camera", action: model.addPhoto)
+                }
                 MenuItem(title: "Settings…", action: model.openConfig)
                 MenuItem(title: "Quit") { NSApp.terminate(nil) }
             }
@@ -828,6 +860,8 @@ private struct PinButton: View {
 
 private struct MenuItem: View {
     let title: String
+    /// A small picture before the words, for the one entry that is looked for and not read.
+    var symbol: String?
     var shortcut: String?
     let action: () -> Void
     @State private var hovering = false
@@ -835,6 +869,9 @@ private struct MenuItem: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
+                if let symbol {
+                    Image(systemName: symbol).font(.system(size: 12)).frame(width: 16)
+                }
                 Text(title).font(.system(size: 13))
                 Spacer(minLength: 8)
                 if let shortcut {

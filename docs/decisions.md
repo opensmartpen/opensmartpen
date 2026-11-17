@@ -394,3 +394,11 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **Not decided: when to act.** A second signal for "the person is done" was proposed and dropped. An instruction is often one line on a page that is never finished, so the question is about a line, not a page. The likely answer is a mark on the paper that the agent acts on once.
 - Accepted: two agents can be set up for one folder, and both would transcribe every page. The panel lists them; nothing stops it.
 
+## 2026-11-17 — The panel leads with the next thing to do
+
+- **The battery bars stay.** They were taken out for an afternoon, with a red dot at the pencil for a low battery, and put back: the owner wanted them.
+- **"Add Photo…" stays with the actions, with a camera before the words.** Nine places were drawn and looked at: in the row of pens (an icon, a tile, beside the pin), under the pens, in the notebook list (a last line, the heading), and at the foot. A pen works by itself and the row shows its state, so an action there reads as a third device. Words are found by reading and an icon by guessing; Apple's own menu bar menus put state at the top and actions in words at the foot.
+- **A first time with no pen is a different panel.** With no pen ever connected and no page, the top says "Start without a pen" and has one filled button, "Add a Photo". The line about waking a pen goes under it, for the person who has one. The entry at the foot is not shown as well.
+- **One filled button at a time,** and it is the next step: a page first, then an agent to read it.
+- To come back to: this was agreed as good enough for now.
+
