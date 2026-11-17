@@ -335,7 +335,7 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **The DMG is signed and notarised too,** not only the app in it. Gatekeeper judges the disk image first.
 - **Without the Apple credentials the build is unsigned and says so.** It is not signed with the certificate of the Mac: a release is from the Developer ID or it is not a release.
 - **The secrets have Brainio's names** (`MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`, `APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`), in a GitHub environment `release`. The team id is the variable `APPLE_TEAM_ID`.
-- **Seen:** an unsigned build makes both files, the DMG holds the app, the Applications link and the license texts, and the verify script refuses it. **Not seen:** the signed path. There is no Developer ID yet, so the keychain import, the notarisation and the workflow have not run.
+- **Seen:** an unsigned build makes both files, the DMG holds the app, the Applications link and the license texts, and the verify script refuses it. **The signed path ran on 2026-11-17,** from the trial tag `v0.2.0-test1`: Apple accepted the app and the DMG, the verify script passed, and Gatekeeper on another Mac accepts the downloaded DMG as "Notarized Developer ID".
 - **Not seen: the app under the hardened runtime.** A release is the first build that has it. Bluetooth and the photo from an iPhone must be tried on the first signed build.
 - **The credentials are in the environment** (2026-11-17). The certificate came from the Brainio secrets; the API key is new and is named `opensmartpen` in App Store Connect.
 - Open: updates. Planned: Sparkle in the app, with "Check for Updates…", and a Homebrew cask that points at the zip.
