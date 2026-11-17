@@ -14,6 +14,8 @@ Do not add these back to the app: transcription, actions, agents, calls to an ag
 
 If you change what the app uploads, where, or when, update `docs/processing.md` in the same change, and tell the user that the agent needs the new instructions.
 
+An agent learns all of this from the website, not from this repository: `https://opensmartpen.org/llms.txt` is where it starts, and `https://opensmartpen.org/agent-install.md` is the setup text it follows. Both are files in the `web` repository (`public/llms.txt`, `public/agent-install.md`), and `docs/agent-install.md` here is the original of the second. While you work, and before each commit and push, ask whether the change makes either of them wrong: a new file or field an agent reads, a new way to add a page, a changed name in the app, a changed rule. If it does, change `docs/agent-install.md` here, copy it to the `web` repository, correct `llms.txt` there, and tell the user that the website needs a push.
+
 ## Working here
 
 - The app is in `app/`. Build and test from there: `swift build`, `swift test`. The tests need no network and no pen.

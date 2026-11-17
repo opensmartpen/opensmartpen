@@ -174,6 +174,7 @@ public final class S3Sync: Publishing {
         case "json": return "application/json"
         case "png": return "image/png"
         case "txt": return "text/plain; charset=utf-8"
+        case "md": return "text/markdown; charset=utf-8"
         default: return "application/octet-stream"
         }
     }

@@ -61,6 +61,52 @@ public enum Agents {
         return text + "."
     }
 
+    /// Claude Desktop, by the name macOS knows it under.
+    public static let claudeDesktop = "com.anthropic.claudefordesktop"
+
+    /// A link that opens Claude Desktop on a new Cowork task with the notes folder, and the
+    /// sentence already typed. Nothing is sent: the person reads it and presses Return. Claude asks
+    /// once whether another app may give it the folder.
+    ///
+    /// Cowork is where a person who is not a programmer works with Claude and with folders. Its
+    /// cost is speed: it wakes on its own schedule, hourly at the shortest.
+    ///
+    /// The form `claude://cowork/new?q=…&folder=…` was read out of Claude Desktop 5.11 and tried
+    /// on 2026-11-17.
+    public static func coworkLink(folder: URL, bucket: String?) -> URL? {
+        var parts = URLComponents()
+        parts.scheme = "claude"
+        parts.host = "cowork"
+        parts.path = "/new"
+        parts.queryItems = [URLQueryItem(name: "q", value: sentence(folder: folder, bucket: bucket)),
+                            URLQueryItem(name: "folder", value: folder.path)]
+        return parts.url
+    }
+
+    /// A script for the Terminal that starts Claude Code in the notes folder with the sentence.
+    /// Claude Code can run commands, so it can set up a check that costs nothing while no page
+    /// changes and runs each minute: the fast way. The prompt is sent as the session starts;
+    /// Claude Code still asks before it does anything.
+    public static func terminalScript(folder: URL, bucket: String?, claude: URL) -> String {
+        func quoted(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        return """
+        #!/bin/zsh
+        cd \(quoted(folder.path)) || exit 1
+        exec \(quoted(claude.path)) \(quoted(sentence(folder: folder, bucket: bucket)))
+
+        """
+    }
+
+    /// Where the `claude` command is, among the places its installers put it. An app started by
+    /// macOS does not have the person's shell path, so the places are named.
+    public static func claudeCommand(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+        let places = [home.appendingPathComponent(".local/bin/claude"),
+                      home.appendingPathComponent(".claude/local/claude"),
+                      URL(fileURLWithPath: "/opt/homebrew/bin/claude"),
+                      URL(fileURLWithPath: "/usr/local/bin/claude")]
+        return places.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
     /// The agents recorded in the folder on this Mac, in order, up to the first gap.
     public static func load(root: URL) -> [AgentRecord] {
         var out: [AgentRecord] = []

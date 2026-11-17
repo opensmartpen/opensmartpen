@@ -17,7 +17,11 @@ public enum PhotoPages {
     /// File a picture as the next page. The picture is written first and the file that names it
     /// second, so a page that can be seen always has its picture. Returns the page, or nil when
     /// nothing could be written.
-    public static func add(image: Data, ext: String, books: BookRegistry, root: URL,
+    ///
+    /// `taken` is when the photo was taken, when that is known. It is written beside `added`,
+    /// the moment the picture was filed, because the two can be far apart: a photo from last week
+    /// added today. Neither is when the page was written; a photo does not say.
+    public static func add(image: Data, ext: String, taken: Date? = nil, books: BookRegistry, root: URL,
                            app: String, now: Date = Date()) -> PageRef? {
         guard let first = PageID(surface: surface, page: 1) else { return nil }
         let isNew = books.current(for: surface) == nil
@@ -34,7 +38,8 @@ public enum PhotoPages {
         let name = "p\(number).\(ext.lowercased())"
         let ms = Int(now.timeIntervalSince1970 * 1000)
         let lines = JSONL.metaLine(captured: ms, app: app, sdk: "") + "\n"
-            + "{\"t\":\"image\",\"file\":\"\(name)\",\"added\":\(ms)}\n"
+            + "{\"t\":\"image\",\"file\":\"\(name)\",\"added\":\(ms)"
+            + (taken.map { ",\"taken\":\(Int($0.timeIntervalSince1970 * 1000))" } ?? "") + "}\n"
         do {
             try FileManager.default.createDirectory(at: rawDirectory, withIntermediateDirectories: true)
             try image.write(to: rawDirectory.appendingPathComponent(name), options: .atomic)

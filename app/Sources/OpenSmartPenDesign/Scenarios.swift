@@ -98,6 +98,10 @@ public enum Scenario: String, CaseIterable {
             s.status = .asleep
             s.agents = []
             s.asksForAgent = true
+            s.newAgents = [PanelModel.NewAgent(id: "claude-code", title: "Claude Code",
+                                               note: "Fast \u{00B7} recommended", recommended: true),
+                           PanelModel.NewAgent(id: "claude-cowork", title: "Claude Cowork",
+                                               note: "Simple \u{00B7} checks each hour", recommended: false)]
         case .newNotebook:
             // A fresh pad is not announced, it simply appears: a second row with the same title
             // and a folder of its own. Nothing is asked, and no notice is posted (ADR-002).

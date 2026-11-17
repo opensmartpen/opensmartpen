@@ -126,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.onAddPhoto = { [weak self] in self?.addPhoto() }
+        model.onSetUpAgent = { [weak self] id in self?.setUpAgent(id) }
         model.onOpenPage = { [weak self] page in self?.showViewer(page) }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         coordinator.onOfflineStored = { [weak self] pages in
@@ -228,7 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if books.current(for: PhotoPages.surface) == nil {
             menu.addEntry("Use the Sample Page") { [weak self] in self?.addSample() }
         }
-        menu.onImage = { [weak self] data, ext in self?.file(photo: data, ext: ext, show: true) }
+        menu.onImage = { [weak self] data, ext in self?.file(photo: data, ext: ext, show: true, taken: Date()) }
         menu.onFinish = { [weak self] in self?.photoImport = nil }
         photoImport = menu
         panel?.staysOpen = true
@@ -246,7 +247,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.warn("\(url.lastPathComponent) is not a picture; not added")
             return
         }
-        file(photo: data, ext: url.pathExtension, show: true)
+        file(photo: data, ext: url.pathExtension, show: true, taken: Self.created(url))
+    }
+
+    /// When a file was made, which for a photo that says nothing itself is the best there is.
+    private static func created(_ url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate
     }
 
     /// A picture of a page from a file.
@@ -264,7 +270,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.warn("could not read \(url.lastPathComponent)")
                 continue
             }
-            file(photo: data, ext: url.pathExtension.isEmpty ? "jpg" : url.pathExtension, show: true)
+            file(photo: data, ext: url.pathExtension.isEmpty ? "jpg" : url.pathExtension, show: true,
+                 taken: Self.created(url))
         }
     }
 
@@ -277,9 +284,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// A photo is complete when it arrives: there is no pen to wait for. So it is drawn and sent now.
-    private func file(photo: Data, ext: String, show: Bool) {
-        guard let page = PhotoPages.add(image: photo, ext: ext, books: books, root: config.dataURL,
-                                        app: Self.clientID) else { return }
+    ///
+    /// `taken` is what is known about when the photo was taken, if the picture does not say it
+    /// itself: now, for one that came from the iPhone a moment ago; the file's own date, for a file.
+    private func file(photo: Data, ext: String, show: Bool, taken: Date? = nil) {
+        guard let page = PhotoPages.add(image: photo, ext: ext, taken: PageImager.taken(inPhoto: photo) ?? taken,
+                                        books: books, root: config.dataURL, app: Self.clientID) else { return }
         Log.info("a photo is filed as \(page)")
         coordinator.recoverPending()
         coordinator.publish(pages: [page], reason: "photo") { [weak self] _ in
@@ -290,10 +300,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Start a new agent in the notes folder, with the sentence that sends it to the website.
+    private func setUpAgent(_ id: String) {
+        panel?.dismiss()
+        switch id {
+        case "claude-cowork":
+            if let link = Agents.coworkLink(folder: config.dataURL, bucket: config.s3Account()?.destination) {
+                NSWorkspace.shared.open(link)
+            }
+        case "claude-code":
+            guard let claude = Agents.claudeCommand() else { return }
+            // A `.command` file is what the Terminal runs when it is opened. It needs no
+            // permission to control the Terminal, which a script sent to it would.
+            let script = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Set up Open Smart Pen agent.command")
+            do {
+                try Agents.terminalScript(folder: config.dataURL, bucket: config.s3Account()?.destination,
+                                          claude: claude)
+                    .write(to: script, atomically: true, encoding: .utf8)
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+                NSWorkspace.shared.open(script)
+            } catch {
+                Log.warn("could not start Claude Code in the Terminal: \(error)")
+            }
+        default:
+            break
+        }
+    }
+
     /// Read the agents' records: from the folder each time, from the bucket once a minute.
     private func checkAgents() {
         model.agentSentence = Agents.sentence(folder: config.dataURL,
                                               bucket: config.s3Account()?.destination)
+        // Asked each time: an agent can be installed or removed while this runs.
+        var found: [PanelModel.NewAgent] = []
+        if Agents.claudeCommand() != nil {
+            found.append(.init(id: "claude-code", title: "Claude Code", note: "Fast \u{00B7} recommended",
+                               recommended: true))
+        }
+        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: Agents.claudeDesktop) != nil {
+            found.append(.init(id: "claude-cowork", title: "Claude Cowork",
+                               note: found.isEmpty ? "Checks each hour" : "Simple \u{00B7} checks each hour",
+                               recommended: found.isEmpty))
+        }
+        if model.newAgents != found { model.newAgents = found }
         if let client = sync.connection, Date().timeIntervalSince(agentsAsked) > 60 {
             agentsAsked = Date()
             let root = config.dataURL

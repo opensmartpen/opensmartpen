@@ -67,6 +67,29 @@ final class AgentsAndPhotosTests: XCTestCase {
             .hasSuffix("on my Mac, and in the bucket https://s3.example/notes."))
     }
 
+    /// The link was read out of Claude Desktop and tried by hand. This holds its form still.
+    func testTheCoworkLinkOpensTheNotesFolderWithThePromptTyped() throws {
+        let folder = URL(fileURLWithPath: "/Users/someone/Open Smart Pen")
+        let link = try XCTUnwrap(Agents.coworkLink(folder: folder, bucket: nil))
+        XCTAssertEqual(link.scheme, "claude")
+        XCTAssertEqual(link.host, "cowork")
+        XCTAssertEqual(link.path, "/new")
+        let items = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+        let query = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(query["folder"], "/Users/someone/Open Smart Pen")
+        XCTAssertEqual(query["q"], Agents.sentence(folder: folder, bucket: nil))
+        XCTAssertFalse(query["q"]!.hasPrefix("/"), "Claude refuses a prompt that starts with a slash")
+    }
+
+    /// A folder with a space or a quote in its name must not break out of the command.
+    func testTheTerminalScriptQuotesWhatItIsGiven() {
+        let script = Agents.terminalScript(folder: URL(fileURLWithPath: "/Users/o'neil/Open Smart Pen"),
+                                           bucket: nil, claude: URL(fileURLWithPath: "/opt/homebrew/bin/claude"))
+        XCTAssertTrue(script.hasPrefix("#!/bin/zsh\n"))
+        XCTAssertTrue(script.contains(#"cd '/Users/o'\''neil/Open Smart Pen' || exit 1"#))
+        XCTAssertTrue(script.contains("exec '/opt/homebrew/bin/claude' '"))
+    }
+
     // MARK: photos
 
     func testEachPhotoIsTheNextPageOfOneNotebook() throws {
@@ -86,6 +109,23 @@ final class AgentsAndPhotosTests: XCTestCase {
         // And it is a page like any other: found by its raw path, with no strokes in it.
         XCTAssertEqual(PageRef(rawRelativePath: first.rawRelativePath), first)
         XCTAssertTrue(RawReader.strokes(at: root.appendingPathComponent(first.rawRelativePath), page: first.page).isEmpty)
+    }
+
+    /// A photo has two times, and they can be a week apart: when it was taken, and when it was added.
+    func testAPhotoKeepsWhenItWasTakenBesideWhenItWasAdded() throws {
+        let books = BookRegistry(root: root)
+        let taken = Date(timeIntervalSince1970: 1_700_000_000)
+        let added = Date(timeIntervalSince1970: 1_700_600_000)
+        let page = try XCTUnwrap(PhotoPages.add(image: Data("one".utf8), ext: "jpg", taken: taken,
+                                                books: books, root: root, app: "test", now: added))
+        let text = try String(contentsOf: root.appendingPathComponent(page.rawRelativePath), encoding: .utf8)
+        XCTAssertTrue(text.contains(#"{"t":"image","file":"p1.jpg","added":1700600000000,"taken":1700000000000}"#))
+
+        // The sample page was never taken by a camera, and says nothing.
+        let sample = try XCTUnwrap(PhotoPages.add(image: Data("two".utf8), ext: "png",
+                                                  books: books, root: root, app: "test", now: added))
+        let line = try String(contentsOf: root.appendingPathComponent(sample.rawRelativePath), encoding: .utf8)
+        XCTAssertTrue(line.contains(#"{"t":"image","file":"p2.png","added":1700600000000}"#))
     }
 
     func testAPageOfStrokesIsNotAPhoto() throws {

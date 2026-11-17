@@ -46,6 +46,24 @@ final class PageImager: PageImaging {
         return PageImage.png(raster)
     }
 
+    /// When a photo says it was taken, from what the camera wrote into it. Nil when it says
+    /// nothing, which is the case for a picture the iPhone hands over directly.
+    static func taken(inPhoto data: Data) -> Date? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let all = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let exif = all[kCGImagePropertyExifDictionary] as? [CFString: Any],
+              let text = exif[kCGImagePropertyExifDateTimeOriginal] as? String else { return nil }
+        let format = DateFormatter()
+        format.locale = Locale(identifier: "en_US_POSIX")
+        // The camera writes its own local time, and its distance from UTC beside it when it knows.
+        if let offset = exif[kCGImagePropertyExifOffsetTimeOriginal] as? String {
+            format.dateFormat = "yyyy:MM:dd HH:mm:ssxxx"
+            if let date = format.date(from: text + offset) { return date }
+        }
+        format.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        return format.date(from: text)
+    }
+
     /// The longest side a page picture is given. A model scales anything longer back down.
     static let longestSide = 1568
 

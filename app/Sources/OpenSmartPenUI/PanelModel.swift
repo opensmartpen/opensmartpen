@@ -464,6 +464,29 @@ public final class PanelModel: ObservableObject {
     @Published private(set) var agentSentenceCopied = false
     /// What a person gives their agent. Set by the app delegate, which knows the folder and the bucket.
     public var agentSentence = ""
+    /// A way to set up a new agent with something that is on this Mac.
+    public struct NewAgent: Identifiable, Equatable {
+        public let id: String
+        public var title: String
+        /// What choosing it means, in two or three words.
+        public var note: String
+        public var recommended: Bool
+
+        public init(id: String, title: String, note: String, recommended: Bool) {
+            self.id = id
+            self.title = title
+            self.note = note
+            self.recommended = recommended
+        }
+    }
+
+    /// What can be set up from here, best first. Empty when nothing suitable is installed, and
+    /// then the only way is to copy the instructions. Set by the app delegate.
+    @Published public var newAgents: [NewAgent] = []
+    /// Set by the app delegate, which knows how each one is started.
+    public var onSetUpAgent: ((String) -> Void)?
+
+    func setUp(_ agent: NewAgent) { onSetUpAgent?(agent.id) }
 
     /// Called by the app delegate when it has read the agents' records.
     public func setAgents(_ records: [AgentRecord], changed: Date?, now: Date = Date()) {
@@ -581,6 +604,7 @@ public final class PanelModel: ObservableObject {
         /// The agents shown. With none, and `asksForAgent`, the panel asks for one.
         public var agents: [AgentRow] = []
         public var asksForAgent = false
+        public var newAgents: [NewAgent] = []
 
         public init() {}
     }
@@ -606,6 +630,7 @@ public final class PanelModel: ObservableObject {
         chosenPen = snapshot.openPen
         agents = snapshot.agents
         asksForAgent = snapshot.asksForAgent
+        newAgents = snapshot.newAgents
         agentSentence = "Read the setup text and set yourself up."
         markActiveBook()
     }

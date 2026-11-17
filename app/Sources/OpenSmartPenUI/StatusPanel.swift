@@ -237,13 +237,37 @@ public struct StatusPanel: View {
         VStack(alignment: .leading, spacing: 7) {
             Text("Connect your agent")
                 .font(.system(size: 11.5, weight: .medium))
-            Text("Your agent turns pages into text. Copy the instructions and paste them into it.")
+            Text("Your agent turns pages into text.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            // What is on this Mac, best first. Each one opens with the instructions already in it.
+            if !model.newAgents.isEmpty {
+                caption("Set up a new agent")
+                ForEach(model.newAgents) { agent in
+                    Button { model.setUp(agent) } label: {
+                        VStack(spacing: 1) {
+                            Text(agent.title)
+                            Text(agent.note)
+                                .font(.system(size: 9.5))
+                                .opacity(0.75)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(InkButtonStyle(filled: agent.recommended))
+                }
+                caption("Or use an agent you have")
+            }
             Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
-                .buttonStyle(InkButtonStyle(filled: true))
+                .buttonStyle(InkButtonStyle(filled: model.newAgents.isEmpty))
         }
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10.5))
+            .foregroundStyle(.tertiary)
+            .padding(.top, 2)
     }
 
     /// Who reads the pages. A dot for each: the accent while it keeps up, grey when pages changed
@@ -256,29 +280,7 @@ public struct StatusPanel: View {
                 .padding(.horizontal, 9)
                 .padding(.bottom, 2)
             ForEach(model.agents) { agent in
-                Button { model.open(agent) } label: {
-                    HStack(spacing: 9) {
-                        Circle()
-                            .fill(agent.behind ? Color.primary.opacity(0.25) : Ink.accent)
-                            .frame(width: 7, height: 7)
-                            .frame(width: 15)
-                        Text(agent.name)
-                            .font(.system(size: 13))
-                            .foregroundStyle(agent.behind ? .secondary : .primary)
-                            .lineLimit(1)
-                        Spacer(minLength: 6)
-                        Text(agent.alive)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.tertiary)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(agent.url == nil)
-                .help(agent.url?.absoluteString ?? "")
+                AgentRowView(agent: agent) { model.open(agent) }
             }
         }
     }
@@ -556,6 +558,50 @@ private struct BatteryBar: View {
 ///
 /// Which pen is in your hand is reported, not asked for: picking one up opens it. A click is
 /// only for looking at a pen you are not holding, or for putting the controls away.
+/// One agent in the panel. It lights up under the pointer like a notebook does, when there is
+/// somewhere to go: an agent that gave no address is a line of text, not a button.
+private struct AgentRowView: View {
+    let agent: PanelModel.AgentRow
+    let open: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 9) {
+                Circle()
+                    .fill(agent.behind ? Color.primary.opacity(0.25) : Ink.accent)
+                    .frame(width: 7, height: 7)
+                    .frame(width: 15)
+                Text(agent.name)
+                    .font(.system(size: 13))
+                    .foregroundStyle(agent.behind ? .secondary : .primary)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Text(agent.alive)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                // An agent that gave an address can be opened from here, and says so.
+                if agent.url != nil {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 8.5, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(RoundedRectangle(cornerRadius: 5)
+            .fill(hovering && agent.url != nil ? Color.primary.opacity(0.07) : Color.clear))
+        .onHover { hovering = $0 }
+        .disabled(agent.url == nil)
+        .help(agent.url.map { "Open \(agent.name): \($0.absoluteString)" } ?? "\(agent.name) gave no address to open")
+    }
+}
+
 private struct PenTile: View {
     let pen: PanelModel.PenRow
     let open: Bool
