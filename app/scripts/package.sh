@@ -2,7 +2,8 @@
 # Package Open Smart Pen for a public download, into release/:
 #
 #   OpenSmartPen-<version>.dmg   what a person downloads and opens
-#   OpenSmartPen-<version>.zip   the same app, for Homebrew and for an updater
+#   OpenSmartPen-<version>.zip   the same app, for Homebrew and for the updater
+#   appcast.xml                  the update feed: it names this version and the zip
 #
 # With the Apple credentials in the environment, the app and the DMG are signed with the
 # Developer ID, notarised by Apple, and carry the ticket. Without them the build is the same
@@ -15,6 +16,7 @@
 #   APPLE_API_KEY          an App Store Connect API key, the text of the .p8
 #   APPLE_API_KEY_ID       the id of that key
 #   APPLE_API_ISSUER       the issuer id of that key
+#   SPARKLE_PRIVATE_KEY    the key that signs the update, as Sparkle's generate_keys -x writes it
 #
 # usage: scripts/package.sh [--version <version>]
 #   --version   refuse the build unless the source says this version. The release workflow passes
@@ -22,6 +24,14 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+# Where an installed app looks for a newer version: a file of the newest published release. A
+# draft or a trial release is not the newest release, so an installed app does not see one.
+REPO_URL="https://github.com/opensmartpen/opensmartpen"
+FEED_URL="$REPO_URL/releases/latest/download/appcast.xml"
+# The public half of SPARKLE_PRIVATE_KEY. It goes into every release, and an installed app takes
+# only an update that the private half signed. Not a secret. Empty: a release has no updater.
+FEED_KEY="ENkHxtk6jiHzJ/CzNEN/+5VD3rxoucSBtXGNAsoo8JI="
 
 want=
 while [ $# -gt 0 ]; do
@@ -41,7 +51,11 @@ fi
 # before them does not.
 link="${MAC_CSC_LINK:-}" password="${MAC_CSC_KEY_PASSWORD:-}"
 key="${APPLE_API_KEY:-}" key_id="${APPLE_API_KEY_ID:-}" issuer="${APPLE_API_ISSUER:-}"
-unset MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+update_key="${SPARKLE_PRIVATE_KEY:-}"
+unset MAC_CSC_LINK MAC_CSC_KEY_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER \
+  SPARKLE_PRIVATE_KEY
+# The tag the files are downloaded from. The release workflow gives it; a trial tag has a suffix.
+tag="${OPENSMARTPEN_RELEASE_TAG:-v$version}"
 
 work="$(mktemp -d)"
 keychain=
@@ -103,6 +117,9 @@ notarise() {
 
 rm -rf release
 mkdir -p release
+if [ -n "$FEED_KEY" ]; then
+  export OPENSMARTPEN_FEED_URL="$FEED_URL" OPENSMARTPEN_FEED_KEY="$FEED_KEY"
+fi
 scripts/make-app.sh "$work/app"
 app="$work/app/Open Smart Pen.app"
 zip="release/OpenSmartPen-$version.zip"
@@ -118,6 +135,33 @@ fi
 
 # ditto keeps the signature's extended attributes, which zip drops.
 ditto -c -k --keepParent "$app" "$zip"
+
+# The feed. The signature is of the zip as it is published, so it is made after the ticket is on
+# the app and the zip is final. An installed app refuses a zip that this signature does not fit.
+if [ -n "$FEED_KEY" ] && [ -n "$update_key" ]; then
+  printf '%s' "$update_key" > "$work/update-key"
+  enclosure="$(.build/artifacts/sparkle/Sparkle/bin/sign_update --ed-key-file "$work/update-key" "$zip")"
+  cat > release/appcast.xml <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Open Smart Pen</title>
+    <item>
+      <title>$version</title>
+      <pubDate>$(LC_ALL=C date -u "+%a, %d %b %Y %H:%M:%S +0000")</pubDate>
+      <link>$REPO_URL/releases/tag/$tag</link>
+      <sparkle:version>$version</sparkle:version>
+      <sparkle:shortVersionString>$version</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>$REPO_URL/releases/tag/$tag</sparkle:releaseNotesLink>
+      <enclosure url="$REPO_URL/releases/download/$tag/$(basename "$zip")" type="application/octet-stream" $enclosure/>
+    </item>
+  </channel>
+</rss>
+XML
+else
+  echo "package: no update feed (FEED_KEY or SPARKLE_PRIVATE_KEY is not set)" >&2
+fi
 
 # The disk image: the app, and the Applications folder to drag it to.
 mkdir "$work/dmg"
@@ -135,4 +179,4 @@ if [ "$signed" = true ]; then
 else
   echo "packaged v$version, UNSIGNED (no MAC_CSC_LINK); Gatekeeper refuses it on another Mac:"
 fi
-ls -lh "$dmg" "$zip"
+ls -lh release/

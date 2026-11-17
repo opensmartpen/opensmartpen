@@ -21,5 +21,14 @@ the app, as a whole, is distributed under the GNU General Public License,
 version 3. The source code in this repository stays under the Apache
 License, Version 2.0, and can be used under that license without NISDK3.
 
+The app also links Sparkle, the software update framework:
+
+    https://github.com/sparkle-project/Sparkle
+    Copyright 2006-2013 Andy Matuschak, and the Sparkle Project contributors
+    License: MIT
+
+Sparkle is not in this repository either. A built copy of the app contains
+it, with its license text.
+
 Open Smart Pen is not affiliated with NeoLAB Convergence, Inc. "Neo smartpen"
 and "Ncode" are trademarks of NeoLAB Convergence, Inc.

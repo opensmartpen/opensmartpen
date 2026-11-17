@@ -29,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var penState: PenState!
     private var settingsWindow: SettingsWindowController?
     private var settingsStore: SettingsStore?
+    /// Nil in a build with no update feed.
+    private var updater: Updater?
     /// So a new notebook is only looked up when the pen moves to a different one, rather than on
     /// every dot.
     private var lastSeenBook: String?
@@ -54,6 +56,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             notifier.post(Notice(key: "config", title: "Open Smart Pen config is invalid",
                                  body: "\(configURL.path): \(error.localizedDescription). Running with defaults."))
         }
+        // Started here, not when the settings open: the regular check runs from the start.
+        updater = Updater()
         Log.info("Open Smart Pen \(Self.version) starting; notes \(config.dataURL.path); config \(configURL.path)")
 
         // The notes live in the folder. The bucket is a copy of it, made as pages go quiet, and
@@ -401,8 +405,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindow == nil {
             let log = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Logs/OpenSmartPen/opensmartpen.log")
-            let info = AppInfo(version: Self.version, sdk: Self.sdkVersion.replacingOccurrences(of: "/", with: " "),
+            var info = AppInfo(version: Self.version, sdk: Self.sdkVersion.replacingOccurrences(of: "/", with: " "),
                                configURL: configURL, logURL: log)
+            info.updates = updater?.controls
             let store = SettingsStore(pens: pens, books: books, config: config, configURL: configURL,
                                       info: info, link: session)
             settingsStore = store
