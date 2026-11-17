@@ -361,3 +361,11 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **Seen:** the app builds, an unsigned package has the framework and a valid signature, and the About tab shows the two rows in the design window. **Not seen:** an update. That needs the key, a public repository and two releases.
 - **The key was made on 2026-11-17.** The private half is in the login keychain of the Mac that made it (account `opensmartpen`) and in the `release` environment. A copy belongs in a password manager: without it, installed apps cannot take the next update.
 - Open: the alert of an automatic check in a menubar app. Sparkle can show it behind other windows; it has a "gentle reminder" for this, not used yet.
+
+## 2026-11-17 — The signer is Apoco s.r.o.
+
+- **Changed:** a release is signed as "Developer ID Application: Apoco s.r.o. (WDDLH339C8)". The company was renamed, and the certificate from the Brainio secrets was made before that, so it said Brainsoft s.r.o. This replaces the signer named on 2026-11-16.
+- **A certificate of this project's own,** made on this date. The Brainio certificate is not used here and still signs Brainio.
+- **The team id did not change,** so macOS keeps the Bluetooth permission of an app that was signed with the earlier certificate.
+- **The certificate ends on 2027-12-17.** An app signed before that date keeps working. A release after it needs a new certificate.
+- **Seen:** a trial release was signed with it, and Apple accepted the app and the DMG.
