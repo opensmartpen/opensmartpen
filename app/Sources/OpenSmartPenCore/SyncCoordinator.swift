@@ -106,6 +106,7 @@ public final class SyncCoordinator {
             let pages = try write(strokes, now: now)
             tracker.touch(admit(pages), at: now)
             strokesSince.live += strokes.count
+            Telemetry.count(.strokes, ["stroke.source": "live"], by: strokes.count)
             Log.debug("live: \(strokes.count) stroke(s) on \(pages.map(\.description).sorted().joined(separator: ", "))")
         } catch {
             Log.error("writing live strokes failed: \(error)")
@@ -123,6 +124,7 @@ public final class SyncCoordinator {
             let pages = Set(admit(try write(strokes, now: now)))
             tracker.markQuiet(pages)
             strokesSince.offline += strokes.count
+            Telemetry.count(.strokes, ["stroke.source": "offline"], by: strokes.count)
             Log.info("offline: \(strokes.count) stroke(s) on \(pages.count) page(s)")
             onOfflineStored?(pages)
             return pages
@@ -235,6 +237,9 @@ public final class SyncCoordinator {
                     // during it belong to the next one.
                     self.strokesSince.live -= written.live
                     self.strokesSince.offline -= written.offline
+                }
+                if case .success = result {
+                    Telemetry.count(.pagesPublished, ["sync.reason": .string(Self.kind(of: reason))], by: sorted.count)
                 }
                 self.finish(result, snapshot: snapshot, pages: sorted.count, now: now)
                 completion?(result)

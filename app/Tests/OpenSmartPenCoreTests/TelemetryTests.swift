@@ -74,6 +74,11 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(sink.events.map(\.body), ["connect timed out", "upload failed (1x): The bucket refused the keys."])
         XCTAssertEqual(sink.events.map(\.level), [.warn, .error])
         XCTAssertEqual(sink.names, [], "a line from the log has words and no event name")
+        // Where in the source the line was written: the same words for everybody, not a path of this Mac.
+        XCTAssertEqual(sink.events[0].attributes["code.file.path"], .string("OpenSmartPenCoreTests/TelemetryTests.swift"))
+        XCTAssertNotNil(sink.events[0].attributes["code.line.number"])
+        XCTAssertEqual(sink.total(.problems, where: ["log.level": "warn"]), 2, "the local one is counted, and not said")
+        XCTAssertEqual(sink.total(.problems, where: ["log.level": "error"]), 1)
     }
 
     func testANoticeIsReportedByItsKindAndNeverByItsWords() {
@@ -148,6 +153,73 @@ final class TelemetryTests: XCTestCase {
         XCTAssertTrue(sink.spans.allSatisfy(\.ended))
     }
 
+    func testEachPieceOfTimedWorkIsMeasuredOnceByItsNameAndHowItEnded() {
+        let sink = RecordingTelemetry()
+        Telemetry.start(sink)
+        Telemetry.span("pages.draw") { _ in }
+        let drain = Telemetry.begin("pen.drain", ["pen.mac": "9c7bd2000001"])
+        drain.end(error: "the pen disconnected")
+        drain.end(error: "superseded")      // a pen that drops ends the same work a second time
+
+        let durations = sink.measurements.filter { $0.metric == .operationDuration }
+        XCTAssertEqual(durations.map(\.attributes), [
+            ["operation": "pages.draw", "outcome": "ok"],
+            ["operation": "pen.drain", "outcome": "error"],
+        ], "the name and the outcome, and never the address of the pen")
+        XCTAssertTrue(durations.allSatisfy { $0.value >= 0 && $0.value < 5 })
+        XCTAssertEqual(sink.spans[1].error, "the pen disconnected", "the first ending stands")
+    }
+
+    func testWhatHappensInsideTimedWorkIsTiedToIt() {
+        let sink = RecordingTelemetry()
+        Telemetry.start(sink)
+        Telemetry.event("ui.sync_now")
+        Telemetry.span("sync.publish") { _ in
+            Telemetry.span("s3.upload") { _ in Log.error("upload failed (1x): The bucket refused the keys.") }
+            Telemetry.event("sync.recovered")
+        }
+        XCTAssertEqual(sink.eventSpans, [nil, "s3.upload", "sync.publish"])
+    }
+
+    // MARK: metrics
+
+    func testNumbersWaitToo_ACounterAddsUpAndAGaugeKeepsTheLast() {
+        Telemetry.hold()
+        for _ in 0..<(Telemetry.holdLimit * 2) { Telemetry.count(.strokes, ["stroke.source": "live"]) }
+        Telemetry.count(.strokes, ["stroke.source": "offline"], by: 40)
+        Telemetry.measure(.pagesPending, 3)
+        Telemetry.measure(.pagesPending, 1)
+        Telemetry.event("app.start")
+
+        let sink = RecordingTelemetry()
+        Telemetry.start(sink)
+        XCTAssertEqual(sink.names, ["app.start"], "an hour of writing does not push the events out")
+        XCTAssertEqual(sink.total(.strokes, where: ["stroke.source": "live"]), Double(Telemetry.holdLimit * 2))
+        XCTAssertEqual(sink.total(.strokes, where: ["stroke.source": "offline"]), 40)
+        XCTAssertEqual(sink.measurements.filter { $0.metric == .pagesPending }.map(\.value), [1])
+    }
+
+    func testNoNumberIsKeptWhileTelemetryIsOff() {
+        Telemetry.count(.strokes, by: 3)
+        Telemetry.measure(.pagesPending, 2)
+        let sink = RecordingTelemetry()
+        Telemetry.start(sink)
+        XCTAssertEqual(sink.measurements, [])
+    }
+
+    func testEveryMetricHasAUnitAndIsOnTheListOfWhatIsSent() throws {
+        XCTAssertEqual(Set(TelemetryMetric.all.map(\.name)).count, TelemetryMetric.all.count, "a name is used once")
+        let list = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("docs/telemetry.md")
+        let text = try String(contentsOf: list, encoding: .utf8)
+        for metric in TelemetryMetric.all {
+            XCTAssertFalse(metric.unit.isEmpty, metric.name)
+            XCTAssertFalse(metric.description.isEmpty, metric.name)
+            XCTAssertTrue(text.contains("`\(metric.name)`"), "\(metric.name) is sent and is not in docs/telemetry.md")
+        }
+    }
+
     func testAnUploadIsReportedWithHowMuchWasWrittenAndNotWhat() throws {
         let sink = RecordingTelemetry()
         Telemetry.start(sink)
@@ -186,6 +258,19 @@ final class TelemetryTests: XCTestCase {
         let puts = sink.spans.filter { $0.name == "s3.put" }
         XCTAssertEqual(Set(puts.map { $0.attributes["file.kind"] }), [.string("book"), .string("strokes")])
         XCTAssertTrue(puts.allSatisfy { $0.parent == "s3.upload" })
+        // The same upload, as numbers that are added up.
+        XCTAssertEqual(sink.total(.strokes, where: ["stroke.source": "live"]), 3)
+        XCTAssertEqual(sink.total(.pagesPublished, where: ["sync.reason": "manual"]), 1)
+        XCTAssertEqual(sink.total(.filesUploaded), Double(puts.count))
+        XCTAssertEqual(sink.total(.filesUploaded, where: ["file.kind": "strokes"]), 1)
+        XCTAssertGreaterThan(sink.total(.bytesUploaded, where: ["file.kind": "strokes"]), 0)
+        XCTAssertEqual(Set(sink.measurements.filter { $0.metric == .operationDuration }.compactMap { $0.attributes["operation"] }),
+                       Set(sink.spans.map { TelemetryValue.string($0.name) }))
+        for measurement in sink.measurements {
+            for case let .string(text) in measurement.attributes.values {
+                XCTAssertFalse(text.contains("/"), "\(measurement.metric.name) carries a path: \(text)")
+            }
+        }
         // The folder of a notebook, the name of a file: none of it is on any span.
         for span in sink.spans {
             for case let .string(text) in span.attributes.values {
@@ -301,10 +386,32 @@ final class TelemetryTests: XCTestCase {
         XCTAssertEqual(plan.notes, ["OTEL_EXPORTER_OTLP_PROTOCOL=grpc is not supported; using http/protobuf"])
     }
 
-    func testWithBothSignalsTurnedOffTelemetryIsOff() {
-        XCTAssertEqual(plan(on, ["OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
-                                                  "OTEL_LOGS_EXPORTER": "none", "OTEL_TRACES_EXPORTER": "none"]),
+    func testWithEverySignalTurnedOffTelemetryIsOff() {
+        XCTAssertEqual(plan(on, ["OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318", "OTEL_LOGS_EXPORTER": "none",
+                                 "OTEL_TRACES_EXPORTER": "none", "OTEL_METRICS_EXPORTER": "none"]),
                        .off(reason: "no collector to send to"))
+    }
+
+    func testMetricsHaveAnAddressAnIntervalAndAWayToBeAddedUp() {
+        guard case let .on(usual) = plan(on, ["OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318"]) else { return XCTFail("off") }
+        XCTAssertEqual(usual.metrics?.absoluteString, "http://localhost:4318/v1/metrics")
+        XCTAssertEqual(usual.metricInterval, 60)
+        XCTAssertFalse(usual.deltaMetrics)
+
+        guard case let .on(changed) = plan(on, [
+            "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "http://localhost:9090/api/v1/otlp/v1/metrics",
+            "OTEL_METRIC_EXPORT_INTERVAL": "15000",
+            "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "Delta",
+        ]) else { return XCTFail("off") }
+        XCTAssertEqual(changed.metrics?.absoluteString, "http://localhost:9090/api/v1/otlp/v1/metrics")
+        XCTAssertEqual(changed.metricInterval, 15)
+        XCTAssertTrue(changed.deltaMetrics)
+
+        guard case let .on(without) = plan(on, ["OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+                                                "OTEL_METRICS_EXPORTER": "none"]) else { return XCTFail("off") }
+        XCTAssertNil(without.metrics)
+        XCTAssertNotNil(without.logs)
     }
 
     // MARK: the config and the state

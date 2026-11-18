@@ -6,11 +6,11 @@ import OpenTelemetryProtocolExporterHttp
 import OpenTelemetrySdk
 import PersistenceExporter
 
-/// Sends the app's events and spans with the OpenTelemetry SDK, over OTLP/HTTP.
+/// Sends the app's events, spans and metrics with the OpenTelemetry SDK, over OTLP/HTTP.
 ///
 /// An event is a log record with an event name. A warning or an error from the log is a log
-/// record with only a body. A span is a span. There are no metrics: every count the makers want
-/// can be made from the events, on the other side.
+/// record with only a body. A span is a span. A metric is an instrument of the SDK, made the
+/// first time a number is given to it: a counter, a histogram or a gauge.
 ///
 /// What is to be sent is written to disk first, in the caches folder, and sent from there. A
 /// laptop is often offline, and this app is used most where it is: away from the desk. What was
@@ -24,6 +24,13 @@ final class OTelTelemetry: TelemetrySink {
     private let tracer: Tracer
     private let tracerProvider: TracerProviderSdk
     private let logProcessor: BatchLogRecordProcessor?
+    private let meterProvider: MeterProviderSdk?
+    private let meter: MeterSdk?
+    /// The instruments made so far, by the name of the metric. One lock keeps the tables.
+    private let instruments = NSLock()
+    private var counters: [String: LongCounterSdk] = [:]
+    private var histograms: [String: DoubleHistogramMeterSdk] = [:]
+    private var gauges: [String: DoubleGaugeSdk] = [:]
     /// One run of the app, from start to stop. It ties the events of one run together.
     private let session = UUID().uuidString.lowercased()
 
@@ -70,6 +77,32 @@ final class OTelTelemetry: TelemetrySink {
         tracerProvider = tracerBuilder.build()
         tracer = tracerProvider.get(instrumentationName: Self.scope, instrumentationVersion: AppDelegate.version)
 
+        if let url = plan.metrics {
+            let exporter = OtlpHttpMetricExporter(
+                endpoint: url, config: config,
+                aggregationTemporalitySelector: plan.deltaMetrics ? AggregationTemporality.deltaPreferred()
+                    : AggregationTemporality.alwaysCumulative(),
+                envVarHeaders: none, requeueOnFailure: false)
+            let folder = queue.appendingPathComponent("metrics")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let kept = PersistenceMetricExporterDecorator(metricExporter: exporter, storageURL: folder,
+                                                          performancePreset: Self.queuePreset)
+            let reader = PeriodicMetricReaderBuilder(exporter: kept)
+                .setInterval(timeInterval: plan.metricInterval)
+                .build()
+            let provider = MeterProviderSdk.builder()
+                .setResource(resource: resource)
+                .registerMetricReader(reader: reader)
+                .build()
+            meterProvider = provider
+            meter = provider.meterBuilder(name: Self.scope)
+                .setInstrumentationVersion(instrumentationVersion: AppDelegate.version)
+                .build()
+        } else {
+            meterProvider = nil
+            meter = nil
+        }
+
         // What the SDK says about itself: a collector that cannot be reached, a body that could
         // not be made. To the log at debug, and never back into telemetry.
         OpenTelemetry.registerFeedbackHandler { message in Log.debug("telemetry: \(message)") }
@@ -110,7 +143,7 @@ final class OTelTelemetry: TelemetrySink {
 
     // MARK: TelemetrySink
 
-    func record(_ event: TelemetryEvent) {
+    func record(_ event: TelemetryEvent, in span: TelemetrySpan?) {
         var attributes = event.attributes.mapValues(Self.value)
         attributes["session.id"] = .string(session)
         var builder = logger.logRecordBuilder()
@@ -120,7 +153,34 @@ final class OTelTelemetry: TelemetrySink {
             .setAttributes(attributes)
             .setBody(.string(event.body ?? event.name ?? ""))
         if let name = event.name { builder = builder.setEventName(name) }
+        // The work it happened in. A collector then shows the line beside the upload that wrote it.
+        if let span = span as? OTelSpan { builder = builder.setSpanContext(span.span.context) }
         builder.emit()
+    }
+
+    func measure(_ metric: TelemetryMetric, _ value: Double, attributes: [String: TelemetryValue]) {
+        guard let meter else { return }
+        // One run of the app is not said on a metric: each run would be a series of its own.
+        let attributes = attributes.mapValues(Self.value)
+        instruments.lock(); defer { instruments.unlock() }
+        switch metric.kind {
+        case .counter:
+            let counter = counters[metric.name] ?? meter.counterBuilder(name: metric.name)
+                .setUnit(metric.unit).setDescription(metric.description).build()
+            counter.add(value: Int(value.rounded()), attributes: attributes)
+            counters[metric.name] = counter
+        case .histogram:
+            let histogram = histograms[metric.name] ?? meter.histogramBuilder(name: metric.name)
+                .setUnit(metric.unit).setDescription(metric.description)
+                .setExplicitBucketBoundariesAdvice(TelemetryMetric.secondsBuckets).build()
+            histogram.record(value: value, attributes: attributes)
+            histograms[metric.name] = histogram
+        case .gauge:
+            let gauge = gauges[metric.name] ?? meter.gaugeBuilder(name: metric.name)
+                .setUnit(metric.unit).setDescription(metric.description).build()
+            gauge.record(value: value, attributes: attributes)
+            gauges[metric.name] = gauge
+        }
     }
 
     func begin(_ name: String, attributes: [String: TelemetryValue], parent: TelemetrySpan?) -> TelemetrySpan {
@@ -137,11 +197,13 @@ final class OTelTelemetry: TelemetrySink {
     func flush(timeout: TimeInterval = 2) {
         logProcessor?.forceFlush(timeout: timeout)
         tracerProvider.forceFlush(timeout: timeout)
+        _ = meterProvider?.forceFlush()
     }
 
     func shutdown() {
         _ = logProcessor?.shutdown(explicitTimeout: 2)
         tracerProvider.shutdown()
+        _ = meterProvider?.shutdown()
     }
 
     private static func value(_ value: TelemetryValue) -> AttributeValue {
@@ -205,7 +267,7 @@ final class OTelTelemetry: TelemetrySink {
 }
 
 private final class OTelSpan: TelemetrySpan {
-    var span: Span
+    var span: any Span
 
     init(_ span: Span) { self.span = span }
 

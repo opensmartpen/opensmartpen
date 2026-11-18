@@ -104,9 +104,12 @@ public final class S3Sync: Publishing {
     /// One file to the bucket, timed. Telemetry gets what kind of file it was and how big, and
     /// not its name.
     private func put(_ path: String, data: Data, contentType: String, with client: S3Client) throws {
-        try Telemetry.span("s3.put", ["file.kind": .string(Self.kind(of: path)), "file.size": .int(data.count)]) { _ in
+        let kind = Self.kind(of: path)
+        try Telemetry.span("s3.put", ["file.kind": .string(kind), "file.size": .int(data.count)]) { _ in
             try client.put(path, data: data, contentType: contentType)
         }
+        Telemetry.count(.filesUploaded, ["file.kind": .string(kind)])
+        Telemetry.count(.bytesUploaded, ["file.kind": .string(kind)], by: data.count)
     }
 
     /// What a file is, by where it is: the strokes of a page, its picture, a record.

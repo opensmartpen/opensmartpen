@@ -41,6 +41,89 @@ public struct TelemetryEvent: Equatable {
     }
 }
 
+/// A number the app keeps: how many, how long, how much there is right now.
+///
+/// A metric is added up before it leaves, so it says nothing about one moment or one page. Its
+/// attributes are a few fixed words (`live`, `quiet`, `strokes`), never an address of a pen and
+/// never anything a person named: each different value is one more series kept for ever.
+public struct TelemetryMetric: Hashable {
+    public enum Kind: String {
+        /// Only goes up: strokes written, files uploaded.
+        case counter
+        /// How a value is spread: how long an upload takes.
+        case histogram
+        /// What it is now: how many pages wait.
+        case gauge
+    }
+
+    public let name: String
+    public let kind: Kind
+    /// As OpenTelemetry asks: `s`, `By`, or a thing in braces, `{page}`.
+    public let unit: String
+    public let description: String
+
+    init(_ name: String, _ kind: Kind, unit: String, _ description: String) {
+        self.name = name
+        self.kind = kind
+        self.unit = unit
+        self.description = description
+    }
+}
+
+extension TelemetryMetric {
+    /// How long each piece of timed work took. One histogram for every span, so a new span is
+    /// measured from the day it is written. `operation` is the name of the span.
+    public static let operationDuration = TelemetryMetric(
+        "opensmartpen.operation.duration", .histogram, unit: "s",
+        "How long a piece of work took, by its name and whether it went well")
+    public static let strokes = TelemetryMetric(
+        "opensmartpen.strokes", .counter, unit: "{stroke}",
+        "Strokes that arrived from a pen, live or from pen memory")
+    public static let pagesPublished = TelemetryMetric(
+        "opensmartpen.pages.published", .counter, unit: "{page}",
+        "Pages in an upload that went well, by why the upload began")
+    public static let filesUploaded = TelemetryMetric(
+        "opensmartpen.upload.files", .counter, unit: "{file}",
+        "Files put in the bucket, by kind of file")
+    public static let bytesUploaded = TelemetryMetric(
+        "opensmartpen.upload.bytes", .counter, unit: "By",
+        "Bytes put in the bucket, by kind of file")
+    public static let photos = TelemetryMetric(
+        "opensmartpen.photos", .counter, unit: "{photo}",
+        "Photos filed as pages, by where they came from")
+    public static let problems = TelemetryMetric(
+        "opensmartpen.log.problems", .counter, unit: "{line}",
+        "Lines written to the log as a warning or an error, by level")
+    public static let pagesPending = TelemetryMetric(
+        "opensmartpen.pages.pending", .gauge, unit: "{page}",
+        "Pages written and not yet uploaded")
+    public static let uploadFailures = TelemetryMetric(
+        "opensmartpen.sync.consecutive_failures", .gauge, unit: "{upload}",
+        "Uploads that failed in a row; 0 when the last one went well")
+    public static let pensPaired = TelemetryMetric(
+        "opensmartpen.pens.paired", .gauge, unit: "{pen}", "Pens this Mac accepts")
+    public static let pensConnected = TelemetryMetric(
+        "opensmartpen.pens.connected", .gauge, unit: "{pen}", "Pens connected now")
+    public static let books = TelemetryMetric(
+        "opensmartpen.books", .gauge, unit: "{book}", "Notebooks this Mac knows")
+    public static let agents = TelemetryMetric(
+        "opensmartpen.agents", .gauge, unit: "{agent}", "Agents that read the bucket")
+    public static let memory = TelemetryMetric(
+        "process.memory.usage", .gauge, unit: "By", "Memory the app holds")
+    public static let uptime = TelemetryMetric(
+        "process.uptime", .gauge, unit: "s", "How long the app has run")
+
+    /// Every metric the app keeps. `docs/telemetry.md` lists each of them, and a test checks it.
+    public static let all: [TelemetryMetric] = [
+        operationDuration, strokes, pagesPublished, filesUploaded, bytesUploaded, photos, problems,
+        pagesPending, uploadFailures, pensPaired, pensConnected, books, agents, memory, uptime,
+    ]
+
+    /// The steps of a histogram of seconds: from a file that goes up in a blink to a notebook
+    /// that takes minutes to leave pen memory.
+    public static let secondsBuckets: [Double] = [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600]
+}
+
 /// Work that takes time: an upload, a drain of pen memory. It has a start, an end and a result.
 public protocol TelemetrySpan: AnyObject {
     func set(_ key: String, _ value: TelemetryValue)
@@ -54,8 +137,11 @@ extension TelemetrySpan {
 
 /// Where events go. In the app that is the OpenTelemetry SDK; in a test, a list.
 public protocol TelemetrySink: AnyObject {
-    func record(_ event: TelemetryEvent)
+    /// `span` is the work the event happened in, if it happened in any: the sink's own span.
+    func record(_ event: TelemetryEvent, in span: TelemetrySpan?)
     func begin(_ name: String, attributes: [String: TelemetryValue], parent: TelemetrySpan?) -> TelemetrySpan
+    /// Add to a counter, put a value in a histogram, or say what a gauge is now.
+    func measure(_ metric: TelemetryMetric, _ value: Double, attributes: [String: TelemetryValue])
 }
 
 /// What the app tells its makers about how it is used and what goes wrong.
@@ -73,30 +159,48 @@ public protocol TelemetrySink: AnyObject {
 public enum Telemetry {
     private enum State {
         case off
-        case holding([TelemetryEvent])
+        case holding(Held)
         case on(TelemetrySink)
+    }
+
+    /// What waits while the person has not been told.
+    private struct Held {
+        var events: [TelemetryEvent] = []
+        /// A counter and a gauge wait as one number for each set of attributes: a counter adds
+        /// up and a gauge keeps the last. So an hour of writing does not push the events out.
+        var numbers: [Series: Double] = [:]
+        /// A histogram needs each value.
+        var samples: [(series: Series, value: Double)] = []
+    }
+
+    private struct Series: Hashable {
+        let metric: TelemetryMetric
+        let attributes: [String: TelemetryValue]
     }
 
     private static let lock = NSLock()
     private static var state: State = .off
     private static var cleaner = TelemetryScrubber()
-    /// The most events kept while holding. The first hour of a first start fits many times over.
+    /// The most events and numbers kept while holding. The first hour of a first start fits
+    /// many times over.
     static let holdLimit = 500
 
     /// Keep events in memory until `start` or `stop`.
     public static func hold() {
         lock.lock(); defer { lock.unlock() }
-        if case .off = state { state = .holding([]) }
+        if case .off = state { state = .holding(Held()) }
     }
 
     /// Send events to this sink, the held ones first.
     public static func start(_ sink: TelemetrySink) {
         lock.lock()
-        var held: [TelemetryEvent] = []
-        if case let .holding(events) = state { held = events }
+        var held = Held()
+        if case let .holding(kept) = state { held = kept }
         state = .on(sink)
         lock.unlock()
-        for event in held { sink.record(event) }
+        for event in held.events { sink.record(event, in: nil) }
+        for (series, value) in held.numbers { sink.measure(series.metric, value, attributes: series.attributes) }
+        for sample in held.samples { sink.measure(sample.series.metric, sample.value, attributes: sample.series.attributes) }
     }
 
     /// Stop, and drop what was held. Nothing held is sent later.
@@ -125,8 +229,17 @@ public enum Telemetry {
     }
 
     /// A warning or an error from the log. `Log` calls this; nothing else needs to.
-    static func problem(_ level: TelemetryLevel, _ message: String) {
-        record(TelemetryEvent(name: nil, level: level, body: message))
+    ///
+    /// `file` is the place in the source that wrote the line, as `Module/File.swift`: the same
+    /// for everybody, so it is not a path on anybody's Mac.
+    static func problem(_ level: TelemetryLevel, _ message: String, file: String = "", line: Int = 0) {
+        var attributes: [String: TelemetryValue] = [:]
+        if !file.isEmpty {
+            attributes["code.file.path"] = .string(file)
+            attributes["code.line.number"] = .int(line)
+        }
+        record(TelemetryEvent(name: nil, level: level, attributes: attributes, body: message))
+        count(.problems, ["log.level": .string(level.rawValue)])
     }
 
     private static func record(_ event: TelemetryEvent) {
@@ -135,13 +248,45 @@ public enum Telemetry {
         switch state {
         case .off:
             lock.unlock()
-        case var .holding(events):
-            if events.count < holdLimit { events.append(scrub.clean(event)) }
-            state = .holding(events)
+        case var .holding(held):
+            if held.events.count < holdLimit { held.events.append(scrub.clean(event)) }
+            state = .holding(held)
             lock.unlock()
         case let .on(sink):
             lock.unlock()
-            sink.record(scrub.clean(event))
+            // The work this thread is in the middle of. The sink ties the event to it, so a
+            // line of the log can be read beside the upload that wrote it.
+            sink.record(scrub.clean(event), in: (stack.last as? ScrubbedSpan)?.inner)
+        }
+    }
+
+    // MARK: metrics
+
+    /// Add to a counter.
+    public static func count(_ metric: TelemetryMetric, _ attributes: [String: TelemetryValue] = [:], by amount: Int = 1) {
+        guard amount > 0 else { return }
+        measure(metric, Double(amount), attributes)
+    }
+
+    /// Put a value in a histogram, or say what a gauge is now.
+    public static func measure(_ metric: TelemetryMetric, _ value: Double, _ attributes: [String: TelemetryValue] = [:]) {
+        lock.lock()
+        let scrub = cleaner
+        switch state {
+        case .off:
+            lock.unlock()
+        case var .holding(held):
+            let series = Series(metric: metric, attributes: scrub.clean(attributes))
+            switch metric.kind {
+            case .counter: held.numbers[series, default: 0] += value
+            case .gauge: held.numbers[series] = value
+            case .histogram: if held.samples.count < holdLimit { held.samples.append((series, value)) }
+            }
+            state = .holding(held)
+            lock.unlock()
+        case let .on(sink):
+            lock.unlock()
+            sink.measure(metric, value, attributes: scrub.clean(attributes))
         }
     }
 
@@ -158,7 +303,7 @@ public enum Telemetry {
         lock.unlock()
         // The sink is given its own span as the parent, not the wrapper around it.
         let parent = (stack.last as? ScrubbedSpan)?.inner
-        return ScrubbedSpan(sink.begin(name, attributes: scrub.clean(attributes), parent: parent), scrub)
+        return ScrubbedSpan(sink.begin(name, attributes: scrub.clean(attributes), parent: parent), scrub, name: name)
     }
 
     /// Time work that is done on this thread. Work timed inside it becomes a part of it, and a
@@ -198,18 +343,34 @@ private final class SilentSpan: TelemetrySpan {
     func end(error: String?) {}
 }
 
-/// Cleans what is put on a span after it has started.
+/// Cleans what is put on a span after it has started, and measures how long the work took.
 private final class ScrubbedSpan: TelemetrySpan {
     let inner: TelemetrySpan
     private let scrubber: TelemetryScrubber
+    private let name: String
+    private let started = Date()
+    private let lock = NSLock()
+    private var ended = false
 
-    init(_ inner: TelemetrySpan, _ scrubber: TelemetryScrubber) {
+    init(_ inner: TelemetrySpan, _ scrubber: TelemetryScrubber, name: String) {
         self.inner = inner
         self.scrubber = scrubber
+        self.name = name
     }
 
     func set(_ key: String, _ value: TelemetryValue) { inner.set(key, scrubber.clean(value)) }
-    func end(error: String?) { inner.end(error: error.map(scrubber.clean)) }
+
+    func end(error: String?) {
+        lock.lock()
+        let first = !ended
+        ended = true
+        lock.unlock()
+        // Ended once. A pen that drops while its notebook is leaving ends the same work twice.
+        guard first else { return }
+        inner.end(error: error.map(scrubber.clean))
+        Telemetry.measure(.operationDuration, Date().timeIntervalSince(started),
+                          ["operation": .string(name), "outcome": error == nil ? "ok" : "error"])
+    }
 }
 
 /// Takes private text out of everything that leaves: every string on every event and span.
@@ -295,8 +456,16 @@ public final class RecordingTelemetry: TelemetrySink {
         public var error: String?
     }
 
+    public struct Measurement: Equatable {
+        public var metric: TelemetryMetric
+        public var value: Double
+        public var attributes: [String: TelemetryValue]
+    }
+
     private let lock = NSLock()
     private var kept: [TelemetryEvent] = []
+    private var within: [String?] = []
+    private var numbers: [Measurement] = []
     private var open: [Recorded] = []
 
     public init() {}
@@ -314,9 +483,32 @@ public final class RecordingTelemetry: TelemetrySink {
     /// The names of the events, in order, without the lines from the log.
     public var names: [String] { events.compactMap(\.name) }
 
-    public func record(_ event: TelemetryEvent) {
+    /// For each event, the name of the span it happened in, or nil.
+    public var eventSpans: [String?] {
+        lock.lock(); defer { lock.unlock() }
+        return within
+    }
+
+    public var measurements: [Measurement] {
+        lock.lock(); defer { lock.unlock() }
+        return numbers
+    }
+
+    /// The sum of what was given to a metric, for the measurements with these attributes.
+    public func total(_ metric: TelemetryMetric, where attributes: [String: TelemetryValue] = [:]) -> Double {
+        measurements.filter { m in m.metric == metric && attributes.allSatisfy { m.attributes[$0.key] == $0.value } }
+            .map(\.value).reduce(0, +)
+    }
+
+    public func record(_ event: TelemetryEvent, in span: TelemetrySpan?) {
         lock.lock(); defer { lock.unlock() }
         kept.append(event)
+        within.append(open.first { $0 === span }?.span.name)
+    }
+
+    public func measure(_ metric: TelemetryMetric, _ value: Double, attributes: [String: TelemetryValue]) {
+        lock.lock(); defer { lock.unlock() }
+        numbers.append(Measurement(metric: metric, value: value, attributes: attributes))
     }
 
     public func begin(_ name: String, attributes: [String: TelemetryValue], parent: TelemetrySpan?) -> TelemetrySpan {

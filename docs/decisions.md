@@ -433,3 +433,20 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **Seen against a collector.** A packaged build ran against the OpenTelemetry collector 0.165.0 in a container, with its `debug` exporter, before the default changed (so with `enabled: true` and the address in the config). Nothing arrived while the notice was unanswered; the first records came eleven seconds after it was answered, and `app.start`, which was held, was among them. Also seen: `ui.panel.opened`, `bluetooth.unavailable`, `notice.posted`, a WARN line of the log, and the resource attributes, all as `docs/telemetry.md` lists them. The words of the notification were not sent.
 - **Not seen:** a span (no page was made), turning it off in Settings and the queue being deleted, "Turn Off" in the notice, a crash report, and every event of a pen (the Mac had no pen and Bluetooth was refused).
 - **For an agent of the bucket:** nothing to do.
+
+## 2026-11-18 — Metrics too, and each line of the log says where it is from
+
+- **Asked for (Tomas):** better coverage, with spans, metrics, logs and events wherever they make sense.
+- **Metrics are sent now.** This replaces "events and spans, no metrics" of 2026-11-17. A count made from events on the other side is lost with each event that is lost, and a duration is not in an event at all. A metric is added up on the Mac, so it is cheap and it does not depend on every record arriving.
+- **One histogram for all timed work:** `opensmartpen.operation.duration`, by the name of the span and how it ended. `Telemetry` measures each span when it ends, so a span written later is measured with no more code.
+- **Counters where the app already counts:** strokes, pages published, files and bytes uploaded, photos, and warnings and errors of the log. **Gauges each minute:** pages that wait, uploads that failed in a row, pens, notebooks, agents, memory and uptime. Memory is there because the app runs for weeks, and a slow leak shows nowhere else.
+- **A metric never carries the address of a pen** or anything a person named. Each different value of an attribute is one more series kept for ever, and an address there would be one for each pen in the world. The events still carry it.
+- **Metrics leave each minute,** as the specification has it, as totals since the start (cumulative). `OTEL_METRIC_EXPORT_INTERVAL` and `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` change that. They wait in the queue on disk like the other two signals.
+- **While the person has not been told,** a counter waits as one sum and a gauge as its last value. Kept one by one, an hour of writing would push the events out of the 500 that are held.
+- **A line of the log says where it was written:** `code.file.path` and `code.line.number`. The path is the one in the source (`OpenSmartPenCore/S3Sync.swift`), the same on every Mac. The words of a message change between versions; the place finds the code.
+- **An event or a line written inside a span carries its trace.** Only for work timed on one thread (`Telemetry.span`): an upload and its parts. A pen connecting and a notebook leaving pen memory run across many callbacks, and what is logged meanwhile is not tied to them.
+- **New spans:** `app.launch`, `photo.add`, `transcript.fetch`, `s3.check`. **New events:** `update.found`, `update.downloaded`, `update.installing`, `update.failed`, `ui.update.check`, `ui.agent.setup`, `ui.viewer.layout`.
+- **Not added, on purpose:** a span for the check of the agents' records, which runs each minute and would be noise; the INFO lines of the log, which name pages and paths; a battery metric for each pen, which would need the pen's address.
+- **`update.failed` carries the kind of error and not its words:** Sparkle's sentence can name a file on the Mac.
+- Open: `transcript.fetch` is one span for each 30 seconds while the transcript pane is open. If that is noise on real use, report only the first fetch of a page.
+- **For an agent of the bucket:** nothing to do.

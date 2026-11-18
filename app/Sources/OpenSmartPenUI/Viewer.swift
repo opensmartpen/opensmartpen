@@ -93,9 +93,15 @@ public final class Viewer: ObservableObject {
     /// How the sheets are arranged. Set from the notebook's binding the first time, and yours
     /// from then on — a layout you chose should not be undone by opening a different notebook.
     @Published var layout: ViewerLayout = .single {
-        didSet { if layout != oldValue { chosenLayout = true; pan = .zero; loadVisible() } }
+        didSet {
+            guard layout != oldValue else { return }
+            // Only a layout a person chose is reported, not the one a notebook starts with.
+            if !settingDefaultLayout { Telemetry.event("ui.viewer.layout", ["viewer.layout": .string("\(layout)")]) }
+            chosenLayout = true; pan = .zero; loadVisible()
+        }
     }
     private var chosenLayout = false
+    private var settingDefaultLayout = false
     /// How much larger than a fitted sheet the paper is drawn. 1 is the whole sheet in the window.
     /// Kept across page turns: you zoom in to read a hand, and the next page is in the same hand.
     @Published private(set) var zoom: Double = 1
@@ -392,7 +398,9 @@ public final class Viewer: ObservableObject {
             strokes = [:]
             pages = availablePages(in: ref.folder)
             if !chosenLayout {
+                settingDefaultLayout = true
                 layout = .default(for: record?.binding ?? .pad)
+                settingDefaultLayout = false
                 chosenLayout = false        // still the notebook's choice, not yours
             }
         }

@@ -41,6 +41,7 @@ public struct TelemetryPlan: Equatable {
     /// Nil when this signal is not exported (`OTEL_LOGS_EXPORTER=none`).
     public var logs: URL?
     public var traces: URL?
+    public var metrics: URL?
     public var headers: [String: String] = [:]
     public var timeout: TimeInterval = 10
     public var gzip = true
@@ -50,6 +51,12 @@ public struct TelemetryPlan: Equatable {
     /// Seconds between two exports of what has gathered.
     public var logDelay: TimeInterval = 5
     public var spanDelay: TimeInterval = 5
+    /// Seconds between two exports of the metrics. A minute, as the specification has it.
+    public var metricInterval: TimeInterval = 60
+    /// True when each export carries only what was added since the last one
+    /// (`OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta`). Otherwise each carries the
+    /// total since the app started, which a collector can read after a lost export.
+    public var deltaMetrics = false
     /// Things in the environment that were not understood. For the log.
     public var notes: [String] = []
 
@@ -101,7 +108,10 @@ public struct TelemetryPlan: Equatable {
         }
         plan.logs = address("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", exporter: "OTEL_LOGS_EXPORTER", path: "/v1/logs")
         plan.traces = address("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", exporter: "OTEL_TRACES_EXPORTER", path: "/v1/traces")
-        guard plan.logs != nil || plan.traces != nil else { return .off(reason: "no collector to send to") }
+        plan.metrics = address("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", exporter: "OTEL_METRICS_EXPORTER", path: "/v1/metrics")
+        guard plan.logs != nil || plan.traces != nil || plan.metrics != nil else {
+            return .off(reason: "no collector to send to")
+        }
 
         plan.headers = builtInHeaders
         plan.headers.merge(settings.headers) { _, new in new }
@@ -110,6 +120,13 @@ public struct TelemetryPlan: Equatable {
         if let ms = value("OTEL_EXPORTER_OTLP_TIMEOUT").flatMap(Double.init), ms > 0 { plan.timeout = ms / 1000 }
         if let ms = value("OTEL_BLRP_SCHEDULE_DELAY").flatMap(Double.init), ms >= 0 { plan.logDelay = ms / 1000 }
         if let ms = value("OTEL_BSP_SCHEDULE_DELAY").flatMap(Double.init), ms >= 0 { plan.spanDelay = ms / 1000 }
+        if let ms = value("OTEL_METRIC_EXPORT_INTERVAL").flatMap(Double.init), ms >= 1000 { plan.metricInterval = ms / 1000 }
+        if let kind = value("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")?.lowercased() {
+            if kind == "delta" { plan.deltaMetrics = true }
+            else if kind != "cumulative" {
+                plan.notes.append("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=\(kind) is not supported; using cumulative")
+            }
+        }
         if let compression = value("OTEL_EXPORTER_OTLP_COMPRESSION")?.lowercased() {
             if compression == "none" { plan.gzip = false }
             else if compression != "gzip" { plan.notes.append("OTEL_EXPORTER_OTLP_COMPRESSION=\(compression) is not supported; using gzip") }
