@@ -23,7 +23,7 @@ Decided 2026-11-17, and off by default since 2026-11-18; see `docs/decisions.md`
 
 ## What is sent with everything
 
-Each event and span carries this, as OpenTelemetry resource attributes:
+Each event, span and metric carries this, as OpenTelemetry resource attributes:
 
 | Attribute | Value |
 | --- | --- |
@@ -36,7 +36,7 @@ Each event and span carries this, as OpenTelemetry resource attributes:
 | `device.model.identifier` | The kind of Mac, for example `Mac14,2`. Not a serial number |
 | `telemetry.sdk.*` | The name and version of the OpenTelemetry SDK |
 
-Each event and span also has a `session.id`: a random id for one run of the app.
+Each event and span also has a `session.id`: a random id for one run of the app. A metric does not: each run would be a series of its own.
 
 The collector also sees the internet address the request came from, as every server does.
 
@@ -58,12 +58,16 @@ An event is an OpenTelemetry log record with an event name.
 
 | Event | When | Attributes |
 | --- | --- | --- |
-| `app.start` | The app started | `pens.paired`, `pens.connected`, `bucket.connected`, `agents.count`, `books.count`, `pages.pending`, `app.uptime_seconds`, `app.launch` (`launchagent`, `bundle`, `binary`), `app.start_at_login`, `sync.quiet_seconds`, `pen.free_memory_after_sync`, `install.age_days` |
+| `app.start` | The app started | `pens.paired`, `pens.connected`, `bucket.connected`, `agents.count`, `books.count`, `pages.pending`, `app.uptime_seconds`, `app.launch` (`launchagent`, `bundle`, `binary`), `app.start_at_login`, `sync.quiet_seconds`, `pen.free_memory_after_sync`, `install.age_days`, `app.launch_seconds` (how long the start took) |
 | `app.heartbeat` | Every 6 hours while the app runs | The first seven attributes of `app.start` |
 | `app.stop` | The app was quit | The same seven |
 | `app.crash` | At the next start after a crash | `exception.type`, `exception.message`, `exception.stacktrace`, `crash.incident_id`, `crash.app_version`, `crash.os_version`, `crash.binary_uuid` |
 | `system.sleep`, `system.wake` | The Mac went to sleep or woke | `pens.connected` (sleep only) |
 | `notice.posted` | The app showed a notification | `notice.key` (for example `battery`, `publish-failed`), `pen.mac` when it is about a pen. Not the words of the notification |
+| `update.found` | The update feed names a newer version | `update.version` |
+| `update.downloaded` | A new version is downloaded and waits for a quiet moment | `update.version` |
+| `update.installing` | The app is about to install it and start again | `update.version` |
+| `update.failed` | A check, a download or an install stopped with an error | `error.domain`, `error.code`. Not the words of the error. "There is no newer version" is not reported |
 
 A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticReports`. The app reads only its own reports, and only those written after telemetry was first set up. From a report it takes the kind of crash, what the system said about it, and the thread that crashed, with the names of the binaries and no paths. At most five reports are sent at one start.
 
@@ -89,7 +93,7 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | --- | --- | --- |
 | `book.added` | A notebook was seen for the first time, or a new copy began | `book.surface` (the code printed on the paper, for example `s3/o27/b450`: a product, not your notebook), `book.known`, `book.copies`, `book.copy_signal` |
 | `photo.added` | A photo was filed as a page | `photo.source` (`file`, `drop`, `sample`, `device`), `photo.format`, `photo.bytes` |
-| `photo.rejected` | A file could not be added as a photo | `photo.source`, `photo.reason` |
+| `photo.rejected` | A file could not be added as a photo | `photo.source`, `photo.reason` (`not a picture`, `unreadable`, `not filed`) |
 | `sync.recovered` | Unsent pages were found at the start | `sync.pages` |
 | `agents.changed` | The number of agents changed | `agents.count`, `agents.behind` |
 | `transcript.looked_up` | The viewer asked for the text of a page, once for each page shown | `transcript.state` (`text`, `none`, `unavailable`) |
@@ -111,14 +115,17 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.ink.chosen`, `ui.width.chosen` | An ink or a width was chosen in the panel | `ink.color` or `ink.width`, `ink.target` (`writing now`, `pen default`) |
 | `ui.viewer.opened` | The viewer was opened | `viewer.target` (`page`, `latest`) |
 | `ui.viewer.transcript` | The transcript pane was opened or closed | `transcript.shown` |
+| `ui.viewer.layout` | A layout was chosen in the viewer | `viewer.layout` (`single`, `spread`, `pair`, `grid`). Not the layout a notebook starts with |
 | `ui.photo.menu` | "Add Photo…" was clicked | None |
 | `ui.agent.copy_instructions` | "Copy instructions" was clicked | `ui.source` (`panel`, `settings`) |
 | `ui.agent.opened` | An agent's link was opened | None |
+| `ui.agent.setup` | "Set up a new agent" was clicked for one of the agents the app offers | `agent.kind` (`claude-code`, `claude-cowork`) |
+| `ui.update.check` | "Check for Updates…" was clicked | None |
 | `ui.sync_now` | A sync was asked for by hand | `ui.source` |
 | `ui.notes.opened`, `ui.log.opened` | The notes folder or the log was opened | `ui.source` |
 | `ui.settings.opened` | The settings window was opened | None |
 | `ui.settings.tab` | A tab of the settings window came on screen | `settings.tab` |
-| `ui.setting.changed` | A setting was changed | `setting.name`, `setting.value`. For: `startAtLogin`, `quietSeconds`, `deleteFromPenAfterPublish`, `lowBatteryPercent`, `memoryWarnPercent`, and `telemetry` when it is turned on |
+| `ui.setting.changed` | A setting was changed | `setting.name`, `setting.value`. For: `startAtLogin`, `quietSeconds`, `deleteFromPenAfterPublish`, `lowBatteryPercent`, `memoryWarnPercent`, `updateAutomatically`, and `telemetry` when it is turned on |
 | `ui.pen.add`, `ui.pen.add_cancelled` | "Add Pen…" or its "Cancel" was clicked | None |
 | `ui.pen.forget` | "Remove" was confirmed for a pen | `pen.mac` |
 | `ui.pen.edited` | A pen was changed in Settings | `pen.mac`, and what changed: `pen.renamed` (only that it was), `pen.mode`, `pen.ink`, `pen.width` |
@@ -133,18 +140,52 @@ A span is work with a start, an end and a result.
 
 | Span | What | Attributes |
 | --- | --- | --- |
+| `app.launch` | The start of the app, from the config being read to the app being ready | `app.launch` |
 | `pen.connect` | The Bluetooth link to a pen, from the first call to the link | `pen.mac`, `pen.paired` |
 | `pen.drain` | One notebook leaving pen memory, to the upload and the delete from the pen | `pen.mac`, `book.surface`, `drain.strokes`, `drain.pages` |
 | `sync.publish` | One upload of the waiting pages | `sync.reason` (`quiet`, `manual`, `photo`, `drain`, `other`), `sync.pages`, `sync.files`, `sync.failures_before`, `strokes.live`, `strokes.offline` (how many strokes were written since the last upload, as numbers) |
 | `pages.draw` | Inside `sync.publish`: the page pictures are drawn | `pages.drawn`, `pages.changed` |
 | `s3.upload` | Inside `sync.publish`: the files go to the bucket. Only with a bucket | `s3.files` |
 | `s3.put` | Inside `s3.upload`: one file | `file.kind` (`strokes`, `picture`, `photo`, `book`, `pen`, `mode`, `palette`, `time`), `file.size`. Not the name of the file |
+| `s3.check` | The test of a bucket, when "Connect" is clicked | `http.response.status_code` |
+| `photo.add` | A photo being filed as a page: read, drawn and written | `photo.source`, `photo.format`, `photo.bytes` |
+| `transcript.fetch` | The viewer asking the bucket for the text of the page on screen. Every 30 seconds while the transcript pane is open | `transcript.state` (`text`, `none`, `unavailable`), `transcript.cached` (a copy was on this Mac), `transcript.size`. Not the page and not the text |
 
 A span that failed carries the error as its status.
 
+An event or a line of the log that is written while a span is open on the same thread carries the ids of that span and its trace. So an error of an upload can be read beside the upload.
+
+## Metrics
+
+A metric is a number that is added up on the Mac and sent each minute. It says how many or how long, and nothing about one page or one moment. A metric never carries the address of a pen, the install's `session.id`, or anything a person named. Its attributes are a few fixed words.
+
+| Metric | Kind, unit | What | Attributes |
+| --- | --- | --- | --- |
+| `opensmartpen.operation.duration` | Histogram, `s` | How long each span took. One metric for all of them | `operation` (the name of the span), `outcome` (`ok`, `error`) |
+| `opensmartpen.strokes` | Counter, `{stroke}` | Strokes that arrived from a pen | `stroke.source` (`live`, `offline`) |
+| `opensmartpen.pages.published` | Counter, `{page}` | Pages in an upload that went well | `sync.reason` |
+| `opensmartpen.upload.files` | Counter, `{file}` | Files put in the bucket | `file.kind` |
+| `opensmartpen.upload.bytes` | Counter, `By` | Bytes put in the bucket | `file.kind` |
+| `opensmartpen.photos` | Counter, `{photo}` | Photos filed as pages | `photo.source` |
+| `opensmartpen.log.problems` | Counter, `{line}` | Lines written to the log as a warning or an error, also the ones whose words stay on the Mac | `log.level` (`warn`, `error`) |
+| `opensmartpen.pages.pending` | Gauge, `{page}` | Pages written and not yet uploaded | None |
+| `opensmartpen.sync.consecutive_failures` | Gauge, `{upload}` | Uploads that failed in a row; 0 when the last one went well | None |
+| `opensmartpen.pens.paired` | Gauge, `{pen}` | Pens this Mac accepts | None |
+| `opensmartpen.pens.connected` | Gauge, `{pen}` | Pens connected now | None |
+| `opensmartpen.books` | Gauge, `{book}` | Notebooks this Mac knows | None |
+| `opensmartpen.agents` | Gauge, `{agent}` | Agents that read the bucket | None |
+| `process.memory.usage` | Gauge, `By` | The memory macOS counts against the app | None |
+| `process.uptime` | Gauge, `s` | How long the app has run | None |
+
+A gauge is read once each minute. A counter is the total since the app started (cumulative), unless `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` asks for delta.
+
+Metrics do not wait in the queue on disk. An export that does not arrive is not sent again: the next one carries the same totals. What was counted in a run that ended with no network is lost. With delta, each export that does not arrive is lost.
+
+For a developer: a metric is made in `TelemetryMetric` (in `Telemetry.swift`) and added to `TelemetryMetric.all`. A test fails when a metric is not in the table above.
+
 ## Warnings and errors from the log
 
-Each line that the app writes to its log at the level WARN or ERROR is also sent, as a log record with the words of the line and no event name. These lines are how a bug is found.
+Each line that the app writes to its log at the level WARN or ERROR is also sent, as a log record with the words of the line and no event name. These lines are how a bug is found. The record also says where in the source of the app the line was written: `code.file.path` (as `OpenSmartPenCore/S3Sync.swift`, the same for every Mac) and `code.line.number`.
 
 Before any text leaves the Mac, the app cleans it. This applies to every string in every event and span:
 
@@ -162,9 +203,9 @@ For a developer: a WARN or ERROR line must not carry a name that a person gave t
 
 ## Where it goes, and how
 
-The app uses the OpenTelemetry SDK for Swift and sends OTLP over HTTP with protobuf, to `<endpoint>/v1/logs` and `<endpoint>/v1/traces`. There are no metrics: the counts can be made from the events.
+The app uses the OpenTelemetry SDK for Swift and sends OTLP over HTTP with protobuf, to `<endpoint>/v1/logs`, `<endpoint>/v1/traces` and `<endpoint>/v1/metrics`.
 
-What is to be sent is written to `~/Library/Caches/org.opensmartpen.app/telemetry` first and sent from there, so events from a time without network are sent later. The queue holds at most 20 MB for each signal and nothing older than one week. It is deleted when telemetry is turned off.
+What is to be sent is written to `~/Library/Caches/org.opensmartpen.app/telemetry` first and sent from there, so events from a time without network are sent later. The queue holds at most 20 MB for events and 20 MB for spans, and nothing older than one week. It is deleted when telemetry is turned off.
 
 The address comes from three places. The first one that is set is used:
 
@@ -185,14 +226,16 @@ The app reads these environment variables:
 | Variable | Meaning |
 | --- | --- |
 | `OTEL_SDK_DISABLED` | `true` turns telemetry off |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | The collector. `/v1/logs` and `/v1/traces` are added to it |
-| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | The whole address for one signal, used as it is |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | The collector. `/v1/logs`, `/v1/traces` and `/v1/metrics` are added to it |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | The whole address for one signal, used as it is |
 | `OTEL_EXPORTER_OTLP_HEADERS` | `key=value,key=value`. Added to the headers from the config, and wins over them |
 | `OTEL_EXPORTER_OTLP_TIMEOUT` | Milliseconds. The default is 10000 |
 | `OTEL_EXPORTER_OTLP_COMPRESSION` | `gzip` (the default) or `none` |
-| `OTEL_LOGS_EXPORTER`, `OTEL_TRACES_EXPORTER` | `none` turns one signal off |
+| `OTEL_LOGS_EXPORTER`, `OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER` | `none` turns one signal off |
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | Replace the app's own values |
-| `OTEL_BLRP_SCHEDULE_DELAY`, `OTEL_BSP_SCHEDULE_DELAY` | Milliseconds between two exports. The default is 5000 |
+| `OTEL_BLRP_SCHEDULE_DELAY`, `OTEL_BSP_SCHEDULE_DELAY` | Milliseconds between two exports of logs and of spans. The default is 5000 |
+| `OTEL_METRIC_EXPORT_INTERVAL` | Milliseconds between two exports of metrics. The default is 60000, and less than 1000 is not accepted |
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `cumulative` (the default) or `delta` |
 
 `OTEL_EXPORTER_OTLP_PROTOCOL` is read, but only `http/protobuf` is supported. Other variables are not read.
 
@@ -206,7 +249,7 @@ A variable cannot turn telemetry on. Only the setting does.
 2. Put `"telemetry": {"enabled": true}` in the config and start the app. The built-in address is that collector.
 3. Answer the notice. The events of the start arrive some seconds later: they wait in the queue on disk for about five seconds first.
 
-With Apple's `container`, and `collector.yaml` in the current folder (an `otlp` receiver on `0.0.0.0:4318`, a `debug` exporter with `verbosity: detailed`, and a pipeline for logs and one for traces):
+With Apple's `container`, and `collector.yaml` in the current folder (an `otlp` receiver on `0.0.0.0:4318`, a `debug` exporter with `verbosity: detailed`, and a pipeline for each of logs, traces and metrics):
 
 ```sh
 container run -d --name otelcol-debug -p 127.0.0.1:4318:4318 -v "$PWD":/conf \

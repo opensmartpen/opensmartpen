@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var telemetryNotice: TelemetryNoticeController?
     private let startedAt = Date()
     private var lastHeartbeat = Date()
+    private var lastGauges = Date.distantPast
     private var reportedAgents: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -70,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.info("Open Smart Pen \(Self.version) starting; notes \(config.dataURL.path); config \(configURL.path)")
         // Before anything else is made, so that what the rest of the start does is counted.
         prepareTelemetry()
+        // The start, timed from here to the first tick being armed. While the person has not
+        // been told about telemetry there is no span, and `app.start` carries the seconds.
+        let launch = Telemetry.begin("app.launch")
 
         // The notes live in the folder. The bucket is a copy of it, made as pages go quiet, and
         // the list of what has been copied sits beside the config: it is a fact about this Mac.
@@ -172,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.stateChanged()
             self?.installUpdateIfQuiet()
             self?.heartbeat()
+            self?.reportGauges()
         }
 
         var start = snapshot()
@@ -180,6 +185,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         start["sync.quiet_seconds"] = .double(config.quietSeconds)
         start["pen.free_memory_after_sync"] = .bool(config.deleteFromPenAfterPublish)
         start["install.age_days"] = .int(Int(Date().timeIntervalSince(telemetryState.created) / 86400))
+        start["app.launch_seconds"] = .double(Date().timeIntervalSince(startedAt))
+        launch.set("app.launch", .string(launchKind))
+        launch.end()
         Telemetry.event("app.start", start)
         // After the first turn of the run loop, so the window comes up on a finished app.
         DispatchQueue.main.async { [weak self] in self?.showTelemetryNoticeIfOwed() }
@@ -217,7 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                  queue: OTelTelemetry.queueLocation)
         telemetrySink = sink
         Telemetry.start(sink)
-        let host = (plan.logs ?? plan.traces)?.host ?? "?"
+        let host = (plan.logs ?? plan.traces ?? plan.metrics)?.host ?? "?"
         Log.info("telemetry goes to \(host); install \(telemetryState.installId). Turn it off in Settings → General")
         reportCrashes()
     }
@@ -341,6 +349,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard Date().timeIntervalSince(lastHeartbeat) >= Self.heartbeatEvery else { return }
         lastHeartbeat = Date()
         Telemetry.event("app.heartbeat", snapshot())
+    }
+
+    private static let gaugesEvery: TimeInterval = 60
+
+    /// How things stand now, as metrics. Each minute, which is how often metrics leave: said
+    /// more often, only the last value of each minute would be sent.
+    private func reportGauges() {
+        guard Date().timeIntervalSince(lastGauges) >= Self.gaugesEvery else { return }
+        lastGauges = Date()
+        Telemetry.measure(.pagesPending, Double(coordinator.pendingPages.count))
+        Telemetry.measure(.uploadFailures, Double(coordinator.consecutiveFailures))
+        Telemetry.measure(.pensPaired, Double(config.pairedPens.count))
+        Telemetry.measure(.pensConnected, Double(session.connections.filter(\.isConnected).count))
+        Telemetry.measure(.books, Double(books.books.count))
+        Telemetry.measure(.agents, Double(agentRecords.count))
+        Telemetry.measure(.uptime, Date().timeIntervalSince(startedAt))
+        if let bytes = Self.memoryInUse { Telemetry.measure(.memory, Double(bytes)) }
+    }
+
+    /// The memory macOS counts against the app, which is the number Activity Monitor shows.
+    /// An app that runs for weeks is where a slow leak shows, and nowhere else.
+    private static var memoryInUse: UInt64? {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? info.phys_footprint : nil
     }
 
     /// What started this run: the developer's LaunchAgent, the app as a bundle, or a bare binary.
@@ -484,8 +522,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `source` is where it came from, for telemetry: a file, a drop on the menu bar, the sample,
     /// or an iPhone or iPad.
     private func file(photo: Data, ext: String, from source: String, show: Bool, taken: Date? = nil) {
+        // Reading the picture, drawing the page from it and writing both: timed as one piece.
+        let span = Telemetry.begin("photo.add", ["photo.source": .string(source), "photo.format": .string(ext.lowercased()),
+                                                "photo.bytes": .int(photo.count)])
         guard let page = PhotoPages.add(image: photo, ext: ext, taken: PageImager.taken(inPhoto: photo) ?? taken,
-                                        books: books, root: config.dataURL, app: Self.clientID) else { return }
+                                        books: books, root: config.dataURL, app: Self.clientID) else {
+            span.end(error: "the photo could not be filed")
+            Telemetry.event("photo.rejected", ["photo.source": .string(source), "photo.reason": "not filed"], level: .warn)
+            return
+        }
+        span.end()
+        Telemetry.count(.photos, ["photo.source": .string(source)])
         Log.info("a photo is filed as \(page)")
         Telemetry.event("photo.added", ["photo.source": .string(source), "photo.format": .string(ext.lowercased()),
                                         "photo.bytes": .int(photo.count)])
@@ -501,6 +548,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Start a new agent in the notes folder, with the sentence that sends it to the website.
     private func setUpAgent(_ id: String) {
         panel?.dismiss()
+        // Which of the two the person chose. The id is one of the app's own two words.
+        if ["claude-code", "claude-cowork"].contains(id) {
+            Telemetry.event("ui.agent.setup", ["agent.kind": .string(id)])
+        }
         switch id {
         case "claude-cowork":
             if let link = Agents.coworkLink(folder: config.dataURL, bucket: config.s3Account()?.destination) {

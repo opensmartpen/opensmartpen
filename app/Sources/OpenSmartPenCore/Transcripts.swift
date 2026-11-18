@@ -54,16 +54,25 @@ public final class TranscriptStore {
         let kept = cached(for: page)
         guard let client = client() else { return kept }
         let path = Self.path(for: page)
+        // Timed, and never named: which page it was is not said, and neither is its text.
+        let span = Telemetry.begin("transcript.fetch", ["transcript.cached": .bool(kept != .none)])
         do {
             guard let data = try client.get(path), let text = String(data: data, encoding: .utf8) else {
+                span.set("transcript.state", "none")
+                span.end()
                 return kept
             }
+            span.set("transcript.state", "text")
+            span.set("transcript.size", .int(data.count))
+            span.end()
             let url = root.appendingPathComponent(path)
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                      withIntermediateDirectories: true)
             try? data.write(to: url, options: .atomic)
             return .text(text)
         } catch {
+            span.set("transcript.state", "unavailable")
+            span.end(error: Telemetry.describe(error))
             // A copy that may be a little old is better than an error over a page of text.
             if case .text = kept { return kept }
             return .unavailable((error as? LocalizedError)?.errorDescription ?? "\(error)")

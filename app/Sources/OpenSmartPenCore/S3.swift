@@ -162,12 +162,15 @@ public final class S3Client {
     /// writes leaves a file in a bucket that belongs to somebody. A key that may not write shows
     /// at the first upload, as a notification.
     public func check(now: Date = Date()) throws {
-        let response = try ask(for: Self.checkPath, now: now)
-        if (200..<300).contains(response.status) { return }
-        let code = Self.tag("Code", in: String(decoding: response.body, as: UTF8.self))
-        if response.status == 404, code != "NoSuchBucket" { return }
-        if response.status == 403, code == "AccessDenied" { return }
-        throw Self.refusal(response)
+        try Telemetry.span("s3.check") { span in
+            let response = try ask(for: Self.checkPath, now: now)
+            span.set("http.response.status_code", .int(response.status))
+            if (200..<300).contains(response.status) { return }
+            let code = Self.tag("Code", in: String(decoding: response.body, as: UTF8.self))
+            if response.status == 404, code != "NoSuchBucket" { return }
+            if response.status == 403, code == "AccessDenied" { return }
+            throw Self.refusal(response)
+        }
     }
 
     /// The file the connection test asks for. The app never writes it.

@@ -33,6 +33,7 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     var controls: UpdateControls {
         UpdateControls(
             check: { [controller] in
+                Telemetry.event("ui.update.check")
                 // A menubar app is not the active app, and its window would open behind the others.
                 NSApp.activate(ignoringOtherApps: true)
                 controller?.checkForUpdates(nil)
@@ -41,6 +42,7 @@ final class Updater: NSObject, SPUUpdaterDelegate {
             // One switch for both halves. A check that finds an update and does not download it
             // shows a window, and a window is what this app does not do unasked.
             setAutomatic: { [controller] on in
+                Telemetry.event("ui.setting.changed", ["setting.name": "updateAutomatically", "setting.value": .bool(on)])
                 controller?.updater.automaticallyChecksForUpdates = on
                 controller?.updater.automaticallyDownloadsUpdates = on
             }
@@ -55,6 +57,7 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     func installNow() {
         guard let install else { return }
         Log.info("installing update \(waiting ?? "?") and starting again")
+        Telemetry.event("update.installing", ["update.version": .string(waiting ?? "?")])
         install()
     }
 
@@ -67,6 +70,26 @@ final class Updater: NSObject, SPUUpdaterDelegate {
         install = immediateInstallHandler
         waiting = item.displayVersionString
         Log.info("update \(item.displayVersionString) is downloaded; it installs at the next quiet moment")
+        Telemetry.event("update.downloaded", ["update.version": .string(item.displayVersionString)])
         return true
     }
+
+    /// The feed names a version newer than this one.
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        Telemetry.event("update.found", ["update.version": .string(item.displayVersionString)])
+    }
+
+    /// A check, a download or an install stopped. "There is no newer version" also ends this
+    /// way, once each day, and that is not a failure.
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        let error = error as NSError
+        guard !(error.domain == SUSparkleErrorDomain && error.code == Self.noUpdate) else { return }
+        // The kind of error, not its words: Sparkle's sentence can name a file on this Mac.
+        Telemetry.event("update.failed", ["error.domain": .string(error.domain), "error.code": .int(error.code)],
+                        level: .warn)
+        Log.warn("an update did not go through: \(error.domain) \(error.code)", telemetry: false)
+    }
+
+    /// `SUNoUpdateError`.
+    private static let noUpdate = 1001
 }
