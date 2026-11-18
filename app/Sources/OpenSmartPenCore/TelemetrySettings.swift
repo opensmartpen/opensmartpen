@@ -2,9 +2,10 @@ import Foundation
 
 /// The `telemetry` part of the config: whether the app reports at all, and to where.
 public struct TelemetrySettings: Codable, Equatable {
-    /// On unless the person turns it off, in Settings → General or here.
-    public var enabled = true
-    /// The collector, as `https://host` or `https://host:4318`. Empty means the app's own.
+    /// Off unless the person turns it on, in Settings → General or here. The project has no
+    /// collector yet; when it has one, this becomes on, with the notice (decided 2026-11-18).
+    public var enabled = false
+    /// The collector, as `https://host` or `https://host:4318`. Empty means the built-in one.
     public var endpoint = ""
     /// Headers sent with every export, for a collector that asks for a key.
     public var headers: [String: String] = [:]
@@ -14,7 +15,7 @@ public struct TelemetrySettings: Codable, Equatable {
     /// Missing keys take their defaults, like the config this sits in.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
         endpoint = try c.decodeIfPresent(String.self, forKey: .endpoint) ?? ""
         headers = try c.decodeIfPresent([String: String].self, forKey: .headers) ?? [:]
     }
@@ -35,7 +36,7 @@ public struct TelemetrySettings: Codable, Equatable {
 /// The standard OpenTelemetry environment variables come first, then the `telemetry` part of the
 /// config, then what is built in. The OpenTelemetry SDK for Swift reads only two of those
 /// variables itself (the headers and the resource attributes), so the app reads them here.
-/// A person who turned telemetry off stays off: no variable turns it back on.
+/// Telemetry that is off stays off: no variable turns it on.
 public struct TelemetryPlan: Equatable {
     /// Nil when this signal is not exported (`OTEL_LOGS_EXPORTER=none`).
     public var logs: URL?
@@ -55,9 +56,12 @@ public struct TelemetryPlan: Equatable {
     public static let serviceName = "opensmartpen-mac"
     public static let serviceNamespace = "opensmartpen"
 
-    /// The project's own collector. Empty until there is one: a build with no collector, no
-    /// config and no variable sends nothing.
-    public static let builtInEndpoint = ""
+    /// Where telemetry goes when the config and the environment name no collector. The project
+    /// has no collector yet, so this is the standard address of a collector on the same Mac,
+    /// the one an OpenTelemetry SDK uses by default. The project's own goes here when it exists.
+    public static let builtInEndpoint = "http://localhost:4318"
+    /// True while the built-in address is this Mac and not a collector of the project.
+    public static var builtInIsLocal: Bool { url(builtInEndpoint)?.host == "localhost" }
     /// What the project's collector asks for with each export. Public by nature: this is open
     /// source, so it keeps out noise, not people.
     public static let builtInHeaders: [String: String] = [:]
@@ -75,7 +79,7 @@ public struct TelemetryPlan: Equatable {
             guard let text = environment[name]?.trimmingCharacters(in: .whitespaces), !text.isEmpty else { return nil }
             return text
         }
-        guard settings.enabled else { return .off(reason: "turned off in Settings") }
+        guard settings.enabled else { return .off(reason: "not turned on in Settings") }
         if value("OTEL_SDK_DISABLED")?.lowercased() == "true" { return .off(reason: "OTEL_SDK_DISABLED is true") }
 
         var plan = TelemetryPlan()

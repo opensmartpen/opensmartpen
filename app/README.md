@@ -167,7 +167,7 @@ one captured file and could only be repaired by cutting it.
 | `memoryWarnPercent` | `70` | Notify when pen memory usage reaches this level. |
 | `controlBooks` | `["s3/o1013/b1"]` | Printed control surfaces rather than paper to write on. Taps on them are kept as evidence and decoded as settings, but they are never pages. |
 | `sdkDebugLog` | `false` | Print the SDK's protocol log. |
-| `telemetry` | `{"enabled": true}` | What the app reports to its makers: `enabled`, and optionally `endpoint` (the collector) and `headers`. With no `endpoint` here and none in the environment, nothing is sent. See [Telemetry](#telemetry). |
+| `telemetry` | `{"enabled": false}` | What the app reports to its makers: `enabled`, and optionally `endpoint` (the collector) and `headers`. With no `endpoint` here and none in the environment, it goes to `http://localhost:4318`. See [Telemetry](#telemetry). |
 
 ## The bucket
 
@@ -211,9 +211,9 @@ pointer. While a zoom is moving the page is stretched, and it is redrawn sharp w
 
 The app reports how it is used and what goes wrong, with the OpenTelemetry SDK, as OTLP over HTTP: events and log lines to `/v1/logs`, spans to `/v1/traces`. `../docs/telemetry.md` is the list of everything that is sent and of the `OTEL_*` variables the app reads.
 
-- **On unless turned off**, in Settings → General or with `telemetry.enabled` in the config. At the first start that would send something, a window tells the person. Until it is answered, events are kept in memory and nothing leaves the Mac.
-- **No collector, no telemetry.** The address built into the app (`TelemetryPlan.builtInEndpoint`) is empty until the project has a collector.
-- **To test against a local collector:** put `"telemetry": {"enabled": true, "endpoint": "http://localhost:4318"}` in the config. The installed app is started by launchd and does not see the variables of a shell; a binary started from a terminal does.
+- **Off unless turned on**, in Settings → General or with `telemetry.enabled` in the config. This is for as long as the project has no collector (decided 2026-11-18). A person who turns it on in Settings has read there what it is. For one who turned it on in the config file, a window says it at the next start, and until it is answered, events are kept in memory and nothing leaves the Mac.
+- **The built-in address is this Mac.** `TelemetryPlan.builtInEndpoint` is `http://localhost:4318`, the standard address of a collector, until the project has one of its own. The config (`telemetry.endpoint`) and the `OTEL_*` variables come before it.
+- **To test against a local collector:** start one on port 4318 and put `"telemetry": {"enabled": true}` in the config. `../docs/telemetry.md` has the command for a collector in a container. The installed app is started by launchd and does not see the variables of a shell; a binary started from a terminal does.
 - **In the code:** `Telemetry` in `OpenSmartPenCore` is what every layer calls (`Telemetry.event`, `Telemetry.span`). It knows nothing of OpenTelemetry. `OTelTelemetry` in the app target is the only file that imports the SDK. A line written with `Log.warn` or `Log.error` is sent too, so it must not carry a name a person gave to something; `telemetry: false` keeps a line on the Mac.
 - **Files:** `~/.config/opensmartpen/telemetry.json` holds the install id and whether the person was told. `~/Library/Caches/org.opensmartpen.app/telemetry` is the queue of what is not sent yet.
 

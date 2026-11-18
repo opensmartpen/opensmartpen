@@ -2,14 +2,14 @@
 
 The app can report to its makers how it is used and what goes wrong. This page is the full list of what it sends, when, and how to turn it off. If the code sends something that is not on this page, that is a bug.
 
-Decided 2026-11-17; see `docs/decisions.md`.
+Decided 2026-11-17, and off by default since 2026-11-18; see `docs/decisions.md`.
 
 ## The short version
 
-- **It is on unless you turn it off.** Settings → General → "Send usage data and error reports", or `"telemetry": {"enabled": false}` in the config.
-- **You are told first.** At the first start that would send something, a window says so and has a "Turn Off" button. Nothing is sent until you answer it. If you turn it off there, what was collected until then is deleted and never sent.
-- **This version sends nothing by default.** The project has no collector yet, so the address built into the app is empty. Telemetry only runs when a collector is named in the config or in the environment.
-- **Off means off.** No environment variable turns it back on, and what was waiting to be sent is deleted.
+- **It is off unless you turn it on.** Settings → General → "Send usage data and error reports", or `"telemetry": {"enabled": true}` in the config. The project has no collector yet. When it has one, a later version will have telemetry on unless you turn it off, and will tell you first.
+- **This version sends nothing to the makers.** The address built into the app is `http://localhost:4318`: a collector on your own Mac, the standard address of OpenTelemetry. Turned on, the app sends there, unless the config or the environment names another collector. With no collector running there, nothing leaves the app.
+- **You are told first.** If telemetry is on and you were never told (it was turned on in the config file, not in Settings), a window says so at the start and has a "Turn Off" button. Nothing is sent until you answer it. If you turn it off there, what was collected until then is deleted and never sent.
+- **Off means off.** No environment variable turns it on, and what was waiting to be sent is deleted.
 
 ## What is never sent
 
@@ -170,7 +170,7 @@ The address comes from three places. The first one that is set is used:
 
 1. The standard OpenTelemetry environment variables.
 2. `telemetry` in `~/.config/opensmartpen/config.json`.
-3. The address built into the app, which is empty in this version.
+3. The address built into the app. In this version it is `http://localhost:4318`, a collector on the same Mac.
 
 ```json
 "telemetry": {
@@ -198,10 +198,18 @@ The app reads these environment variables:
 
 An app started by the LaunchAgent or at login does not see the variables of your shell. For that app, use the config file. The variables work for a binary started from a terminal.
 
-A variable cannot turn telemetry on for a person who turned it off.
+A variable cannot turn telemetry on. Only the setting does.
 
 ## To see it work
 
 1. Start a collector that takes OTLP over HTTP on port 4318.
-2. Put `"telemetry": {"enabled": true, "endpoint": "http://localhost:4318"}` in the config and start the app.
+2. Put `"telemetry": {"enabled": true}` in the config and start the app. The built-in address is that collector.
 3. Answer the notice. The events of the start arrive some seconds later: they wait in the queue on disk for about five seconds first.
+
+With Apple's `container`, and `collector.yaml` in the current folder (an `otlp` receiver on `0.0.0.0:4318`, a `debug` exporter with `verbosity: detailed`, and a pipeline for logs and one for traces):
+
+```sh
+container run -d --name otelcol-debug -p 127.0.0.1:4318:4318 -v "$PWD":/conf \
+  otel/opentelemetry-collector:latest --config /conf/collector.yaml
+container logs otelcol-debug   # each record that arrived, in full
+```

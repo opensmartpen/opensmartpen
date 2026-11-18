@@ -20,7 +20,7 @@
 
 Open Smart Pen is a small app in the macOS menu bar. It captures what a smartpen writes on paper and keeps each page as plain files in a folder on your Mac. Your agent, for example Claude Code or Codex, reads the pages and does the rest: it transcribes them, makes tasks, writes messages, builds what you sketched.
 
-The app does one job. It does not transcribe, it has no account, and it never sends us what you write. It can report how it is used and what goes wrong; you are told before it does, and you can turn that off. See [Telemetry](#telemetry).
+The app does one job. It does not transcribe, it has no account, and it never sends us what you write. It can report how it is used and what goes wrong, and that is off unless you turn it on. See [Telemetry](#telemetry).
 
 <p align="center">
   <img src="assets/panel.png" width="320" alt="The Open Smart Pen panel: two pens, two agents and three notebooks">
@@ -94,9 +94,9 @@ agents/<n>.json               each agent's name, and when it was last alive
 
 The app can send its makers how it is used and what goes wrong: which buttons are clicked, how many pages are synced, the Bluetooth address of each pen, errors and crashes. It never sends what you write, your pages, their text, the names of your notebooks and pens, or anything about your bucket.
 
-- **You are told first.** A window says so before anything is sent, and it has a "Turn Off" button.
-- **You can turn it off at any time** in Settings → General.
-- **This version sends nothing by default.** The project has no collector yet. Telemetry runs only when a collector is named in the config.
+- **It is off unless you turn it on,** in Settings → General. You can turn it off again at any time.
+- **This version sends nothing to us.** The project has no collector yet. Turned on, the app sends to a collector on your own Mac (`http://localhost:4318`), unless the config names another.
+- **A later version will have it on unless you turn it off.** A window will say so before anything is sent, and it has a "Turn Off" button.
 
 [`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
 

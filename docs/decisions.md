@@ -421,3 +421,15 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **Not checked on a real build.** This was written on a Mac that has the command line tools and no Xcode. The domain tests ran there, and the exporter sent to a local receiver. The app itself was compiled only with a stand-in for SwiftUI's `@State`, and it was not started. The notice window and the new section in Settings → General were not looked at.
 - **Open:** whether the address of a pen is personal data under EU law, and what the notice must say for that. Nobody with legal knowledge has read the notice.
 - **For an agent of the bucket:** nothing to do. The bucket did not change.
+
+## 2026-11-18 — Telemetry is off until there is a collector
+
+- **Decided (Tomas):** the telemetry code is merged now, and it is off by default. The work comes back when the backend is ready.
+- **Off unless a person turns it on.** `telemetry.enabled` is false in a new config and in one that does not have the key. This replaces "on unless turned off" of 2026-11-17 for now, not for good: when the project has a collector, the default becomes on, and the notice is how each person is told.
+- **The built-in address is `http://localhost:4318`,** not empty. It is the standard address of a collector on the same machine, so a developer turns telemetry on and needs nothing else. The config and the `OTEL_*` variables still come before it. Settings → General says that this is where it goes.
+- **The notice stays in the code.** With the default off it shows only for a person who turned telemetry on in the config file. One who turns it on in Settings has read there what it is.
+- **When there is a collector, change two lines:** `TelemetryPlan.builtInEndpoint` and the default of `TelemetrySettings.enabled`. Then read the documents again, and get the notice read by somebody with legal knowledge (still open from 2026-11-17).
+- **Built and run for the first time,** on a Mac with Xcode 27.2 (Swift 6.4.2). `swift build` and `swift test` pass. The notice and the section in Settings → General were opened in the design window.
+- **Seen against a collector.** A packaged build ran against the OpenTelemetry collector 0.165.0 in a container, with its `debug` exporter, before the default changed (so with `enabled: true` and the address in the config). Nothing arrived while the notice was unanswered; the first records came eleven seconds after it was answered, and `app.start`, which was held, was among them. Also seen: `ui.panel.opened`, `bluetooth.unavailable`, `notice.posted`, a WARN line of the log, and the resource attributes, all as `docs/telemetry.md` lists them. The words of the notification were not sent.
+- **Not seen:** a span (no page was made), turning it off in Settings and the queue being deleted, "Turn Off" in the notice, a crash report, and every event of a pen (the Mac had no pen and Bluetooth was refused).
+- **For an agent of the bucket:** nothing to do.

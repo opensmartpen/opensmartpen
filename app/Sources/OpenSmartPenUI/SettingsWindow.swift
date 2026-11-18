@@ -809,6 +809,11 @@ private struct GeneralTab: View {
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     Note(TelemetryInfo.summary + " " + TelemetryInfo.never)
+                    if TelemetryPlan.builtInIsLocal {
+                        Note("The project has no server for this yet. With this on, the app sends to "
+                             + "a collector on this Mac, at \(TelemetryPlan.builtInEndpoint), unless the "
+                             + "config names another.")
+                    }
                     Link("What is sent", destination: TelemetryInfo.url).font(.callout)
                 }
             }

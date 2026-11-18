@@ -204,29 +204,50 @@ final class TelemetryTests: XCTestCase {
 
     // MARK: where it goes
 
-    private func plan(_ settings: TelemetrySettings = TelemetrySettings(), _ environment: [String: String] = [:],
+    /// Telemetry as a person who turned it on has it. The default is off.
+    private var on: TelemetrySettings {
+        var settings = TelemetrySettings()
+        settings.enabled = true
+        return settings
+    }
+
+    private func plan(_ settings: TelemetrySettings? = nil, _ environment: [String: String] = [:],
                       builtIn: String = "") -> TelemetryPlan.Outcome {
-        TelemetryPlan.resolve(settings: settings, environment: environment, builtInEndpoint: builtIn, builtInHeaders: [:])
+        TelemetryPlan.resolve(settings: settings ?? on, environment: environment, builtInEndpoint: builtIn,
+                              builtInHeaders: [:])
     }
 
     func testWithNoCollectorNothingIsSent() {
         XCTAssertEqual(plan(), .off(reason: "no collector to send to"))
     }
 
-    func testAPersonWhoTurnedItOffStaysOffWhateverTheEnvironmentSays() {
-        var settings = TelemetrySettings()
-        settings.enabled = false
+    func testItIsOffUntilAPersonTurnsItOn() {
+        XCTAssertFalse(TelemetrySettings().enabled)
+        XCTAssertFalse(Config().telemetry.enabled)
+        XCTAssertEqual(TelemetryPlan.resolve(settings: TelemetrySettings(), environment: [:]),
+                       .off(reason: "not turned on in Settings"))
+    }
+
+    func testTurnedOnWithNoCollectorNamedItGoesToACollectorOnThisMac() {
+        guard case let .on(plan) = TelemetryPlan.resolve(settings: on, environment: [:]) else { return XCTFail("off") }
+        XCTAssertEqual(plan.logs?.absoluteString, "http://localhost:4318/v1/logs")
+        XCTAssertEqual(plan.traces?.absoluteString, "http://localhost:4318/v1/traces")
+        XCTAssertTrue(TelemetryPlan.builtInIsLocal)
+    }
+
+    func testWhatIsOffStaysOffWhateverTheEnvironmentSays() {
+        let settings = TelemetrySettings()
         XCTAssertEqual(plan(settings, ["OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318"], builtIn: "https://t.example.org"),
-                       .off(reason: "turned off in Settings"))
+                       .off(reason: "not turned on in Settings"))
     }
 
     func testTheStandardVariableTurnsItOff() {
-        XCTAssertEqual(plan(TelemetrySettings(), ["OTEL_SDK_DISABLED": "TRUE"], builtIn: "https://t.example.org"),
+        XCTAssertEqual(plan(on, ["OTEL_SDK_DISABLED": "TRUE"], builtIn: "https://t.example.org"),
                        .off(reason: "OTEL_SDK_DISABLED is true"))
     }
 
     func testTheGeneralEndpointIsABaseAndASignalsOwnIsTheWholeAddress() throws {
-        guard case let .on(plan) = plan(TelemetrySettings(), [
+        guard case let .on(plan) = plan(on, [
             "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318/",
             "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "http://localhost:9999/custom",
         ]) else { return XCTFail("off") }
@@ -235,7 +256,7 @@ final class TelemetryTests: XCTestCase {
     }
 
     func testTheEnvironmentComesBeforeTheConfigAndTheConfigBeforeWhatIsBuiltIn() {
-        var settings = TelemetrySettings()
+        var settings = on
         guard case let .on(builtIn) = plan(settings, [:], builtIn: "https://t.example.org") else { return XCTFail("off") }
         XCTAssertEqual(builtIn.logs?.absoluteString, "https://t.example.org/v1/logs")
 
@@ -249,7 +270,7 @@ final class TelemetryTests: XCTestCase {
     }
 
     func testHeadersAreMergedAndTheEnvironmentWins() {
-        var settings = TelemetrySettings()
+        var settings = on
         settings.endpoint = "https://t.example.org"
         settings.headers = ["authorization": "from-config", "x-team": "pen"]
         guard case let .on(plan) = plan(settings, ["OTEL_EXPORTER_OTLP_HEADERS": "authorization=Bearer%20abc, x-extra=1"])
@@ -258,7 +279,7 @@ final class TelemetryTests: XCTestCase {
     }
 
     func testTheOtherStandardVariablesAreRead() {
-        guard case let .on(plan) = plan(TelemetrySettings(), [
+        guard case let .on(plan) = plan(on, [
             "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
             "OTEL_EXPORTER_OTLP_TIMEOUT": "2500",
             "OTEL_EXPORTER_OTLP_COMPRESSION": "none",
@@ -281,20 +302,20 @@ final class TelemetryTests: XCTestCase {
     }
 
     func testWithBothSignalsTurnedOffTelemetryIsOff() {
-        XCTAssertEqual(plan(TelemetrySettings(), ["OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
+        XCTAssertEqual(plan(on, ["OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
                                                   "OTEL_LOGS_EXPORTER": "none", "OTEL_TRACES_EXPORTER": "none"]),
                        .off(reason: "no collector to send to"))
     }
 
     // MARK: the config and the state
 
-    func testAnOlderConfigHasTelemetryOnAndTheChoiceIsWrittenDown() throws {
+    func testAnOlderConfigHasTelemetryOffAndTheChoiceIsWrittenDown() throws {
         let old = try JSONDecoder().decode(Config.self, from: Data(#"{"quietSeconds": 60}"#.utf8))
-        XCTAssertTrue(old.telemetry.enabled)
+        XCTAssertFalse(old.telemetry.enabled)
         XCTAssertEqual(old.telemetry.endpoint, "")
 
         var config = Config()
-        config.telemetry.enabled = false
+        config.telemetry.enabled = true
         let url = root.appendingPathComponent("config.json")
         try config.save(to: url)
         let text = try String(contentsOf: url, encoding: .utf8)

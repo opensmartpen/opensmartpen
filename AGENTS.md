@@ -6,7 +6,7 @@ A macOS menubar app that captures what a Neo smartpen writes and uploads it to o
 
 The app captures strokes, keeps them in `~/OpenSmartPen`, and uploads each page to the bucket as strokes and a PNG. That is all of it (decided 2026-11-11, see `docs/decisions.md`).
 
-The app also reports to its makers how it is used and what goes wrong (telemetry, decided 2026-11-17). It never reports what was written. `docs/telemetry.md` is the list of what is sent.
+The app can also report to its makers how it is used and what goes wrong (telemetry, decided 2026-11-17). It is off unless a person turns it on, and its built-in address is a collector on the same Mac, until the project has a collector (decided 2026-11-18). It never reports what was written. `docs/telemetry.md` is the list of what is sent.
 
 Do not add these back to the app: transcription, actions, agents, calls to an agent platform, git. Transcription happens on the other side of the bucket. The app only shows the result: the viewer fetches `transcripts/<copy>/p<N>.md` for the page on screen.
 
