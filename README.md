@@ -20,7 +20,7 @@
 
 Open Smart Pen is a small app in the macOS menu bar. It captures what a smartpen writes on paper and keeps each page as plain files in a folder on your Mac. Your agent, for example Claude Code or Codex, reads the pages and does the rest: it transcribes them, makes tasks, writes messages, builds what you sketched.
 
-The app does one job. It does not transcribe, it has no account, and it sends nothing to us.
+The app does one job. It does not transcribe, it has no account, and it never sends us what you write. It can report how it is used and what goes wrong, and that is off unless you turn it on. See [Telemetry](#telemetry).
 
 <p align="center">
   <img src="assets/panel.png" width="320" alt="The Open Smart Pen panel: two pens, two agents and three notebooks">
@@ -84,11 +84,21 @@ transcripts/<copy>/p<N>.md    the text of the page, written by your agent
 agents/<n>.json               each agent's name, and when it was last alive
 ```
 
-- **The app sends nothing by itself.** With no bucket connected, all files stay on your Mac.
+- **Your pages go nowhere by themselves.** With no bucket connected, all files stay on your Mac.
 - **An S3 bucket is optional.** Connect one in Settings → Sync if your agent runs on a different computer. Amazon S3 and services with the same interface work, for example Cloudflare R2 and MinIO.
 - **Your agent uses its own model.** When it reads a page, it sends the picture of the page to that model, as it does with any file you give it.
 
 [`docs/processing.md`](docs/processing.md) is the full contract between the app and an agent: what the app writes, where, and when.
+
+## Telemetry
+
+The app can send its makers how it is used and what goes wrong: which buttons are clicked, how many pages are synced, the Bluetooth address of each pen, errors and crashes. It never sends what you write, your pages, their text, the names of your notebooks and pens, or anything about your bucket.
+
+- **It is off unless you turn it on,** in Settings → General. You can turn it off again at any time.
+- **This version sends nothing to us.** The project has no collector yet. Turned on, the app sends to a collector on your own Mac (`http://localhost:4318`), unless the config names another.
+- **A later version will have it on unless you turn it off.** A window will say so before anything is sent, and it has a "Turn Off" button.
+
+[`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
 
 ## Documentation
 
@@ -97,6 +107,7 @@ agents/<n>.json               each agent's name, and when it was last alive
 | [`docs/architecture.md`](docs/architecture.md) | The system, and the entry point to all other documents |
 | [`docs/processing.md`](docs/processing.md) | The contract with an agent: the files, their order, how to read time |
 | [`docs/agent-install.md`](docs/agent-install.md) | The text an agent sets itself up from |
+| [`docs/telemetry.md`](docs/telemetry.md) | What the app reports to its makers, and how to turn it off |
 | [`docs/stroke-format.md`](docs/stroke-format.md) | The format of the stroke files |
 | [`docs/decisions.md`](docs/decisions.md) | The decision log. Formal records are in [`docs/adrs/`](docs/adrs/) |
 | [`docs/research.md`](docs/research.md) | Research on the pen SDK, the protocol and the vendor app |

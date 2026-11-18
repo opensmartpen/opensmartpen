@@ -402,3 +402,34 @@ Every panel until this point was written, packaged, installed, and then judged b
 - **One filled button at a time,** and it is the next step: a page first, then an agent to read it.
 - To come back to: this was agreed as good enough for now.
 
+## 2026-11-17 — The app reports to its makers
+
+- **Why.** The makers must learn what breaks, and how the app is used: how many installs, how many pens, whether a person connected a pen at all or used photos, and which of the pens that were given away are in use (a call of the owner with a colleague; the transcript is not in the repository).
+- **Decided (the owner):** the app sends telemetry with the OpenTelemetry SDK. It is on unless the person turns it off, and the person must be told. A pen is reported by its Bluetooth address as it is, not by a hash of it. Every click is reported, not only errors.
+- **This changes a promise.** The README said that the app sends nothing to us. It now says what is sent and how to turn it off. What was written, the names of notebooks and pens, and everything about the bucket are still never sent. `docs/telemetry.md` is the list, and a thing that is sent and not on it is a bug.
+- **Told first, and nothing before that.** At the first start that would send something, a window says what is sent and has a "Turn Off" button. Until it is answered, events are kept in memory. "Turn Off" deletes them. A window, because an alert stops the app until it is answered, and the app may have started at login with nobody there.
+- **Off means off.** Turning it off is not reported, the queue on disk is deleted, and no environment variable turns it on again.
+- **No collector yet, so this version sends nothing by default.** The address built into the app is empty. A collector is named in the config (`telemetry.endpoint`) or with the standard `OTEL_*` variables. When the project has a collector, its address goes into `TelemetryPlan.builtInEndpoint`, and from that version each person sees the notice.
+- **The SDK is in one file.** `Telemetry` in `OpenSmartPenCore` is a small interface of our own, and `OTelTelemetry` in the app target is the only file that imports the SDK. The domain and the UI stay free of it, as they are free of the pen SDK (ADR-003), and the tests use a list in place of the SDK.
+- **The app reads the `OTEL_*` variables itself.** The SDK for Swift (2.6.0) reads only `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_RESOURCE_ATTRIBUTES`. The endpoint, the timeout and the others are read in `TelemetryPlan`.
+- **Events and spans, no metrics.** An event is a log record with an event name. The counts the makers want can be made from the events.
+- **Crashes are read from the reports of macOS,** at the next start. The SDK's crash and MetricKit instrumentations are for iOS in 2.6.0. Nothing of ours has to run at the moment of a crash.
+- **Warnings and errors of the log are sent too.** So such a line must not carry a name a person gave to something. A cleaner replaces the home folder, the bucket, its folder and its key id in every string before it leaves. It is a net under the rule, not a replacement for it.
+- **A queue on disk.** A laptop is often offline. What is not sent waits in the caches folder, at most 20 MB for each signal and one week.
+- **The cost of the SDK:** the build now needs a newer Swift (see `app/README.md`), and the first build downloads about 25 packages. The app has no hand-written OTLP to maintain.
+- **Not done:** a feedback form, a check-in window for the people who got a pen, and an email address. They were in the call and are not part of this change.
+- **Not checked on a real build.** This was written on a Mac that has the command line tools and no Xcode. The domain tests ran there, and the exporter sent to a local receiver. The app itself was compiled only with a stand-in for SwiftUI's `@State`, and it was not started. The notice window and the new section in Settings → General were not looked at.
+- **Open:** whether the address of a pen is personal data under EU law, and what the notice must say for that. Nobody with legal knowledge has read the notice.
+- **For an agent of the bucket:** nothing to do. The bucket did not change.
+
+## 2026-11-18 — Telemetry is off until there is a collector
+
+- **Decided (Tomas):** the telemetry code is merged now, and it is off by default. The work comes back when the backend is ready.
+- **Off unless a person turns it on.** `telemetry.enabled` is false in a new config and in one that does not have the key. This replaces "on unless turned off" of 2026-11-17 for now, not for good: when the project has a collector, the default becomes on, and the notice is how each person is told.
+- **The built-in address is `http://localhost:4318`,** not empty. It is the standard address of a collector on the same machine, so a developer turns telemetry on and needs nothing else. The config and the `OTEL_*` variables still come before it. Settings → General says that this is where it goes.
+- **The notice stays in the code.** With the default off it shows only for a person who turned telemetry on in the config file. One who turns it on in Settings has read there what it is.
+- **When there is a collector, change two lines:** `TelemetryPlan.builtInEndpoint` and the default of `TelemetrySettings.enabled`. Then read the documents again, and get the notice read by somebody with legal knowledge (still open from 2026-11-17).
+- **Built and run for the first time,** on a Mac with Xcode 27.2 (Swift 6.4.2). `swift build` and `swift test` pass. The notice and the section in Settings → General were opened in the design window.
+- **Seen against a collector.** A packaged build ran against the OpenTelemetry collector 0.165.0 in a container, with its `debug` exporter, before the default changed (so with `enabled: true` and the address in the config). Nothing arrived while the notice was unanswered; the first records came eleven seconds after it was answered, and `app.start`, which was held, was among them. Also seen: `ui.panel.opened`, `bluetooth.unavailable`, `notice.posted`, a WARN line of the log, and the resource attributes, all as `docs/telemetry.md` lists them. The words of the notification were not sent.
+- **Not seen:** a span (no page was made), turning it off in Settings and the queue being deleted, "Turn Off" in the notice, a crash report, and every event of a pen (the Mac had no pen and Bluetooth was refused).
+- **For an agent of the bucket:** nothing to do.

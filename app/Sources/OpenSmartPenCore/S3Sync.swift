@@ -75,27 +75,50 @@ public final class S3Sync: Publishing {
 
         var uploaded = 0
         defer { if uploaded > 0 { save(for: client) } }
-        var seen = Set<String>()
-        for path in paths where seen.insert(path).inserted {
-            let url = root.appendingPathComponent(path)
-            // Read the stamp first. If the pen writes between the two reads, the stamp is the
-            // older one and the file is simply found changed, and sent again, next time.
-            guard let stamp = Self.stamp(of: url), let data = try? Data(contentsOf: url) else { continue }
-            guard recorded(path) != stamp else { continue }
+        return try Telemetry.span("s3.upload") { span in
+            defer { span.set("s3.files", .int(uploaded)) }
+            var seen = Set<String>()
+            for path in paths where seen.insert(path).inserted {
+                let url = root.appendingPathComponent(path)
+                // Read the stamp first. If the pen writes between the two reads, the stamp is the
+                // older one and the file is simply found changed, and sent again, next time.
+                guard let stamp = Self.stamp(of: url), let data = try? Data(contentsOf: url) else { continue }
+                guard recorded(path) != stamp else { continue }
 
-            try client.put(path, data: data, contentType: Self.contentType(of: path))
-            uploaded += 1
-            if let page = PageRef(rawRelativePath: path) {
-                let image = PagePictures.imagePath(for: page)
-                if let png = try? Data(contentsOf: root.appendingPathComponent(image)) {
-                    try client.put(image, data: png, contentType: "image/png")
-                    uploaded += 1
+                try put(path, data: data, contentType: Self.contentType(of: path), with: client)
+                uploaded += 1
+                if let page = PageRef(rawRelativePath: path) {
+                    let image = PagePictures.imagePath(for: page)
+                    if let png = try? Data(contentsOf: root.appendingPathComponent(image)) {
+                        try put(image, data: png, contentType: "image/png", with: client)
+                        uploaded += 1
+                    }
                 }
+                // Only now: a page whose picture did not arrive has not arrived.
+                record(path, stamp)
             }
-            // Only now: a page whose picture did not arrive has not arrived.
-            record(path, stamp)
+            return uploaded
         }
-        return uploaded
+    }
+
+    /// One file to the bucket, timed. Telemetry gets what kind of file it was and how big, and
+    /// not its name.
+    private func put(_ path: String, data: Data, contentType: String, with client: S3Client) throws {
+        try Telemetry.span("s3.put", ["file.kind": .string(Self.kind(of: path)), "file.size": .int(data.count)]) { _ in
+            try client.put(path, data: data, contentType: contentType)
+        }
+    }
+
+    /// What a file is, by where it is: the strokes of a page, its picture, a record.
+    static func kind(of path: String) -> String {
+        if path == PagePictures.timePath { return "time" }
+        if path == ModeLog.relativePath { return "mode" }
+        if path == Palette.relativePath { return "palette" }
+        if path.hasPrefix("pens/") { return "pen" }
+        if path.hasSuffix("/book.json") { return "book" }
+        if path.contains("/pages/") { return "picture" }
+        if path.contains("/raw/") { return path.hasSuffix(".jsonl") ? "strokes" : "photo" }
+        return "other"
     }
 
     /// Files under these paths that are on disk but not, as they now stand, in the bucket.

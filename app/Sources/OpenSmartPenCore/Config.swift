@@ -47,6 +47,9 @@ public struct Config: Codable, Equatable {
     public var memoryWarnPercent: Int = 70
     /// Print the SDK's own protocol log.
     public var sdkDebugLog: Bool = false
+    /// What the app reports to its makers, and to where. On unless turned off; see
+    /// `docs/telemetry.md` for what is sent.
+    public var telemetry = TelemetrySettings()
 
     public init() {}
 
@@ -83,6 +86,7 @@ public struct Config: Codable, Equatable {
         lowBatteryPercent = try c.decodeIfPresent(Int.self, forKey: .lowBatteryPercent) ?? d.lowBatteryPercent
         memoryWarnPercent = try c.decodeIfPresent(Int.self, forKey: .memoryWarnPercent) ?? d.memoryWarnPercent
         sdkDebugLog = try c.decodeIfPresent(Bool.self, forKey: .sdkDebugLog) ?? d.sdkDebugLog
+        telemetry = try c.decodeIfPresent(TelemetrySettings.self, forKey: .telemetry) ?? d.telemetry
     }
 
     /// The bucket to upload to, or nil when one is not connected. Asking for the secret here
@@ -102,7 +106,7 @@ public struct Config: Codable, Equatable {
         case dataPath, quietSeconds, pairedPens, penMac, penPeripheralId, penPassword
         case deleteFromPenAfterPublish, s3, penAutoPowerOn, penAutoPowerOffMinutes
         case penCapPowerOff, controlBooks, lowBatteryPercent, memoryWarnPercent, sdkDebugLog
-        case startAtLogin
+        case startAtLogin, telemetry
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -121,6 +125,7 @@ public struct Config: Codable, Equatable {
         try c.encode(lowBatteryPercent, forKey: .lowBatteryPercent)
         try c.encode(memoryWarnPercent, forKey: .memoryWarnPercent)
         try c.encode(sdkDebugLog, forKey: .sdkDebugLog)
+        try c.encode(telemetry, forKey: .telemetry)
     }
 
     private static var configBase: URL {

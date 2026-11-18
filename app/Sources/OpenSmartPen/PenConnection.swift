@@ -22,6 +22,14 @@ final class PenConnection: NSObject {
     /// Lowercase and unpunctuated. From the advertisement until the pen confirms it on authorising.
     private(set) var mac: String
     private(set) var lastDot: Date?
+    /// When Bluetooth linked this pen, and whether the pen then accepted us. For telemetry.
+    let linkedAt = Date()
+    private(set) var wasAuthorised = false
+    /// The pen's first report after connecting has been sent. One for each connection: the pen
+    /// reports every ten minutes, and each time the panel opens.
+    private var statusReported = false
+    /// One notebook leaving pen memory, timed.
+    private var drainSpan: TelemetrySpan?
 
     var onChange: (() -> Void)?
     /// Every dot as it arrives, before assembly. See `PenSession.onDot`.
@@ -95,7 +103,8 @@ final class PenConnection: NSObject {
         state = .authorizing
         armStep(20) { [weak self] in
             guard let self, self.state == .authorizing else { return }
-            Log.warn("authorisation of \(self.displayName) timed out; disconnecting")
+            // `name`, not the name a person gave the pen: a warning also goes to telemetry.
+            Log.warn("authorisation of \(self.name) timed out; disconnecting")
             self.pen.disConnect()
         }
     }
@@ -147,6 +156,15 @@ final class PenConnection: NSObject {
         // The session may have let the pen go: an unknown pen that turned up after adding was
         // cancelled. Nothing more is said to a pen that is leaving.
         guard state == .ready else { return }
+        wasAuthorised = true
+        // The address is how the makers find the pens they gave away. The model is the name the
+        // pen gives itself over Bluetooth, not the one its owner chose.
+        Telemetry.event("pen.connected", [
+            "pen.mac": .string(mac),
+            "pen.model": .string(version?.deviceName ?? name),
+            "pen.firmware": .string(firmware),
+            "pen.link_seconds": .double(Date().timeIntervalSince(linkedAt)),
+        ])
         pen.requestSetPenTime()
         pen.requestPenSettingInfo()
         pen.requestUsingAllNote()
@@ -167,6 +185,17 @@ final class PenConnection: NSObject {
     private func handleSetting(_ s: PenSettingStruct) {
         setting = s
         onChange?()
+        if !statusReported {
+            statusReported = true
+            Telemetry.event("pen.status", [
+                "pen.mac": .string(mac),
+                "pen.battery": .int(Int(s.battLevel)),
+                "pen.charging": .bool(s.charging == .On),
+                "pen.memory_used": .int(Int(s.memoryUsed)),
+                "pen.auto_off_minutes": .int(Int(s.autoPwrOffTime)),
+                "pen.offline_save": .bool(s.offlineOnOff == .On),
+            ])
+        }
         Log.info("\(name) status: battery \(s.battLevel)%\(s.charging == .On ? " (charging)" : ""), memory \(s.memoryUsed)% used")
         Log.info("\(name) power: auto-off \(s.autoPwrOffTime) min, auto-on-by-tip \(s.usePenTipOnOff), cap-power-off \(s.usePenCapOff), offline-save \(s.offlineOnOff), hover \(s.useHover), beep \(s.beepOnOff)")
         applyPowerSettings(s)
@@ -252,14 +281,26 @@ final class PenConnection: NSObject {
         drain = Drain(index: drainTotal - drainQueue.count, count: drainTotal, percent: 0)
         state = .draining(remaining: drainQueue.count + 1)
         Log.info("draining book s\(next.section)/o\(next.owner)/b\(next.note) from \(name)")
+        endDrain("superseded")
+        drainSpan = Telemetry.begin("pen.drain", [
+            "pen.mac": .string(mac),
+            "book.surface": .string("s\(next.section)/o\(next.owner)/b\(next.note)"),
+        ])
         pen.requestOfflineData(next.section, next.owner, next.note, false)
         armProgress()
+    }
+
+    /// The notebook's transfer is over, well or badly.
+    private func endDrain(_ error: String? = nil) {
+        drainSpan?.end(error: error)
+        drainSpan = nil
     }
 
     private func armProgress() {
         armStep(60) { [weak self] in
             guard let self, let n = self.draining else { return }
             Log.warn("offline transfer stalled for book b\(n.note) on \(self.name)")
+            self.endDrain("stalled")
             self.notifier.post(Notice(key: self.key("drain-stalled"), title: "Pen sync stalled",
                                       body: "Transfer from \(self.displayName) stopped mid-way. It will be retried next time the pen connects."))
             self.draining = nil
@@ -273,7 +314,10 @@ final class PenConnection: NSObject {
         let pages = Array(drainedPages)
         let strokes = drainedStrokes
         Log.info("book b\(note.note): \(strokes) stroke(s) on \(pages.count) page(s)")
+        drainSpan?.set("drain.strokes", .int(strokes))
+        drainSpan?.set("drain.pages", .int(pages.count))
         guard strokes > 0 else {
+            endDrain()
             draining = nil
             drainNext()
             return
@@ -287,13 +331,16 @@ final class PenConnection: NSObject {
                     self.pen.requestDeleteOfflineDataNote(note.section, note.owner, [note.note])
                     self.armStep(15) { [weak self] in
                         Log.warn("no delete confirmation; moving on")
+                        self?.endDrain("no delete confirmation")
                         self?.draining = nil
                         self?.drainNext()
                     }
                     return
                 }
+                self.endDrain()
             case let .failure(error):
                 Log.error("publish after drain failed, keeping data on pen: \(error)")
+                self.endDrain("upload failed: \(Telemetry.describe(error))")
             }
             self.draining = nil
             self.drainNext()
@@ -308,6 +355,7 @@ final class PenConnection: NSObject {
         if let s = assembler.flush() { coordinator.ingestLive([s]) }
         assembler = StrokeAssembler()
         reportUnread()
+        endDrain("the pen disconnected")
         draining = nil
         drain = nil
         drainTotal = 0
@@ -380,12 +428,14 @@ extension PenConnection: PenDelegate {
             notifier.post(Notice(key: key("battery"), title: "Pen battery at \(pct)%", body: "Charge \(displayName) soon."))
         case let .EVENT_POWER_OFF(reason):
             Log.info("\(name) powered off: \(reason)")
+            Telemetry.event("pen.powered_off", ["pen.mac": .string(mac), "pen.power_off_reason": .string("\(reason)")])
         case .PEN_CONNECTION_FAILURE_BTDUPLICATE:
             notifier.post(Notice(key: key("duplicate"), title: "Pen is connected elsewhere",
                                  body: "\(displayName) is already connected to another device. Disconnect it there to sync here."))
         case let .OFFLINE_DATA_NOTE_LIST(list):
             drainQueue = list.notes.map { Note(section: $0.section, owner: $0.owner, note: $0.note) }
             Log.info("offline memory of \(name) holds \(drainQueue.count) book(s)")
+            Telemetry.event("pen.offline_memory", ["pen.mac": .string(mac), "drain.books": .int(drainQueue.count)])
             drainNext()
         case .OFFLINE_DATA_SEND_START:
             armProgress()
@@ -399,12 +449,14 @@ extension PenConnection: PenDelegate {
             drainedPages.formUnion(coordinator.ingestOffline(strokes))
         case .OFFLINE_DATA_SEND_FAILURE:
             Log.error("offline transfer failed for book \(draining.map { "b\($0.note)" } ?? "?") on \(name)")
+            endDrain("the transfer failed")
             notifier.post(Notice(key: key("drain-failed"), title: "Pen sync failed",
                                  body: "Transfer from \(displayName) failed. Data stays on the pen and will be retried."))
             draining = nil
             drainNext()
         case .OFFLINE_DATA_NOTE_DELETE_RES:
             Log.info("\(name) confirmed deletion")
+            endDrain()
             draining = nil
             drainNext()
         case let .PEN_PACKET_ERROR(err):

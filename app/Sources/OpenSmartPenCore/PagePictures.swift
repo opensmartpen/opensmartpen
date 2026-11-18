@@ -42,16 +42,25 @@ public final class PagePictures: Publishing {
     /// When a picture did change, the time file is written after the last of them, and it is the
     /// last file sent on: whoever sees it change finds every page already there.
     public func publish(paths: [String]) throws -> Int {
-        var seen = Set<String>()
         var changed = false
-        for path in paths where seen.insert(path).inserted {
-            guard let page = PageRef(rawRelativePath: path), let png = image(of: page) else { continue }
-            let url = root.appendingPathComponent(Self.imagePath(for: page))
-            if (try? Data(contentsOf: url)) == png { continue }
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            try png.write(to: url, options: .atomic)
-            changed = true
+        try Telemetry.span("pages.draw") { span in
+            var seen = Set<String>()
+            var drawn = 0, replaced = 0
+            defer {
+                span.set("pages.drawn", .int(drawn))
+                span.set("pages.changed", .int(replaced))
+            }
+            for path in paths where seen.insert(path).inserted {
+                guard let page = PageRef(rawRelativePath: path), let png = image(of: page) else { continue }
+                drawn += 1
+                let url = root.appendingPathComponent(Self.imagePath(for: page))
+                if (try? Data(contentsOf: url)) == png { continue }
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                        withIntermediateDirectories: true)
+                try png.write(to: url, options: .atomic)
+                replaced += 1
+            }
+            changed = replaced > 0
         }
         let time = root.appendingPathComponent(Self.timePath)
         if changed { try Self.timeFile(at: now()).write(to: time, options: .atomic) }

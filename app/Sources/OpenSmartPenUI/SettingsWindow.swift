@@ -30,6 +30,8 @@ public struct AppInfo {
     /// app is GPL-3.0 because of it, and the GPL asks that a copy says where that source is.
     public var sdkSourceURL = URL(string: "https://github.com/NeoSmartpen/iOS-SDK3.0/tree/1.1.5")!
     /// The license texts `make-app.sh` puts in the bundle. Nil for a bare binary, which has none.
+    /// The random id this install reports under. Empty in the design window, which reports nothing.
+    public var installId = ""
     public var licensesURL: URL? = {
         guard let url = Bundle.main.resourceURL?.appendingPathComponent("Licenses"),
               FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -101,6 +103,8 @@ public final class SettingsStore: ObservableObject {
     private let configURL: URL
     private let secretURL: URL
     private var savedSecret: String
+    /// The config as it was last written, to say which setting a save changed.
+    private var lastSaved: Config
     /// The running pens, for pairing. Nil in the design window, which has no pens.
     private weak var link: PenLink?
     private var pairedMacs: [String] = []
@@ -115,6 +119,7 @@ public final class SettingsStore: ObservableObject {
         penRegistry = pens
         bookRegistry = books
         self.config = config
+        lastSaved = config
         self.configURL = configURL
         self.info = info
         self.link = link
@@ -141,10 +146,20 @@ public final class SettingsStore: ObservableObject {
         if connected != now { connected = now }
     }
 
-    func addPen() { link?.addPen(); readLink() }
-    func cancelAdding() { link?.cancelAdding(); readLink() }
+    func addPen() {
+        Telemetry.event("ui.pen.add")
+        link?.addPen()
+        readLink()
+    }
+
+    func cancelAdding() {
+        Telemetry.event("ui.pen.add_cancelled")
+        link?.cancelAdding()
+        readLink()
+    }
 
     func forget(_ pen: PenRecord) {
+        Telemetry.event("ui.pen.forget", ["pen.mac": .string(pen.mac)])
         link?.forgetPen(mac: pen.mac)
         linkChanged()
     }
@@ -159,12 +174,22 @@ public final class SettingsStore: ObservableObject {
     }
 
     func save(_ pen: PenRecord) {
+        // Which fields changed, and the new mode, ink and width. Never the name.
+        if let before = penRegistry.record(mac: pen.mac) {
+            var attributes: [String: TelemetryValue] = ["pen.mac": .string(pen.mac)]
+            if before.name != pen.name { attributes["pen.renamed"] = true }
+            if before.mode != pen.mode { attributes["pen.mode"] = .string(pen.mode.rawValue) }
+            if before.ink != pen.ink { attributes["pen.ink"] = .string(pen.ink.rawValue) }
+            if before.width != pen.width { attributes["pen.width"] = .string(pen.width.rawValue) }
+            Telemetry.event("ui.pen.edited", attributes)
+        }
         penRegistry.save(pen)
         reload()
         onRecordsChange?()
     }
 
     func save(_ book: BookRecord) {
+        Telemetry.event("ui.book.renamed", ["book.surface": .string(book.folder.surface)])
         bookRegistry.save(book)
         reload()
         onRecordsChange?()
@@ -186,8 +211,11 @@ public final class SettingsStore: ObservableObject {
     func connectS3() async {
         guard let account = S3Account(settings: s3Draft, secret: s3SecretDraft) else {
             s3State = .failed("A bucket, an access key ID and a secret access key are needed.")
+            Telemetry.event("bucket.connect", ["bucket.result": "incomplete"], level: .warn)
             return
         }
+        // Whose S3 it is, as one of two words. Not the address.
+        let service: TelemetryValue = account.endpoint.host?.hasSuffix("amazonaws.com") == true ? "aws" : "other"
         s3State = .checking
         let client = S3Client(account: account)
         let outcome: Result<Void, Error> = await Task.detached {
@@ -200,17 +228,34 @@ public final class SettingsStore: ObservableObject {
                 savedSecret = S3Secret.read(at: secretURL) ?? ""
                 config.s3 = s3Draft
                 s3State = .idle
+                Telemetry.event("bucket.connect", ["bucket.result": "connected", "bucket.service": service,
+                                                   "bucket.has_folder": .bool(!s3Draft.prefix.isEmpty)])
                 saveConfig()
             } catch {
                 s3State = .failed("The secret could not be saved: \(error.localizedDescription)")
+                Telemetry.event("bucket.connect", ["bucket.result": "secret not saved", "bucket.service": service],
+                                level: .error)
             }
         case let .failure(error):
             s3State = .failed(error.localizedDescription)
+            // How the bucket said no: the status and the service's own code, which name nothing.
+            var attributes: [String: TelemetryValue] = ["bucket.result": "refused", "bucket.service": service]
+            switch error as? S3Error {
+            case let .refused(status, code, _):
+                attributes["http.response.status_code"] = .int(status)
+                if let code { attributes["bucket.error_code"] = .string(code) }
+            case .unreachable:
+                attributes["bucket.result"] = "unreachable"
+            case nil:
+                break
+            }
+            Telemetry.event("bucket.connect", attributes, level: .warn)
         }
     }
 
     /// Stop uploading. Nothing in the bucket is touched, and nothing on this Mac either.
     func disconnectS3() {
+        Telemetry.event("bucket.disconnected")
         try? S3Secret.write(nil, to: secretURL)
         savedSecret = ""
         config.s3 = S3Settings()
@@ -227,7 +272,17 @@ public final class SettingsStore: ObservableObject {
         s3State = .idle
     }
 
-    func syncNow() { onSyncNow?() }
+    /// The telemetry setting was changed outside this window, by the notice. Without this, the
+    /// next save from here would write the old value back.
+    public func adopt(telemetry: TelemetrySettings) {
+        config.telemetry = telemetry
+        lastSaved.telemetry = telemetry
+    }
+
+    func syncNow() {
+        Telemetry.event("ui.sync_now", ["ui.source": "settings"])
+        onSyncNow?()
+    }
 
     // MARK: saving
 
@@ -240,11 +295,30 @@ public final class SettingsStore: ObservableObject {
             }
             try config.save(to: configURL)
             problem = nil
+            reportChanges(from: lastSaved, to: config)
+            lastSaved = config
             onConfigChange?(config)
         } catch {
             Log.error("saving config failed: \(error)")
             problem = "The settings could not be saved: \(error.localizedDescription)"
         }
+    }
+
+    /// One event for each setting a save changed, with its new value. The bucket is not here:
+    /// connecting one has an event of its own, and its fields are private.
+    private func reportChanges(from old: Config, to new: Config) {
+        func changed(_ name: String, _ value: TelemetryValue) {
+            Telemetry.event("ui.setting.changed", ["setting.name": .string(name), "setting.value": value])
+        }
+        if old.startAtLogin != new.startAtLogin { changed("startAtLogin", .bool(new.startAtLogin)) }
+        if old.quietSeconds != new.quietSeconds { changed("quietSeconds", .double(new.quietSeconds)) }
+        if old.deleteFromPenAfterPublish != new.deleteFromPenAfterPublish {
+            changed("deleteFromPenAfterPublish", .bool(new.deleteFromPenAfterPublish))
+        }
+        if old.lowBatteryPercent != new.lowBatteryPercent { changed("lowBatteryPercent", .int(new.lowBatteryPercent)) }
+        if old.memoryWarnPercent != new.memoryWarnPercent { changed("memoryWarnPercent", .int(new.memoryWarnPercent)) }
+        // Turning telemetry on is reported. Turning it off is not: off means nothing more is sent.
+        if !old.telemetry.enabled, new.telemetry.enabled { changed("telemetry", true) }
     }
 }
 
@@ -570,6 +644,7 @@ private struct SyncTab: View {
                     Button(agentCopied ? "Copied" : "Copy Instructions") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(store.sync.agentSentence, forType: .string)
+                        Telemetry.event("ui.agent.copy_instructions", ["ui.source": "settings"])
                         agentCopied = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { agentCopied = false }
                     }
@@ -702,7 +777,10 @@ private struct GeneralTab: View {
                         .lineLimit(1).truncationMode(.middle)
                         .frame(maxWidth: 330, alignment: .trailing)
                         .help(store.config.dataURL.path)
-                    Button("Show") { NSWorkspace.shared.open(store.config.dataURL) }
+                    Button("Show") {
+                        Telemetry.event("ui.notes.opened", ["ui.source": "settings"])
+                        NSWorkspace.shared.open(store.config.dataURL)
+                    }
                 }
             } footer: {
                 Note("Everything the pens write is kept here, outside the app, so the app can be "
@@ -715,6 +793,29 @@ private struct GeneralTab: View {
             } footer: {
                 Note("The app must be running to take pages from a pen. With this on, it starts "
                      + "when you log in to this Mac.")
+            }
+
+            Section {
+                Toggle("Send usage data and error reports", isOn: $store.config.telemetry.enabled)
+                    .onChange(of: store.config.telemetry.enabled) { _ in store.saveConfig() }
+                if !store.info.installId.isEmpty {
+                    LabeledContent("Install ID") {
+                        Text(store.info.installId).font(.callout.monospaced()).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                            .textSelection(.enabled)
+                            .help("A random id for this install. Give it to the makers when you report a problem.")
+                    }
+                }
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Note(TelemetryInfo.summary + " " + TelemetryInfo.never)
+                    if TelemetryPlan.builtInIsLocal {
+                        Note("The project has no server for this yet. With this on, the app sends to "
+                             + "a collector on this Mac, at \(TelemetryPlan.builtInEndpoint), unless the "
+                             + "config names another.")
+                    }
+                    Link("What is sent", destination: TelemetryInfo.url).font(.callout)
+                }
             }
 
             Section("Warnings") {
@@ -732,7 +833,10 @@ private struct GeneralTab: View {
 
             Section("Troubleshooting") {
                 LabeledContent("Log") {
-                    Button("Open") { NSWorkspace.shared.open(store.info.logURL) }
+                    Button("Open") {
+                        Telemetry.event("ui.log.opened", ["ui.source": "settings"])
+                        NSWorkspace.shared.open(store.info.logURL)
+                    }
                         .disabled(!FileManager.default.fileExists(atPath: store.info.logURL.path))
                 }
                 LabeledContent("Settings file") {
@@ -866,7 +970,7 @@ private struct LiveField: View {
 /// A settings window the way macOS draws one: the tabs are the toolbar, and the title is the tab.
 public final class SettingsWindowController: NSWindowController {
     let store: SettingsStore
-    private let tabs = NSTabViewController()
+    private let tabs = SettingsTabs()
 
     public init(store: SettingsStore, tab: SettingsTab = .pens) {
         self.store = store
@@ -886,7 +990,6 @@ public final class SettingsWindowController: NSWindowController {
             tabs.addTabViewItem(item)
         }
         tabs.selectedTabViewItemIndex = tab.rawValue
-
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: pageWidth, height: 400),
                               styleMask: [.titled, .closable, .miniaturizable],
                               backing: .buffered, defer: false)
@@ -897,6 +1000,11 @@ public final class SettingsWindowController: NSWindowController {
         window.center()
         window.setFrameAutosaveName("opensmartpen-settings-2")
         super.init(window: window)
+        // Only while the window is on screen, so that only a person's choice is reported.
+        tabs.onSelect = { [weak self] in
+            guard self?.window?.isVisible == true else { return }
+            self?.reportTab()
+        }
     }
 
     @available(*, unavailable)
@@ -914,8 +1022,25 @@ public final class SettingsWindowController: NSWindowController {
         tabs.selectedTabViewItemIndex = tab.rawValue
     }
 
+    /// Which tab is on screen, for telemetry: said each time the window is shown or the tab changes.
+    private func reportTab() {
+        guard let tab = SettingsTab(rawValue: tabs.selectedTabViewItemIndex) else { return }
+        Telemetry.event("ui.settings.tab", ["settings.tab": .string("\(tab)")])
+    }
+
     public override func showWindow(_ sender: Any?) {
         store.reload()
         super.showWindow(sender)
+        reportTab()
+    }
+}
+
+/// The tabs, and the one thing the window wants to know about them: that another one was chosen.
+private final class SettingsTabs: NSTabViewController {
+    var onSelect: (() -> Void)?
+
+    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: tabViewItem)
+        onSelect?()
     }
 }

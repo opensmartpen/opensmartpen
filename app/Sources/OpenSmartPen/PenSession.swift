@@ -31,6 +31,8 @@ final class PenSession: NSObject {
     /// list of what it has seen, and that list is where a pen's MAC is found when it connects.
     private var connecting: (peripheral: CBPeripheral, name: String, mac: String)?
     private var connectTimer: Timer?
+    /// The Bluetooth link being made, timed for telemetry: from the first call to the link.
+    private var connectSpan: TelemetrySpan?
     private var scanning = false
     private var scanTimer: Timer?
     private var addingTimer: Timer?
@@ -106,6 +108,7 @@ final class PenSession: NSObject {
         addingTimer = Timer.scheduledTimer(withTimeInterval: Self.addingWindow, repeats: false) { [weak self] _ in
             guard let self, self.adding else { return }
             Log.info("no new pen found; stopped looking")
+            Telemetry.event("pen.add_timed_out")
             self.adding = false
             self.scanIfNeeded()
         }
@@ -132,12 +135,14 @@ final class PenSession: NSObject {
         autoPair = false
         savePairedPens()
         Log.info("forgot pen \(mac)")
+        Telemetry.event("pen.forgotten", ["pen.mac": .string(mac), "pens.paired": .int(config.pairedPens.count)])
         for connection in gone { connection.disconnect() }
         onChange?()
     }
 
     private func willSleep() {
         Log.info("Mac is going to sleep; letting \(links.count) pen(s) go so they store what is written")
+        Telemetry.event("system.sleep", ["pens.connected": .int(links.values.filter(\.isConnected).count)])
         letGo()
     }
 
@@ -163,6 +168,7 @@ final class PenSession: NSObject {
     private func didWake() {
         systemAsleep = false
         Log.info("Mac woke; looking for pens")
+        Telemetry.event("system.wake")
         scanIfNeeded()
     }
 
@@ -218,6 +224,8 @@ final class PenSession: NSObject {
                 reportedBluetoothProblem = true
                 let problem = Self.bluetoothProblem()
                 Log.warn(problem)
+                Telemetry.event("bluetooth.unavailable",
+                                ["bluetooth.authorization": .string(Self.authorizationName)], level: .warn)
                 // The panel and the tooltip can only say "Bluetooth off", which is a lie when the
                 // radio is on and the real fault is permission we were never given — and it is a
                 // lie that costs an afternoon, because switching Bluetooth off and on again will
@@ -272,6 +280,17 @@ final class PenSession: NSObject {
         }
     }
 
+    /// The Bluetooth grant, as one word for telemetry.
+    private static var authorizationName: String {
+        switch CBCentralManager.authorization {
+        case .notDetermined: return "not asked"
+        case .restricted: return "restricted"
+        case .denied: return "denied"
+        case .allowedAlways: return "allowed"
+        @unknown default: return "unknown"
+        }
+    }
+
     /// Whether a pen just seen is one to connect to: a paired pen, or any pen while pairing is
     /// open — but only one new pen at a time, so two strangers are never both taken.
     private func wants(_ peripheral: CBPeripheral, _ ad: PenAdvertisementStruct) -> Bool {
@@ -290,17 +309,29 @@ final class PenSession: NSObject {
         let name = peripheral.name ?? (ad.subName.isEmpty ? "" : ad.subName)
         connecting = (peripheral, name, ad.mac)
         Log.info("connecting to \(name.isEmpty ? "pen" : name) [\(ad.mac)]")
+        // Only a pen this Mac has decided to take is ever named: a paired one, or the one being
+        // added. A stranger's pen that is merely seen is never reported.
+        connectSpan = Telemetry.begin("pen.connect", [
+            "pen.mac": .string(PenRecord.normalise(ad.mac)),
+            "pen.paired": .bool(config.isPaired(mac: ad.mac, peripheralId: peripheral.identifier.uuidString)),
+        ])
         PenFinder.shared.connectPeripheral(peripheral)
         onChange?()
         connectTimer?.invalidate()
         connectTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self] _ in
             guard let self, let p = self.connecting, p.peripheral.identifier == peripheral.identifier else { return }
             Log.warn("connect timed out")
+            self.endConnect("timed out")
             PenFinder.shared.disConnect(p.peripheral)
             self.connecting = nil
             self.onChange?()
             self.scanIfNeeded()
         }
+    }
+
+    private func endConnect(_ error: String? = nil) {
+        connectSpan?.end(error: error)
+        connectSpan = nil
     }
 
     /// The pen has accepted us. A new pen is paired here, and an unknown pen that is no longer
@@ -318,6 +349,9 @@ final class PenSession: NSObject {
                 savePairedPens()
             }
         } else if pairingOpen {
+            Telemetry.event("pen.paired", ["pen.mac": .string(connection.mac),
+                                           "pen.pairing": .string(adding ? "added" : "first pen"),
+                                           "pens.paired": .int(config.pairedPens.count + 1)])
             config.pairedPens.append(PairedPen(mac: connection.mac, peripheralId: id))
             savePairedPens()
             addingTimer?.invalidate()
@@ -327,6 +361,7 @@ final class PenSession: NSObject {
                                  body: "Notes from it will be synced automatically from now on."))
         } else {
             Log.info("\(connection.name) is not paired and no pen is being added; letting it go")
+            Telemetry.event("pen.rejected")
             connection.reject()
             return
         }
@@ -354,6 +389,7 @@ final class PenSession: NSObject {
         if connecting?.peripheral.identifier == peripheral.identifier {
             connectTimer?.invalidate()
             connecting = nil
+            endConnect("dropped")
         }
         links.removeValue(forKey: peripheral.identifier)?.reset()
         onChange?()
@@ -384,12 +420,14 @@ extension PenSession: PenFinderDelegate {
                 // A connect that was already under way when sleep began. Not now.
                 connectTimer?.invalidate()
                 connecting = nil
+                endConnect("the Mac went to sleep")
                 pencontroller.disConnect()
                 return
             }
             let pending = connecting?.peripheral.identifier == peripheral.identifier ? connecting : nil
             connectTimer?.invalidate()
             connecting = nil
+            endConnect()
             let mac = pencontroller.macAddress.isEmpty ? (pending?.mac ?? "") : pencontroller.macAddress
             let connection = PenConnection(pen: pencontroller, peripheral: peripheral,
                                            name: pending?.name ?? peripheral.name ?? "", mac: mac,
@@ -409,6 +447,7 @@ extension PenSession: PenFinderDelegate {
     func didFailToConnect(_ peripheral: CBPeripheral, _ error: Error?) {
         DispatchQueue.main.async { [self] in
             Log.warn("connect failed: \(error?.localizedDescription ?? "unknown")")
+            endConnect(error?.localizedDescription ?? "failed")
             dropConnection(peripheral)
         }
     }
@@ -421,6 +460,7 @@ extension PenSession: PenFinderDelegate {
                 scanning = false
                 connectTimer?.invalidate()
                 connecting = nil
+                endConnect("Bluetooth went off")
                 for connection in links.values { connection.reset() }
                 links = [:]
                 onChange?()
@@ -429,6 +469,16 @@ extension PenSession: PenFinderDelegate {
             }
             let name = links[peripheral.identifier]?.name ?? peripheral.name ?? "pen"
             Log.info("\(name) disconnected\(error.map { ": \($0.localizedDescription)" } ?? "")")
+            // Only for a pen that had been accepted. One that was let go was never ours to name.
+            if let link = links[peripheral.identifier], link.wasAuthorised {
+                var attributes: [String: TelemetryValue] = [
+                    "pen.mac": .string(link.mac),
+                    "pen.connected_seconds": .int(Int(Date().timeIntervalSince(link.linkedAt))),
+                    "pen.disconnect_error": .bool(error != nil),
+                ]
+                if systemAsleep { attributes["pen.disconnect_reason"] = "sleep" }
+                Telemetry.event("pen.disconnected", attributes)
+            }
             dropConnection(peripheral)
         }
     }
