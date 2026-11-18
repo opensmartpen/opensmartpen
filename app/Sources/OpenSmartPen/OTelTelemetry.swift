@@ -12,7 +12,7 @@ import PersistenceExporter
 /// record with only a body. A span is a span. A metric is an instrument of the SDK, made the
 /// first time a number is given to it: a counter, a histogram or a gauge.
 ///
-/// What is to be sent is written to disk first, in the caches folder, and sent from there. A
+/// An event or a span that is to be sent is written to disk first, in the caches folder, and sent from there. A
 /// laptop is often offline, and this app is used most where it is: away from the desk. What was
 /// not sent is sent at the next start, up to a week later.
 ///
@@ -78,21 +78,27 @@ final class OTelTelemetry: TelemetrySink {
         tracer = tracerProvider.get(instrumentationName: Self.scope, instrumentationVersion: AppDelegate.version)
 
         if let url = plan.metrics {
+            // Not through the queue on disk. Each export is the total since the app started, so
+            // the next one says everything a lost one said, and a queue of old totals would only
+            // be sent to be thrown away.
             let exporter = OtlpHttpMetricExporter(
                 endpoint: url, config: config,
                 aggregationTemporalitySelector: plan.deltaMetrics ? AggregationTemporality.deltaPreferred()
                     : AggregationTemporality.alwaysCumulative(),
                 envVarHeaders: none, requeueOnFailure: false)
-            let folder = queue.appendingPathComponent("metrics")
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let kept = PersistenceMetricExporterDecorator(metricExporter: exporter, storageURL: folder,
-                                                          performancePreset: Self.queuePreset)
-            let reader = PeriodicMetricReaderBuilder(exporter: kept)
+            let reader = PeriodicMetricReaderBuilder(exporter: exporter)
                 .setInterval(timeInterval: plan.metricInterval)
                 .build()
+            // The view is not decoration. The SDK (2.6.0) keeps an instrument's numbers only
+            // when a registered view matches it; the default view it makes for itself is never
+            // looked up. With no view, every number is dropped and nothing says so.
             let provider = MeterProviderSdk.builder()
+                .registerView(selector: InstrumentSelector.builder().setInstrument(name: ".*").build(),
+                              view: View.builder().build())
                 .setResource(resource: resource)
                 .registerMetricReader(reader: reader)
+                // No single measurement beside the sums: only what `docs/telemetry.md` lists leaves.
+                .setExemplarFilter(exemplarFilter: AlwaysOffFilter())
                 .build()
             meterProvider = provider
             meter = provider.meterBuilder(name: Self.scope)

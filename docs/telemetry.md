@@ -179,6 +179,8 @@ A metric is a number that is added up on the Mac and sent each minute. It says h
 
 A gauge is read once each minute. A counter is the total since the app started (cumulative), unless `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` asks for delta.
 
+Metrics do not wait in the queue on disk. An export that does not arrive is not sent again: the next one carries the same totals. What was counted in a run that ended with no network is lost. With delta, each export that does not arrive is lost.
+
 For a developer: a metric is made in `TelemetryMetric` (in `Telemetry.swift`) and added to `TelemetryMetric.all`. A test fails when a metric is not in the table above.
 
 ## Warnings and errors from the log
@@ -203,7 +205,7 @@ For a developer: a WARN or ERROR line must not carry a name that a person gave t
 
 The app uses the OpenTelemetry SDK for Swift and sends OTLP over HTTP with protobuf, to `<endpoint>/v1/logs`, `<endpoint>/v1/traces` and `<endpoint>/v1/metrics`.
 
-What is to be sent is written to `~/Library/Caches/org.opensmartpen.app/telemetry` first and sent from there, so events from a time without network are sent later. The queue holds at most 20 MB for each of the three signals and nothing older than one week. It is deleted when telemetry is turned off.
+What is to be sent is written to `~/Library/Caches/org.opensmartpen.app/telemetry` first and sent from there, so events from a time without network are sent later. The queue holds at most 20 MB for events and 20 MB for spans, and nothing older than one week. It is deleted when telemetry is turned off.
 
 The address comes from three places. The first one that is set is used:
 
