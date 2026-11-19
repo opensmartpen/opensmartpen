@@ -2,13 +2,15 @@
 
 The app can report to its makers how it is used and what goes wrong. This page is the full list of what it sends, when, and how to turn it off. If the code sends something that is not on this page, that is a bug.
 
-Decided 2026-11-17, and off by default since 2026-11-18.
+Decided 2026-11-17. Off by default since 2026-11-18, and a question at the first start since 2026-11-19.
 
 ## The short version
 
-- **It is off unless you turn it on.** Settings → General → "Send usage data and error reports", or `"telemetry": {"enabled": true}` in the config. The project has no collector yet. When it has one, a later version will have telemetry on unless you turn it off, and will tell you first.
-- **This version sends nothing to the makers.** The address built into the app is `http://localhost:4318`: a collector on your own Mac, the standard address of OpenTelemetry. Turned on, the app sends there, unless the config or the environment names another collector. With no collector running there, nothing leaves the app.
-- **You are told first.** If telemetry is on and you were never told (it was turned on in the config file, not in Settings), a window says so at the start and has a "Turn Off" button. Nothing is sent until you answer it. If you turn it off there, what was collected until then is deleted and never sent.
+- **It is off unless you say yes.** The app never turns it on by itself. You say yes in one of two places: the question at the first start, or Settings → General → "Send usage data and error reports" (`"telemetry": {"enabled": true}` in the config).
+- **You are asked one time.** When the app has a collector of the project to send to, a window asks at the first start: "Help improve Open Smart Pen?", with "Send" and "Not Now". "Not Now", or closing the window, is a no. The app does not ask again; Settings → General has the switch. Until you answer, nothing is sent: what happens meanwhile is kept in memory, and is sent after a yes or deleted after a no.
+- **This version asks nobody and sends nothing to the makers.** The project has no collector yet. The address built into the app is `http://localhost:4318`: a collector on your own Mac, the standard address of OpenTelemetry. A build with only that address does not ask. If you turn telemetry on in the config file, the app asks at the next start, and then sends there, unless the config or the environment names another collector.
+- **What it is for.** To find problems and to decide what to improve. Nothing else is done with it.
+- **On its way it is encrypted,** when the collector's address is `https`. The project's own collector will be. The window says so only when it is true for where the app sends.
 - **Off means off.** No environment variable turns it on, and what was waiting to be sent is deleted.
 
 ## What is never sent
@@ -247,7 +249,7 @@ A variable cannot turn telemetry on. Only the setting does.
 
 1. Start a collector that takes OTLP over HTTP on port 4318.
 2. Put `"telemetry": {"enabled": true}` in the config and start the app. The built-in address is that collector.
-3. Answer the notice. The events of the start arrive some seconds later: they wait in the queue on disk for about five seconds first.
+3. Answer the question with "Send". The events of the start arrive some seconds later: they wait in the queue on disk for about five seconds first.
 
 With Apple's `container`, and `collector.yaml` in the current folder (an `otlp` receiver on `0.0.0.0:4318`, a `debug` exporter with `verbosity: detailed`, and a pipeline for each of logs, traces and metrics):
 

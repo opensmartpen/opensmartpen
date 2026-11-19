@@ -2,8 +2,9 @@ import Foundation
 
 /// The `telemetry` part of the config: whether the app reports at all, and to where.
 public struct TelemetrySettings: Codable, Equatable {
-    /// Off unless the person turns it on, in Settings → General or here. The project has no
-    /// collector yet; when it has one, this becomes on, with the notice (decided 2026-11-18).
+    /// Off unless the person says yes: to the question at the first start, in Settings →
+    /// General, or here. It is never on by default: reading an id from a person's Mac and
+    /// sending it needs their yes first.
     public var enabled = false
     /// The collector, as `https://host` or `https://host:4318`. Empty means the built-in one.
     public var endpoint = ""
@@ -76,6 +77,32 @@ public struct TelemetryPlan: Equatable {
     public enum Outcome: Equatable {
         case off(reason: String)
         case on(TelemetryPlan)
+    }
+
+    /// True when every address this plan sends to is `https`, so what is sent cannot be read on
+    /// its way. The question at the first start says so only when this is true.
+    public var isEncrypted: Bool {
+        let all = [logs, traces, metrics].compactMap { $0 }
+        return !all.isEmpty && all.allSatisfy { $0.scheme?.lowercased() == "https" }
+    }
+
+    /// True when the person must be asked whether the app may report to its makers.
+    ///
+    /// They are asked one time, at the first start that could send: the project has a collector
+    /// that is not this Mac itself, or the person turned telemetry on in the config file. A
+    /// build whose only collector is this Mac asks nobody, because it would send nowhere. And
+    /// nothing is asked when nothing could be sent in any case (`OTEL_SDK_DISABLED`).
+    public static func questionIsOwed(asked: Date?, settings: TelemetrySettings,
+                                      environment: [String: String] = ProcessInfo.processInfo.environment,
+                                      builtInEndpoint: String = TelemetryPlan.builtInEndpoint) -> Bool {
+        guard asked == nil else { return false }
+        guard settings.enabled || url(builtInEndpoint).map({ $0.host != "localhost" }) == true else { return false }
+        var wanted = settings
+        wanted.enabled = true
+        if case .on = resolve(settings: wanted, environment: environment, builtInEndpoint: builtInEndpoint) {
+            return true
+        }
+        return false
     }
 
     public static func resolve(settings: TelemetrySettings,
@@ -177,8 +204,9 @@ public struct TelemetryState: Codable, Equatable {
     /// is not made from the Mac, the account or a pen.
     public var installId: String
     public var created: Date
-    /// When the person was told that the app reports. Nil until they have been, and until then
-    /// nothing is sent.
+    /// When the person answered the question at the first start, or turned telemetry on in
+    /// Settings. Nil until then, and until then nothing is sent. The name is from the time
+    /// when this was a notice and not a question; the file keeps it.
     public var noticed: Date?
     /// Crash reports written up to this time have been sent, or were there before telemetry was.
     public var crashesReadTo: Date?

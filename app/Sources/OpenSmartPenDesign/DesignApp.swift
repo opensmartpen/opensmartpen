@@ -74,7 +74,7 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
             controller = ViewerWindowController(viewer: viewer)
             controller.window?.delegate = self
         } else if arguments.contains("--notice") {
-            let notice = TelemetryNoticeController(installId: "3f2a9c1e-7b4d-4e6a-9c0d-5a1b2c3d4e5f")
+            let notice = TelemetryNoticeController(installId: "3f2a9c1e-7b4d-4e6a-9c0d-5a1b2c3d4e5f", encrypted: true)
             notice.onAnswer = { _ in NSApp.terminate(nil) }
             controller = notice
         } else {

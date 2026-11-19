@@ -202,18 +202,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func prepareTelemetry() {
         telemetryState = TelemetryState.load(directory: configDirectory)
         hidePrivateText()
+        // Nothing leaves this Mac before the person has said yes. While the question is open,
+        // what happens is kept in memory, and sent or thrown away by what they answer.
+        if TelemetryPlan.questionIsOwed(asked: telemetryState.noticed, settings: config.telemetry) {
+            Telemetry.hold()
+            Log.info("telemetry waits for the person's answer")
+            return
+        }
         switch TelemetryPlan.resolve(settings: config.telemetry) {
         case let .off(reason):
             Log.info("telemetry is off: \(reason)")
         case let .on(plan):
-            if telemetryState.noticed == nil {
-                // Nothing leaves this Mac before the person has been told. What happens until
-                // then is kept in memory, and sent or thrown away by what they answer.
-                Telemetry.hold()
-                Log.info("telemetry waits until the person has been told about it")
-            } else {
-                startTelemetry(plan)
-            }
+            startTelemetry(plan)
         }
     }
 
@@ -271,13 +271,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Telemetry.scrubber = scrubber
     }
 
-    /// Tell the person, once, that the app reports to its makers, and let them turn it off.
-    /// Only when the app would in fact send: a build with no collector has nothing to say.
+    /// Ask the person, one time, whether the app may report to its makers. Only when the app
+    /// could in fact send: a build whose collector is this Mac has nothing to ask.
     private func showTelemetryNoticeIfOwed() {
-        guard telemetryState.noticed == nil, telemetryNotice == nil, config.telemetry.enabled,
-              case .on = TelemetryPlan.resolve(settings: config.telemetry) else { return }
-        let notice = TelemetryNoticeController(installId: telemetryState.installId)
-        notice.onAnswer = { [weak self] keep in self?.telemetryNoticeAnswered(keep: keep) }
+        guard telemetryNotice == nil,
+              TelemetryPlan.questionIsOwed(asked: telemetryState.noticed, settings: config.telemetry) else { return }
+        var wanted = config.telemetry
+        wanted.enabled = true
+        var encrypted = false
+        if case let .on(plan) = TelemetryPlan.resolve(settings: wanted) { encrypted = plan.isEncrypted }
+        let notice = TelemetryNoticeController(installId: telemetryState.installId, encrypted: encrypted)
+        notice.onAnswer = { [weak self] yes in self?.telemetryNoticeAnswered(keep: yes) }
         telemetryNotice = notice
         NSApp.activate(ignoringOtherApps: true)
         notice.showWindow(nil)
@@ -289,15 +293,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard telemetryState.noticed == nil else { return }
         telemetryState.noticed = Date()
         telemetryState.save(directory: configDirectory)
-        if !keep {
-            // The file is read again first: the pen session and the settings window write it too.
-            var latest = (try? Config.loadOrCreate(at: configURL)) ?? config
-            latest.telemetry.enabled = false
-            do { try latest.save(to: configURL) } catch { Log.error("saving config failed: \(error)") }
-            config.telemetry.enabled = false
-            settingsStore?.adopt(telemetry: config.telemetry)
-            Log.info("telemetry was turned off in the notice; nothing was sent")
-        }
+        // The answer is the setting, each way. The file is read again first: the pen session
+        // and the settings window write it too.
+        var latest = (try? Config.loadOrCreate(at: configURL)) ?? config
+        latest.telemetry.enabled = keep
+        do { try latest.save(to: configURL) } catch { Log.error("saving config failed: \(error)") }
+        config.telemetry.enabled = keep
+        settingsStore?.adopt(telemetry: config.telemetry)
+        Log.info(keep ? "the person said yes to telemetry" : "the person said no to telemetry; nothing was sent")
         applyTelemetry()
     }
 
