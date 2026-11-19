@@ -31,8 +31,10 @@ let plateBottom = NSColor(calibratedRed: 0.902, green: 0.890, blue: 0.875, alpha
 /// is the picture for a place that crops and frames it itself, such as a GitHub profile: the app
 /// icon's own margin shows there as a tile inside a tile.
 ///
-/// `gentle` is the look of the pictures people see on a web page: the tinted plate and the bigger
-/// pencil. The app icon does not have it.
+/// `gentle` is the one look of every picture that is made here: the tinted plate and the bigger
+/// pencil. The app icon, the logo in `assets/` and the profile picture all have it, so a person
+/// sees one mark in the Dock of the settings window, in the README and on GitHub. The plain plate
+/// is still drawn when `gentle` is false; nothing asks for it now.
 func drawIcon(into size: CGFloat, fullBleed: Bool = false, gentle: Bool = false) -> NSBitmapImageRep {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size), pixelsHigh: Int(size),
                               bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -119,7 +121,7 @@ for (name, px) in [("icon_16x16", 16), ("icon_16x16@2x", 32),
                    ("icon_128x128", 128), ("icon_128x128@2x", 256),
                    ("icon_256x256", 256), ("icon_256x256@2x", 512),
                    ("icon_512x512", 512), ("icon_512x512@2x", 1024)] {
-    let rep = drawIcon(into: CGFloat(px))
+    let rep = drawIcon(into: CGFloat(px), gentle: true)
     guard let data = rep.representation(using: .png, properties: [:]) else {
         FileHandle.standardError.write("could not encode \(name)\n".data(using: .utf8)!)
         exit(1)
@@ -176,7 +178,7 @@ for (pt, scale, px) in [(16, 1, 16), (16, 2, 32), (32, 1, 32), (32, 2, 64),
     let name = "icon_\(px).png"
     let file = appiconset.appendingPathComponent(name)
     if !FileManager.default.fileExists(atPath: file.path) {
-        try drawIcon(into: CGFloat(px)).representation(using: .png, properties: [:])!.write(to: file)
+        try drawIcon(into: CGFloat(px), gentle: true).representation(using: .png, properties: [:])!.write(to: file)
     }
     images.append(#"{"idiom":"mac","size":"\#(pt)x\#(pt)","scale":"\#(scale)x","filename":"\#(name)"}"#)
 }
