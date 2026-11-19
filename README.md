@@ -117,7 +117,7 @@ agents/<n>.json               each agent's name, and when it was last alive
 
 ## Telemetry
 
-Off unless you turn it on, in Settings → General. Turned on, the app reports how it is used and what goes wrong, and never what you write. [`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
+Off unless you say yes. The app asks one time, at the first start, and Settings → General has the switch after that. With a yes, the app reports how it is used and what goes wrong, and never what you write. [`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
 
 ## Contributing
 

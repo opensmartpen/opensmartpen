@@ -6,7 +6,7 @@ A macOS menubar app that captures what a smartpen writes and uploads it to one S
 
 The app captures strokes, keeps them in `~/OpenSmartPen`, and uploads each page to the bucket as strokes and a PNG. That is all of it (decided 2026-11-11).
 
-The app can also report to its makers how it is used and what goes wrong (telemetry, decided 2026-11-17). It is off unless a person says yes, and it is never on by default: the app asks one time at the first start that has a collector of the project to send to (decided 2026-11-19). Until the project has a collector, the built-in address is a collector on the same Mac, and nobody is asked. What the question says must be true: do not add a sentence about how the data is sent or kept that the code or a contract does not back. It never reports what was written. `docs/telemetry.md` is the list of what is sent.
+The app can also report to its makers how it is used and what goes wrong (telemetry, decided 2026-11-17). It is off unless a person says yes, and it is never on by default: the app asks one time at the first start (decided 2026-11-19). The built-in address is the collector of the project, `https://telemetry.opensmartpen.org`. What the question says must be true: do not add a sentence about how the data is sent or kept that the code or a contract does not back. It never reports what was written. `docs/telemetry.md` is the list of what is sent.
 
 Do not add these back to the app: transcription, actions, agents, calls to an agent platform, git. Transcription happens on the other side of the bucket. The app only shows the result: the viewer fetches `transcripts/<copy>/p<N>.md` for the page on screen.
 

@@ -313,11 +313,14 @@ final class TelemetryTests: XCTestCase {
                        .off(reason: "not turned on in Settings"))
     }
 
-    func testTurnedOnWithNoCollectorNamedItGoesToACollectorOnThisMac() {
+    func testTurnedOnWithNoCollectorNamedItGoesToTheCollectorOfTheProject() {
         guard case let .on(plan) = TelemetryPlan.resolve(settings: on, environment: [:]) else { return XCTFail("off") }
-        XCTAssertEqual(plan.logs?.absoluteString, "http://localhost:4318/v1/logs")
-        XCTAssertEqual(plan.traces?.absoluteString, "http://localhost:4318/v1/traces")
-        XCTAssertTrue(TelemetryPlan.builtInIsLocal)
+        XCTAssertEqual(plan.logs?.absoluteString, "https://telemetry.opensmartpen.org/v1/logs")
+        XCTAssertEqual(plan.traces?.absoluteString, "https://telemetry.opensmartpen.org/v1/traces")
+        XCTAssertEqual(plan.metrics?.absoluteString, "https://telemetry.opensmartpen.org/v1/metrics")
+        XCTAssertFalse(TelemetryPlan.builtInIsLocal)
+        XCTAssertTrue(plan.isEncrypted)
+        XCTAssertTrue(plan.goesToProject)
     }
 
     func testWhatIsOffStaysOffWhateverTheEnvironmentSays() {

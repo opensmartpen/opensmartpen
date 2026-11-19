@@ -69,11 +69,13 @@ public struct TelemetryPlan: Equatable {
     public static let serviceName = "opensmartpen-mac"
     public static let serviceNamespace = "opensmartpen"
 
-    /// Where telemetry goes when the config and the environment name no collector. The project
-    /// has no collector yet, so this is the standard address of a collector on the same Mac,
-    /// the one an OpenTelemetry SDK uses by default. The project's own goes here when it exists.
-    public static let builtInEndpoint = "http://localhost:4318"
-    /// True while the built-in address is this Mac and not a collector of the project.
+    /// Where telemetry goes when the config and the environment name no collector: the collector
+    /// of the project. `https`, always: the question at the first start says that what is sent
+    /// is encrypted on its way. A name of the project's own, so the server behind it can change
+    /// and an app of today still reaches it.
+    public static let builtInEndpoint = "https://telemetry.opensmartpen.org"
+    /// True when the built-in address is this Mac and not a collector of the project. It was so
+    /// until 2026-11-19, and a test still asks, so that a build for a developer can go back.
     public static var builtInIsLocal: Bool { url(builtInEndpoint)?.host == "localhost" }
     /// What the project's collector asks for with each export. Public by nature: this is open
     /// source, so it keeps out noise, not people.
