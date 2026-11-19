@@ -1,0 +1,15 @@
+.DS_Store
+# Swift / Xcode
+.build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+# local secrets
+.env
+# Open Smart Pen build output
+app/.build/
+app/dist/
+app/release/
+app/.swiftpm/
+app/Resources/AppIcon.icns
+app/Resources/Assets.car

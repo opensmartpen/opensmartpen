@@ -1,0 +1,52 @@
+Open Smart Pen
+Copyright 2026 Apoco s.r.o.
+
+The source code in this repository is licensed under the Apache License,
+Version 2.0. See the LICENSE file.
+
+Third-party software
+--------------------
+
+The app in app/ links NISDK3, the Neo smartpen SDK for iOS and macOS:
+
+    https://github.com/NeoSmartpen/iOS-SDK3.0
+    Copyright 2017 NeoLAB Convergence, Inc.
+    License: GNU General Public License, version 3
+
+NISDK3 is not in this repository. The Swift package manager downloads it
+when the app is built.
+
+A built copy of the app contains NISDK3. For that reason a built copy of
+the app, as a whole, is distributed under the GNU General Public License,
+version 3. The source code in this repository stays under the Apache
+License, Version 2.0, and can be used under that license without NISDK3.
+
+The app also links Sparkle, the software update framework:
+
+    https://github.com/sparkle-project/Sparkle
+    Copyright 2006-2013 Andy Matuschak, and the Sparkle Project contributors
+    License: MIT
+
+Sparkle is not in this repository either. A built copy of the app contains
+it, with its license text.
+
+The app also links these packages, for telemetry. The Swift package manager
+downloads them when the app is built. All are licensed under the Apache
+License, Version 2.0:
+
+    OpenTelemetry SDK for Swift
+    https://github.com/open-telemetry/opentelemetry-swift
+    https://github.com/open-telemetry/opentelemetry-swift-core
+    Copyright The OpenTelemetry Authors
+
+    Swift Protobuf (with the Runtime Library Exception)
+    https://github.com/apple/swift-protobuf
+    Copyright Apple Inc. and the project authors
+
+    Swift Log
+    https://github.com/apple/swift-log
+    Copyright Apple Inc. and the Swift Logging API project authors
+
+Open Smart Pen is an independent project. It is not affiliated with the maker
+of any pen, paper or other product that it works with or names. All product
+names and trademarks are the property of their owners.
