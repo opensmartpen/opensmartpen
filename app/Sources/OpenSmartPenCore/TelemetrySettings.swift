@@ -60,6 +60,11 @@ public struct TelemetryPlan: Equatable {
     public var deltaMetrics = false
     /// Things in the environment that were not understood. For the log.
     public var notes: [String] = []
+    /// True when everything goes to the collector of the project: the address built into the
+    /// app, which is not this Mac, with no other address from the config or the environment.
+    /// What the app says about where the data is kept is a promise about that collector, so it
+    /// is said only when this is true.
+    public var goesToProject = false
 
     public static let serviceName = "opensmartpen-mac"
     public static let serviceNamespace = "opensmartpen"
@@ -139,6 +144,10 @@ public struct TelemetryPlan: Equatable {
         guard plan.logs != nil || plan.traces != nil || plan.metrics != nil else {
             return .off(reason: "no collector to send to")
         }
+        let elsewhere = ["OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+                         "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"]
+            .contains { value($0) != nil } || !settings.endpoint.trimmingCharacters(in: .whitespaces).isEmpty
+        plan.goesToProject = !elsewhere && url(builtInEndpoint).map { $0.host != "localhost" } == true
 
         plan.headers = builtInHeaders
         plan.headers.merge(settings.headers) { _, new in new }

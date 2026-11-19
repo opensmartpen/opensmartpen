@@ -279,8 +279,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var wanted = config.telemetry
         wanted.enabled = true
         var encrypted = false
-        if case let .on(plan) = TelemetryPlan.resolve(settings: wanted) { encrypted = plan.isEncrypted }
-        let notice = TelemetryNoticeController(installId: telemetryState.installId, encrypted: encrypted)
+        var ours = false
+        if case let .on(plan) = TelemetryPlan.resolve(settings: wanted) {
+            encrypted = plan.isEncrypted
+            ours = plan.goesToProject
+        }
+        let notice = TelemetryNoticeController(installId: telemetryState.installId, encrypted: encrypted,
+                                               ours: ours)
         notice.onAnswer = { [weak self] yes in self?.telemetryNoticeAnswered(keep: yes) }
         telemetryNotice = notice
         NSApp.activate(ignoringOtherApps: true)

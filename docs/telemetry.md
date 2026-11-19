@@ -11,6 +11,7 @@ Decided 2026-11-17. Off by default since 2026-11-18, and a question at the first
 - **This version asks nobody and sends nothing to the makers.** The project has no collector yet. The address built into the app is `http://localhost:4318`: a collector on your own Mac, the standard address of OpenTelemetry. A build with only that address does not ask. If you turn telemetry on in the config file, the app asks at the next start, and then sends there, unless the config or the environment names another collector.
 - **What it is for.** To find problems and to decide what to improve. Nothing else is done with it.
 - **On its way it is encrypted,** when the collector's address is `https`. The project's own collector will be. The window says so only when it is true for where the app sends.
+- **Where it is kept.** The collector of the project keeps it in certified storage that meets the GDPR. The window says so only when the app sends to that collector and to no other address. The project has no collector yet; its host is chosen so that this sentence is true.
 - **Off means off.** No environment variable turns it on, and what was waiting to be sent is deleted.
 
 ## What is never sent

@@ -65,6 +65,25 @@ final class TelemetryQuestionTests: XCTestCase {
         XCTAssertEqual(mixed?.isEncrypted, false)
     }
 
+    func testTheCollectorOfTheProjectIsOurs() {
+        XCTAssertEqual(plan(ours)?.goesToProject, true)
+    }
+
+    func testThisMacIsNotTheCollectorOfTheProject() {
+        XCTAssertEqual(plan(thisMac)?.goesToProject, false)
+    }
+
+    func testAnotherAddressFromTheConfigOrTheEnvironmentIsNotOurs() {
+        guard case let .on(configured) = TelemetryPlan.resolve(
+            settings: settings(enabled: true, endpoint: "https://other.example.org"), environment: [:],
+            builtInEndpoint: ours) else { return XCTFail("no plan") }
+        XCTAssertFalse(configured.goesToProject)
+        XCTAssertEqual(plan(ours, environment: ["OTEL_EXPORTER_OTLP_ENDPOINT": "https://other.example.org"])?
+            .goesToProject, false)
+        XCTAssertEqual(plan(ours, environment: ["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://other.example.org/v1/logs"])?
+            .goesToProject, false)
+    }
+
     /// The question says "encrypted on its way to us" for the project's own collector. So the
     /// address built into the app is this Mac, for a developer, or it is `https`.
     func testTheBuiltInCollectorIsThisMacOrHttps() {
