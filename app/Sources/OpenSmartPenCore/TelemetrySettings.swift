@@ -2,8 +2,9 @@ import Foundation
 
 /// The `telemetry` part of the config: whether the app reports at all, and to where.
 public struct TelemetrySettings: Codable, Equatable {
-    /// Off unless the person turns it on, in Settings → General or here. The project has no
-    /// collector yet; when it has one, this becomes on, with the notice (decided 2026-11-18).
+    /// Off unless the person says yes: to the question at the first start, in Settings →
+    /// General, or here. It is never on by default: reading an id from a person's Mac and
+    /// sending it needs their yes first.
     public var enabled = false
     /// The collector, as `https://host` or `https://host:4318`. Empty means the built-in one.
     public var endpoint = ""
@@ -59,15 +60,22 @@ public struct TelemetryPlan: Equatable {
     public var deltaMetrics = false
     /// Things in the environment that were not understood. For the log.
     public var notes: [String] = []
+    /// True when everything goes to the collector of the project: the address built into the
+    /// app, which is not this Mac, with no other address from the config or the environment.
+    /// What the app says about where the data is kept is a promise about that collector, so it
+    /// is said only when this is true.
+    public var goesToProject = false
 
     public static let serviceName = "opensmartpen-mac"
     public static let serviceNamespace = "opensmartpen"
 
-    /// Where telemetry goes when the config and the environment name no collector. The project
-    /// has no collector yet, so this is the standard address of a collector on the same Mac,
-    /// the one an OpenTelemetry SDK uses by default. The project's own goes here when it exists.
-    public static let builtInEndpoint = "http://localhost:4318"
-    /// True while the built-in address is this Mac and not a collector of the project.
+    /// Where telemetry goes when the config and the environment name no collector: the collector
+    /// of the project. `https`, always: the question at the first start says that what is sent
+    /// is encrypted on its way. A name of the project's own, so the server behind it can change
+    /// and an app of today still reaches it.
+    public static let builtInEndpoint = "https://telemetry.opensmartpen.org"
+    /// True when the built-in address is this Mac and not a collector of the project. It was so
+    /// until 2026-11-19, and a test still asks, so that a build for a developer can go back.
     public static var builtInIsLocal: Bool { url(builtInEndpoint)?.host == "localhost" }
     /// What the project's collector asks for with each export. Public by nature: this is open
     /// source, so it keeps out noise, not people.
@@ -76,6 +84,32 @@ public struct TelemetryPlan: Equatable {
     public enum Outcome: Equatable {
         case off(reason: String)
         case on(TelemetryPlan)
+    }
+
+    /// True when every address this plan sends to is `https`, so what is sent cannot be read on
+    /// its way. The question at the first start says so only when this is true.
+    public var isEncrypted: Bool {
+        let all = [logs, traces, metrics].compactMap { $0 }
+        return !all.isEmpty && all.allSatisfy { $0.scheme?.lowercased() == "https" }
+    }
+
+    /// True when the person must be asked whether the app may report to its makers.
+    ///
+    /// They are asked one time, at the first start that could send: the project has a collector
+    /// that is not this Mac itself, or the person turned telemetry on in the config file. A
+    /// build whose only collector is this Mac asks nobody, because it would send nowhere. And
+    /// nothing is asked when nothing could be sent in any case (`OTEL_SDK_DISABLED`).
+    public static func questionIsOwed(asked: Date?, settings: TelemetrySettings,
+                                      environment: [String: String] = ProcessInfo.processInfo.environment,
+                                      builtInEndpoint: String = TelemetryPlan.builtInEndpoint) -> Bool {
+        guard asked == nil else { return false }
+        guard settings.enabled || url(builtInEndpoint).map({ $0.host != "localhost" }) == true else { return false }
+        var wanted = settings
+        wanted.enabled = true
+        if case .on = resolve(settings: wanted, environment: environment, builtInEndpoint: builtInEndpoint) {
+            return true
+        }
+        return false
     }
 
     public static func resolve(settings: TelemetrySettings,
@@ -112,6 +146,10 @@ public struct TelemetryPlan: Equatable {
         guard plan.logs != nil || plan.traces != nil || plan.metrics != nil else {
             return .off(reason: "no collector to send to")
         }
+        let elsewhere = ["OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+                         "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"]
+            .contains { value($0) != nil } || !settings.endpoint.trimmingCharacters(in: .whitespaces).isEmpty
+        plan.goesToProject = !elsewhere && url(builtInEndpoint).map { $0.host != "localhost" } == true
 
         plan.headers = builtInHeaders
         plan.headers.merge(settings.headers) { _, new in new }
@@ -177,8 +215,9 @@ public struct TelemetryState: Codable, Equatable {
     /// is not made from the Mac, the account or a pen.
     public var installId: String
     public var created: Date
-    /// When the person was told that the app reports. Nil until they have been, and until then
-    /// nothing is sent.
+    /// When the person answered the question at the first start, or turned telemetry on in
+    /// Settings. Nil until then, and until then nothing is sent. The name is from the time
+    /// when this was a notice and not a question; the file keeps it.
     public var noticed: Date?
     /// Crash reports written up to this time have been sent, or were there before telemetry was.
     public var crashesReadTo: Date?

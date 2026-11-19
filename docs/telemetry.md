@@ -2,13 +2,16 @@
 
 The app can report to its makers how it is used and what goes wrong. This page is the full list of what it sends, when, and how to turn it off. If the code sends something that is not on this page, that is a bug.
 
-Decided 2026-11-17, and off by default since 2026-11-18.
+Decided 2026-11-17. Off by default since 2026-11-18, and a question at the first start since 2026-11-19.
 
 ## The short version
 
-- **It is off unless you turn it on.** Settings → General → "Send usage data and error reports", or `"telemetry": {"enabled": true}` in the config. The project has no collector yet. When it has one, a later version will have telemetry on unless you turn it off, and will tell you first.
-- **This version sends nothing to the makers.** The address built into the app is `http://localhost:4318`: a collector on your own Mac, the standard address of OpenTelemetry. Turned on, the app sends there, unless the config or the environment names another collector. With no collector running there, nothing leaves the app.
-- **You are told first.** If telemetry is on and you were never told (it was turned on in the config file, not in Settings), a window says so at the start and has a "Turn Off" button. Nothing is sent until you answer it. If you turn it off there, what was collected until then is deleted and never sent.
+- **It is off unless you say yes.** The app never turns it on by itself. You say yes in one of two places: the question at the first start, or Settings → General → "Send usage data and error reports" (`"telemetry": {"enabled": true}` in the config).
+- **You are asked one time.** A window asks at the first start: "Help improve Open Smart Pen?", with "Send" and "Not Now". "Not Now", or closing the window, is a no. The app does not ask again; Settings → General has the switch. Until you answer, nothing is sent: what happens meanwhile is kept in memory, and is sent after a yes or deleted after a no.
+- **Where it goes.** To the collector of the project, at `https://telemetry.opensmartpen.org`, unless the config or the environment names another collector.
+- **What it is for.** To find problems and to decide what to improve. Nothing else is done with it.
+- **On its way it is encrypted,** when the collector's address is `https`. The project's own collector will be. The window says so only when it is true for where the app sends.
+- **Where it is kept.** The collector of the project keeps it in certified storage that meets the GDPR. The window says so only when the app sends to that collector and to no other address. The host of the collector is chosen so that this sentence is true.
 - **Off means off.** No environment variable turns it on, and what was waiting to be sent is deleted.
 
 ## What is never sent
@@ -211,7 +214,7 @@ The address comes from three places. The first one that is set is used:
 
 1. The standard OpenTelemetry environment variables.
 2. `telemetry` in `~/.config/opensmartpen/config.json`.
-3. The address built into the app. In this version it is `http://localhost:4318`, a collector on the same Mac.
+3. The address built into the app: `https://telemetry.opensmartpen.org`, the collector of the project.
 
 ```json
 "telemetry": {
@@ -246,8 +249,8 @@ A variable cannot turn telemetry on. Only the setting does.
 ## To see it work
 
 1. Start a collector that takes OTLP over HTTP on port 4318.
-2. Put `"telemetry": {"enabled": true}` in the config and start the app. The built-in address is that collector.
-3. Answer the notice. The events of the start arrive some seconds later: they wait in the queue on disk for about five seconds first.
+2. Put `"telemetry": {"enabled": true, "endpoint": "http://localhost:4318"}` in the config and start the app.
+3. Answer the question with "Send". The events of the start arrive some seconds later: they wait in the queue on disk for about five seconds first.
 
 With Apple's `container`, and `collector.yaml` in the current folder (an `otlp` receiver on `0.0.0.0:4318`, a `debug` exporter with `verbosity: detailed`, and a pipeline for each of logs, traces and metrics):
 
