@@ -23,7 +23,7 @@ Open Smart Pen is a small app in the macOS menu bar. It captures what a smartpen
 The app does one job. It does not transcribe, it has no account, and it never sends us what you write. It can report how it is used and what goes wrong, and that is off unless you turn it on. See [Telemetry](#telemetry).
 
 <p align="center">
-  <img src="assets/panel.png" width="380" alt="The Open Smart Pen panel under the menu bar: two pens, two agents and three notebooks">
+  <img src="assets/panel.png" width="288" alt="The Open Smart Pen panel: two pens, two agents and three notebooks">
 </p>
 
 ## How it works
