@@ -20,7 +20,7 @@
 
 Open Smart Pen is a small app in the macOS menu bar. It captures what a smartpen writes on paper and keeps each page as plain files in a folder on your Mac. Your agent, for example Claude Code or Codex, reads the pages and does the rest: it transcribes them, makes tasks, writes messages, builds what you sketched.
 
-The app does one job. It does not transcribe, it has no account, and it never sends us what you write. It can report how it is used and what goes wrong, and that is off unless you turn it on. See [Telemetry](#telemetry).
+The app does one job. It does not transcribe, it has no account, and it never sends us what you write.
 
 <p align="center">
   <img src="assets/panel.png" width="288" alt="The Open Smart Pen panel: two pens, two agents and three notebooks">
@@ -103,16 +103,6 @@ agents/<n>.json               each agent's name, and when it was last alive
 
 [`docs/processing.md`](docs/processing.md) is the full contract between the app and an agent: what the app writes, where, and when.
 
-## Telemetry
-
-The app can send its makers how it is used and what goes wrong: which buttons are clicked, how many pages are synced, the Bluetooth address of each pen, errors and crashes. It never sends what you write, your pages, their text, the names of your notebooks and pens, or anything about your bucket.
-
-- **It is off unless you turn it on,** in Settings → General. You can turn it off again at any time.
-- **This version sends nothing to us.** The project has no collector yet. Turned on, the app sends to a collector on your own Mac (`http://localhost:4318`), unless the config names another.
-- **A later version will have it on unless you turn it off.** A window will say so before anything is sent, and it has a "Turn Off" button.
-
-[`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
-
 ## Documentation
 
 | Document | What it is |
@@ -124,6 +114,10 @@ The app can send its makers how it is used and what goes wrong: which buttons ar
 | [`docs/stroke-format.md`](docs/stroke-format.md) | The format of the stroke files |
 | [`docs/ubiquitous-language.md`](docs/ubiquitous-language.md) | The glossary |
 | [`app/README.md`](app/README.md) | How to build, install and debug the app |
+
+## Telemetry
+
+Off unless you turn it on, in Settings → General. Turned on, the app reports how it is used and what goes wrong, and never what you write. [`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
 
 ## Contributing
 
