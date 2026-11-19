@@ -46,8 +46,8 @@ You do not need a pen to try it. The app also takes a photo of a handwritten pag
 | --- | --- | --- |
 | Neo smartpen A1 | Ncode paper | Tested |
 | LAMY safari all black ncode | LAMY digital paper, Ncode paper | Tested |
+| Moleskine Pen+ | Moleskine Paper Tablet | Tested |
 | Other Neo smartpens (M1+, N2, R1, dimo) | Ncode paper | Not tested |
-| Moleskine Pen+ | Moleskine Paper Tablet | Not tested |
 
 The pens that are not tested use the same technology as the tested ones. Pens are added to this list as they are tested.
 
