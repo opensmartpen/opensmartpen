@@ -122,10 +122,10 @@ same path, on the same 16-unit grid, as `StatusIcon.pencil`. It is kept as code 
 picture in the repository, so the two cannot drift apart unnoticed. It has no ink drop: in the
 menu bar the drop means that pages wait to be synced, and an icon must not claim a state.
 
-Each size is drawn again, not scaled down, with a thinner line than the menu bar has: a line that
-is right at 16 points is too heavy at 1024. `make-app.sh` makes the `.icns` again at each build,
-and it is not committed. `assets/logo.png` and `assets/avatar.png` are committed, because the
-README and GitHub need a file; `--logo` and `--avatar` write them.
+The app icon is the same picture as `assets/logo.png`: a near-white plate with a violet and a pink
+tint, and the pencil. Each size is drawn again, not scaled down. `make-app.sh` makes the `.icns`
+again at each build, and it is not committed. `assets/logo.png` and `assets/avatar.png` are
+committed, because the README and GitHub need a file; `--logo` and `--avatar` write them.
 
 ## Pens and notebooks
 
