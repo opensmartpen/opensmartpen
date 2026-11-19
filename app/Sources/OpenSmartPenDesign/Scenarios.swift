@@ -77,7 +77,7 @@ public enum Scenario: String, CaseIterable {
             // plain names: the panel on an ordinary day. To make the picture again:
             //   .build/debug/opensmartpen-design --render=readme:<file.png>
             // writes the panel at twice its size, with nothing behind it. The picture in the
-            // README is that panel alone, in the middle of a desktop colour.
+            // README is that panel alone on its dark ground, with a shadow and nothing behind it.
             s.status = .connected
             s.agents = [PanelModel.AgentRow(id: 0, name: "Claude", alive: "alive 1 min ago", behind: false,
                                             url: URL(string: "https://example.com")),
