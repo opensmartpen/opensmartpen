@@ -1,6 +1,7 @@
 import AppKit
 import OpenSmartPenCore
 import OpenSmartPenUI
+import SwiftUI
 
 /// The design app is one window and nothing else. It opens on launch and quits when the window
 /// closes, because there is nothing left for it to do.
@@ -15,8 +16,37 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
 
     public override init() { super.init() }
 
+    /// `--render=<state>:<file.png>` writes the dark panel of one state as a picture, at twice
+    /// its size and with nothing behind it, and opens no window. A picture of the screen has the
+    /// screen's own resolution and whatever is behind the panel; this has neither. It is how
+    /// `assets/panel.png` gets its panel.
+    @MainActor
+    private static func render(_ what: String) {
+        let parts = what.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2, let scenario = Scenario(rawValue: parts[0]) else {
+            FileHandle.standardError.write(Data("usage: --render=<state>:<file.png>\n".utf8))
+            return
+        }
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        let model = PanelModel(snapshot: scenario.snapshot)
+        let renderer = ImageRenderer(content: StatusPanel(model: model, now: Date())
+            .environment(\.colorScheme, .dark))
+        renderer.scale = 2
+        guard let tiff = renderer.nsImage?.tiffRepresentation,
+              let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+            FileHandle.standardError.write(Data("the panel could not be drawn\n".utf8))
+            return
+        }
+        try? png.write(to: URL(fileURLWithPath: (parts[1] as NSString).expandingTildeInPath))
+    }
+
     public func applicationDidFinishLaunching(_ notification: Notification) {
         let arguments = CommandLine.arguments
+        if let flag = arguments.first(where: { $0.hasPrefix("--render=") }) {
+            Self.render(String(flag.dropFirst("--render=".count)))
+            NSApp.terminate(nil)
+            return
+        }
         let controller: NSWindowController
         if let flag = arguments.first(where: { $0.hasPrefix("--settings") }) {
             let named = flag.split(separator: "=").dropFirst().first.map(String.init)

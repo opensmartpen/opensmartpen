@@ -75,9 +75,9 @@ public enum Scenario: String, CaseIterable {
         case .readme:
             // The two pens of every state, two agents that both work, and three notebooks with
             // plain names: the panel on an ordinary day. To make the picture again:
-            //   .build/debug/opensmartpen-design --scenario=readme
-            //   scripts/shot.sh opensmartpen-design <dir>
-            // then cut the dark panel out and set it under a menu bar, on a desktop colour.
+            //   .build/debug/opensmartpen-design --render=readme:<file.png>
+            // writes the panel at twice its size, with nothing behind it. The picture in the
+            // README is that panel set under a drawn menu bar, on a desktop colour.
             s.status = .connected
             s.agents = [PanelModel.AgentRow(id: 0, name: "Claude", alive: "alive 1 min ago", behind: false,
                                             url: URL(string: "https://example.com")),
