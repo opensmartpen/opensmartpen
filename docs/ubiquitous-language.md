@@ -27,4 +27,4 @@ Terms used in this project, kept precise. Update inline when a term is resolved.
 - **Telemetry event** — one thing the app reports: a click, a pen that connected, a problem. Not an **Event**: an event is captured from a client and kept in raw; a telemetry event is about the app and is kept by the collector.
 - **Install id** — a random id for one install of the app on one Mac, sent with all telemetry. Kept outside the app, so it stays when the app is installed again. It says "the same install" and nothing about the person.
 - **Collector** — the server that takes the telemetry. The project has none yet; the app's built-in address is one on the same Mac, `http://localhost:4318`.
-- **Note** — a user-meaningful grouping of pages (by book, time gap, or marker). Derived and not yet defined; see `docs/decisions.md`.
+- **Note** — a user-meaningful grouping of pages (by book, time gap, or marker). Derived and not yet defined.

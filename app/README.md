@@ -219,7 +219,7 @@ The app reports how it is used and what goes wrong, with the OpenTelemetry SDK, 
 
 ## Layout
 
-Four layers, each unable to reach the one above it. See [ADR-003](../docs/adrs/003-ui-layer-separate-from-the-pen-sdk.md).
+Four layers, each unable to reach the one above it.
 
 - `Sources/OpenSmartPenCore` — no SDK dependency, no AppKit, fully unit-tested: models and JSONL serialisation, `StrokeAssembler` (dots → strokes), `RawStore` (append-only files), `QuietTracker` (what is pending and when it publishes), `Notebook`/`PageNaming` (how a page is described to a person), `S3Client` and `SigV4` (put a file in a bucket, with no AWS SDK), `PagePictures` (the PNG of each page, kept in the folder), `S3Sync` (what has been uploaded and what has not), `SyncCoordinator` (write, track, upload, back off, notify), `Config`, notifiers, `Telemetry` (what the app reports, with no SDK behind it), `TelemetryPlan` (where it goes), `CrashReport` (a crash, read from the report macOS wrote).
 - `Sources/OpenSmartPenUI` — every window and view, and no SDK: `PanelModel` (one observable snapshot fed by the existing `onChange` closures), `StatusPanel` (SwiftUI), `StatusIcon` (the pencil and its states), `Viewer`, the pinned and menubar panels, the settings window. `PenLink` is the whole of what it knows about a pen — a protocol of plain values, so the layer builds and runs with no pen and no SDK linked in.

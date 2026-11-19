@@ -32,7 +32,7 @@ final class ControlSurfaceTests: XCTestCase {
 
     // MARK: decoding
 
-    /// The six taps Matous actually made on 2026-09-12, paired with the line he wrote after each.
+    /// The six taps the owner actually made on 2026-09-12, paired with the line written after each.
     func testRealTapsDecodeToTheButtonsTheyWerePressed() {
         let observed: [(Double, Double, ControlButton)] = [
             (9.71, 52.94, .width(.medium)), (20.02, 43.88, .ink(.red)),

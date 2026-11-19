@@ -50,7 +50,7 @@ The pane draws Markdown a line at a time: `# ` as the title, `## ` as a heading 
 
 ## Open
 
-- Grouping pages into notes. Candidates: same book plus a time gap (Neo Studio 2 uses 15 minutes), or a hand-drawn marker in a page corner. Tracked in `docs/landscape-log.md`.
+- Grouping pages into notes. Candidates: same book plus a time gap (Neo Studio 2 uses 15 minutes), or a hand-drawn marker in a page corner.
 - Whether `pens/`, `mode.jsonl` and `palette.json` should go up at all while the only agent transcribes from the PNG.
 
 ## The setup text for a new agent

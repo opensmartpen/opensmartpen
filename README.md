@@ -109,9 +109,6 @@ The app can send its makers how it is used and what goes wrong: which buttons ar
 | [`docs/agent-install.md`](docs/agent-install.md) | The text an agent sets itself up from |
 | [`docs/telemetry.md`](docs/telemetry.md) | What the app reports to its makers, and how to turn it off |
 | [`docs/stroke-format.md`](docs/stroke-format.md) | The format of the stroke files |
-| [`docs/decisions.md`](docs/decisions.md) | The decision log. Formal records are in [`docs/adrs/`](docs/adrs/) |
-| [`docs/research.md`](docs/research.md) | Research on the pen SDK, the protocol and the vendor app |
-| [`docs/landscape-log.md`](docs/landscape-log.md) | How other products solve the same problems |
 | [`docs/ubiquitous-language.md`](docs/ubiquitous-language.md) | The glossary |
 | [`app/README.md`](app/README.md) | How to build, install and debug the app |
 

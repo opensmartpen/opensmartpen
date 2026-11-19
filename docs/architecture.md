@@ -14,7 +14,5 @@ One more thing leaves the Mac, and it is not pages: the app → OTLP over HTTP �
 - `docs/processing.md` — the contract with whatever reads the folder or the bucket: what the app writes, how time is to be read, and the instructions given to the agent.
 - `docs/telemetry.md` — what the app reports to its makers, when, and how to turn it off.
 - `docs/stroke-format.md` — raw and derived file formats, geometry.
-- `docs/decisions.md` — running decision log; formal records go to `docs/adrs/`.
-- `docs/landscape-log.md` — how other products solve each concern and how we differ.
+- `docs/adrs/` — formal decision records.
 - `docs/ubiquitous-language.md` — glossary.
-- `docs/research.md` — SDK, protocol, app and field research (2026-09-10).

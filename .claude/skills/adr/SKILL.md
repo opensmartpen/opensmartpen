@@ -61,7 +61,7 @@ summary: One line stating what was decided.
 
 ## The running log is not the ADR log
 
-`docs/decisions.md` and `docs/adrs/` split by genre. The log keeps measurements, incidents, dead ends, open questions and ideas — things that are not decisions. An ADR keeps one decision.
+The maintainers' decision log (not in this repository; see `AGENTS.md`) and `docs/adrs/` split by genre. The log keeps measurements, incidents, dead ends, open questions and ideas — things that are not decisions. An ADR keeps one decision.
 
 When an accepted ADR takes a decision, **delete that entry from the log.** Do not leave a pointer behind: the same argument in two places is free to drift apart. Cut whole sections when they graduate whole, single bullets otherwise, and keep anything no ADR records even inside a graduated section.
 

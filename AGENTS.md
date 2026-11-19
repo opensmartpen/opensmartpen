@@ -4,7 +4,7 @@ A macOS menubar app that captures what a Neo smartpen writes and uploads it to o
 
 ## What the app is, and is not
 
-The app captures strokes, keeps them in `~/OpenSmartPen`, and uploads each page to the bucket as strokes and a PNG. That is all of it (decided 2026-11-11, see `docs/decisions.md`).
+The app captures strokes, keeps them in `~/OpenSmartPen`, and uploads each page to the bucket as strokes and a PNG. That is all of it (decided 2026-11-11).
 
 The app can also report to its makers how it is used and what goes wrong (telemetry, decided 2026-11-17). It is off unless a person turns it on, and its built-in address is a collector on the same Mac, until the project has a collector (decided 2026-11-18). It never reports what was written. `docs/telemetry.md` is the list of what is sent.
 
@@ -26,4 +26,6 @@ An agent learns all of this from the website, not from this repository: `https:/
 - Do not run the `opensmartpen` binary by hand. The installed copy is running, and two copies would both take the pen.
 - Telemetry: call `Telemetry.event`, `Telemetry.span`, `Telemetry.count` or `Telemetry.measure` from `OpenSmartPenCore`; only `OTelTelemetry.swift` imports the OpenTelemetry SDK. If you add, change or remove an event, a span or a metric, update `docs/telemetry.md` in the same change. A metric is made in `TelemetryMetric`, and its attributes are a few fixed words: never the address of a pen. Never put in an event: what was written, a notebook title, a name a person gave a pen, a file name, anything about the bucket.
 - A `Log.warn` or `Log.error` line is sent as telemetry. Do not put a name that a person gave to something in one. If the line needs such a name, write `Log.warn("…", telemetry: false)`.
-- Decisions go in `docs/decisions.md`; formal ones in `docs/adrs/`. Terms are in `docs/ubiquitous-language.md`.
+- The decision log is not in this repository. The maintainers keep it in their private `product` repository, at `engineering/decisions.md`; on a maintainer's Mac that is `../product/engineering/decisions.md`. Write a decision there when that folder exists. When it does not, tell the user the decision and add no log here.
+- This repository is public. Do not write here: the name of a person, another product of the company, a remark about a vendor or its license, or a legal question that is open.
+- A formal decision record goes in `docs/adrs/`, written for a reader outside. Terms are in `docs/ubiquitous-language.md`.

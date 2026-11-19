@@ -2,7 +2,7 @@
 
 The app can report to its makers how it is used and what goes wrong. This page is the full list of what it sends, when, and how to turn it off. If the code sends something that is not on this page, that is a bug.
 
-Decided 2026-11-17, and off by default since 2026-11-18; see `docs/decisions.md`.
+Decided 2026-11-17, and off by default since 2026-11-18.
 
 ## The short version
 
