@@ -73,19 +73,12 @@ public enum Scenario: String, CaseIterable {
 
         switch self {
         case .readme:
-            // Two plain pens, two agents that both work, and three notebooks with plain names:
-            // the panel on an ordinary day, with nothing to explain. To make the picture again:
+            // The two pens of every state, two agents that both work, and three notebooks with
+            // plain names: the panel on an ordinary day. To make the picture again:
             //   .build/debug/opensmartpen-design --scenario=readme
-            //   scripts/shot.sh opensmartpen-design <dir>, then cut the dark panel out.
+            //   scripts/shot.sh opensmartpen-design <dir>
+            // then cut the dark panel out and set it under a menu bar, on a desktop colour.
             s.status = .connected
-            s.lowPen = nil
-            s.battery = Battery(percent: 72, charging: false, low: false)
-            s.pens = [
-                PenRow(id: "a", name: "Writing 2", ink: .black, width: .medium, mode: .writing,
-                       percent: 72, low: false, active: false, state: "Connected", awake: true),
-                PenRow(id: "b", name: "Writing", ink: .black, width: .medium, mode: .writing,
-                       percent: 58, low: false, active: false, state: "Connected", awake: true),
-            ]
             s.agents = [PanelModel.AgentRow(id: 0, name: "Claude", alive: "alive 1 min ago", behind: false,
                                             url: URL(string: "https://example.com")),
                         PanelModel.AgentRow(id: 1, name: "Codex", alive: "alive 2 min ago", behind: false,

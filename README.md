@@ -23,7 +23,7 @@ Open Smart Pen is a small app in the macOS menu bar. It captures what a smartpen
 The app does one job. It does not transcribe, it has no account, and it never sends us what you write. It can report how it is used and what goes wrong, and that is off unless you turn it on. See [Telemetry](#telemetry).
 
 <p align="center">
-  <img src="assets/panel.png" width="320" alt="The Open Smart Pen panel: two pens, two agents and three notebooks">
+  <img src="assets/panel.png" width="380" alt="The Open Smart Pen panel under the menu bar: two pens, two agents and three notebooks">
 </p>
 
 ## How it works
@@ -44,12 +44,12 @@ You do not need a pen to try it. The app also takes a photo of a handwritten pag
 
 | Pen | Paper | Status |
 | --- | --- | --- |
-| Neo smartpen A1 | Ncode paper | Works. Used each day |
-| LAMY safari all black ncode | LAMY digital paper, Ncode paper | Works. Used each day |
-| Other Neo smartpens (M1+, N2, R1, dimo) | Ncode paper | Same technology. Not tested yet |
-| Moleskine Pen+ | Moleskine Paper Tablet | Same technology. Not tested yet |
+| Neo smartpen A1 | Ncode paper | Tested |
+| LAMY safari all black ncode | LAMY digital paper, Ncode paper | Tested |
+| Other Neo smartpens (M1+, N2, R1, dimo) | Ncode paper | Not tested |
+| Moleskine Pen+ | Moleskine Paper Tablet | Not tested |
 
-We add pens to this list as we test them. If you have a pen that is not on it, open an issue and tell us what happened.
+The pens that are not tested use the same technology as the tested ones. Pens are added to this list as they are tested.
 
 ### No pen
 
