@@ -3,8 +3,8 @@ import Foundation
 /// The `telemetry` part of the config: whether the app reports at all, and to where.
 public struct TelemetrySettings: Codable, Equatable {
     /// Off unless the person says yes: to the question at the first start, in Settings →
-    /// General, or here. It is never on by default: reading an id from a person's Mac and
-    /// sending it needs their yes first.
+    /// General, or here. It is never on by default. Off, one thing still leaves: `UpdatePing`,
+    /// with each check for updates.
     public var enabled = false
     /// The collector, as `https://host` or `https://host:4318`. Empty means the built-in one.
     public var endpoint = ""
@@ -216,7 +216,7 @@ public struct TelemetryState: Codable, Equatable {
     public var installId: String
     public var created: Date
     /// When the person answered the question at the first start, or turned telemetry on in
-    /// Settings. Nil until then, and until then nothing is sent. The name is from the time
+    /// Settings. Nil until then, and until then no telemetry is sent. The name is from the time
     /// when this was a notice and not a question; the file keeps it.
     public var noticed: Date?
     /// Crash reports written up to this time have been sent, or were there before telemetry was.

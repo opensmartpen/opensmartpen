@@ -151,7 +151,7 @@ public protocol TelemetrySink: AnyObject {
 /// call this and know nothing of OpenTelemetry; the app target gives it a sink.
 ///
 /// It has three states. Off: every call does nothing. Holding: events are kept in memory and
-/// nothing leaves the Mac, which is the state from the start of the app until the person has
+/// no event leaves the Mac, which is the state from the start of the app until the person has
 /// been told about telemetry. On: events go to the sink.
 ///
 /// Never put in an event: what was written, a notebook's title, a name a person gave a pen, a

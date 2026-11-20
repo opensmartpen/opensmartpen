@@ -13,9 +13,13 @@ import Sparkle
 /// class, which waits for a moment that nobody notices (`UpdateMoment`) and restarts the app. A
 /// person sees a window only when they ask: "Check for Updates…" in the About tab.
 ///
-/// The check is one request for a public file. Nothing about this Mac or its notes goes with it.
+/// The check is one request for a public file. After each check the app tells its makers which
+/// version it is (`onCheck`, and `UpdatePing`): the version, the install id and whether
+/// telemetry is on. Nothing about the notes.
 final class Updater: NSObject, SPUUpdaterDelegate {
     private var controller: SPUStandardUpdaterController!
+    /// Called after each check for updates, one made by the schedule or one a person asked for.
+    var onCheck: (() -> Void)?
     /// Sparkle's own "install now and start again", kept until the moment is quiet.
     private var install: (() -> Void)?
     /// The version that is downloaded and waits, for the log.
@@ -77,6 +81,11 @@ final class Updater: NSObject, SPUUpdaterDelegate {
     /// The feed names a version newer than this one.
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         Telemetry.event("update.found", ["update.version": .string(item.displayVersionString)])
+    }
+
+    /// A check is over, with an update or with none.
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+        onCheck?()
     }
 
     /// A check, a download or an install stopped. "There is no newer version" also ends this

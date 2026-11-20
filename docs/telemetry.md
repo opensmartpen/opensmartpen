@@ -2,17 +2,38 @@
 
 The app can report to its makers how it is used and what goes wrong. This page is the full list of what it sends, when, and how to turn it off. If the code sends something that is not on this page, that is a bug.
 
-Decided 2026-11-17. Off by default since 2026-11-18, and a question at the first start since 2026-11-19.
+Decided 2026-11-17. Off by default since 2026-11-18, and a question at the first start since 2026-11-19. The message with each check for updates since 2026-11-20.
 
 ## The short version
 
-- **It is off unless you say yes.** The app never turns it on by itself. You say yes in one of two places: the question at the first start, or Settings → General → "Send usage data and error reports" (`"telemetry": {"enabled": true}` in the config).
-- **You are asked one time.** A window asks at the first start: "Help improve Open Smart Pen?", with "Send" and "Not Now". "Not Now", or closing the window, is a no. The app does not ask again; Settings → General has the switch. Until you answer, nothing is sent: what happens meanwhile is kept in memory, and is sent after a yes or deleted after a no.
+- **Usage data is off unless you say yes.** The app never turns it on by itself. You say yes in one of two places: the question at the first start, or Settings → General → "Send usage data and error reports" (`"telemetry": {"enabled": true}` in the config).
+- **You are asked one time.** A window asks at the first start: "Help improve Open Smart Pen?", with "Send" and "Not Now". "Not Now", or closing the window, is a no. The app does not ask again; Settings → General has the switch. Until you answer, no usage data is sent: what happens meanwhile is kept in memory, and is sent after a yes or deleted after a no.
 - **Where it goes.** To the collector of the project, at `https://telemetry.opensmartpen.org`, unless the config or the environment names another collector.
 - **What it is for.** To find problems and to decide what to improve. Nothing else is done with it.
 - **On its way it is encrypted,** when the collector's address is `https`. The project's own collector will be. The window says so only when it is true for where the app sends.
 - **Where it is kept.** The collector of the project keeps it in certified storage that meets the GDPR. The window says so only when the app sends to that collector and to no other address. The host of the collector is chosen so that this sentence is true.
-- **Off means off.** No environment variable turns it on, and what was waiting to be sent is deleted.
+- **One message is sent with or without a yes.** When the app checks for updates, about one time each day, it tells the collector of the project its version, the install id, and whether usage data is on. Nothing else. See [With each check for updates](#with-each-check-for-updates).
+- **Off means that no usage data is sent.** No environment variable turns it on, and what was waiting to be sent is deleted.
+
+## With each check for updates
+
+A packaged release checks for a new version about one time each day, and when you click "Check for Updates…". After each check the app sends one message. The makers use it to know which versions are in use: to support them, and to know when an old one can be dropped.
+
+With usage data off, or while the question is open, the message is one OTLP log record, sent to `https://telemetry.opensmartpen.org/v1/logs` and to no other address. This is all of it:
+
+| Field | Value |
+| --- | --- |
+| Event name | `update.check` |
+| `service.name`, `service.namespace` | `opensmartpen-mac`, `opensmartpen` |
+| `service.version` | The app version |
+| `service.instance.id` | The install id (see below) |
+| `telemetry.enabled` | `false` |
+
+It has no system version, no kind of Mac, no pen, no `session.id`. The collector also sees the internet address the request came from, as every server does. The message is not kept on disk and not sent again when it does not arrive.
+
+With usage data on, the same fact is the ordinary event `update.check`, with `telemetry.enabled` `true`. It goes where the other events go.
+
+To stop it: turn off "update automatically" in Settings → About. Then the app checks, and sends this message, only when you click "Check for Updates…". The environment variable `OTEL_SDK_DISABLED=true` stops it too. A build made from the source has no update feed, and never sends it.
 
 ## What is never sent
 
@@ -67,6 +88,7 @@ An event is an OpenTelemetry log record with an event name.
 | `app.crash` | At the next start after a crash | `exception.type`, `exception.message`, `exception.stacktrace`, `crash.incident_id`, `crash.app_version`, `crash.os_version`, `crash.binary_uuid` |
 | `system.sleep`, `system.wake` | The Mac went to sleep or woke | `pens.connected` (sleep only) |
 | `notice.posted` | The app showed a notification | `notice.key` (for example `battery`, `publish-failed`), `pen.mac` when it is about a pen. Not the words of the notification |
+| `update.check` | A check for updates is over | `telemetry.enabled`. Also sent with usage data off: see [With each check for updates](#with-each-check-for-updates) |
 | `update.found` | The update feed names a newer version | `update.version` |
 | `update.downloaded` | A new version is downloaded and waits for a quiet moment | `update.version` |
 | `update.installing` | The app is about to install it and start again | `update.version` |
@@ -135,7 +157,7 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.book.renamed` | A notebook got a new title | `book.surface`. Not the title |
 | `ui.quit` | ⌘Q in the panel | None |
 
-Turning telemetry off is not reported. Off means that nothing more is sent.
+Turning telemetry off is not reported as an event. The next check for updates says that it is off.
 
 ## Spans
 

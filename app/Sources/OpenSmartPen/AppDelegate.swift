@@ -7,7 +7,7 @@ import OpenSmartPenUI
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    static let version = "0.2.2"
+    static let version = "0.2.3"
     static let sdkVersion = "NISDK3/1.1.5"
     /// The build that writes a raw file, for its header line. Every raw file the app creates says
     /// this, so a file can always be traced to what made it.
@@ -68,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Started here, not when the settings open: the regular check runs from the start.
         updater = Updater()
+        updater?.onCheck = { [weak self] in self?.updateChecked() }
         Log.info("Open Smart Pen \(Self.version) starting; notes \(config.dataURL.path); config \(configURL.path)")
         // Before anything else is made, so that what the rest of the start does is counted.
         prepareTelemetry()
@@ -202,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func prepareTelemetry() {
         telemetryState = TelemetryState.load(directory: configDirectory)
         hidePrivateText()
-        // Nothing leaves this Mac before the person has said yes. While the question is open,
+        // No telemetry leaves this Mac before the person has said yes. While the question is open,
         // what happens is kept in memory, and sent or thrown away by what they answer.
         if TelemetryPlan.questionIsOwed(asked: telemetryState.noticed, settings: config.telemetry) {
             Telemetry.hold()
@@ -228,6 +229,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let host = (plan.logs ?? plan.traces ?? plan.metrics)?.host ?? "?"
         Log.info("telemetry goes to \(host); install \(telemetryState.installId). Turn it off in Settings → General")
         reportCrashes()
+    }
+
+    /// A check for updates is over. The makers are told which version this install runs, and
+    /// that is the one thing the app says with no yes (decided 2026-11-20). With telemetry on it
+    /// is an event like the others, and goes where they go. With telemetry off, or while the
+    /// question is open, it is `UpdatePing`: the version, the install id and that telemetry is
+    /// off, to the project.
+    private func updateChecked() {
+        if telemetrySink != nil {
+            Telemetry.event(UpdatePing.eventName, [UpdatePing.enabledKey: true])
+        } else {
+            UpdatePing.send(version: Self.version, installId: telemetryState.installId)
+        }
     }
 
     /// Stop sending, and delete what was waiting to be sent.
@@ -305,7 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do { try latest.save(to: configURL) } catch { Log.error("saving config failed: \(error)") }
         config.telemetry.enabled = keep
         settingsStore?.adopt(telemetry: config.telemetry)
-        Log.info(keep ? "the person said yes to telemetry" : "the person said no to telemetry; nothing was sent")
+        Log.info(keep ? "the person said yes to telemetry" : "the person said no to telemetry; what was held is deleted")
         applyTelemetry()
     }
 

@@ -117,7 +117,7 @@ agents/<n>.json               each agent's name, and when it was last alive
 
 ## Telemetry
 
-Off unless you say yes. The app asks one time, at the first start, and Settings → General has the switch after that. With a yes, the app reports how it is used and what goes wrong, and never what you write. [`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
+Usage data is off unless you say yes. The app asks one time, at the first start, and Settings → General has the switch after that. With a yes, the app reports how it is used and what goes wrong, and never what you write. With or without a yes, a check for updates tells us the app version, a random id of the install, and whether usage data is on. [`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
 
 ## Contributing
 

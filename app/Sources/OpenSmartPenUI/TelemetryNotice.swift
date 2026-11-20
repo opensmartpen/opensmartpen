@@ -23,11 +23,15 @@ public enum TelemetryInfo {
     /// nowhere else: it is a promise about that one place. The host of the collector must be
     /// chosen so that this is true, with the certificate and the contract to show for it.
     static let storage = "We keep it in certified storage that meets the GDPR."
+    /// What leaves with no yes. Said in the question and in Settings, so that "no" is not
+    /// read as "nothing at all".
+    static let always = "With or without a yes, when the app checks for updates it tells us its "
+        + "version, the random id of this install, and whether this is on."
 }
 
 /// The window that asks a person, one time, whether the app may report to its makers.
 ///
-/// A question and not a notice: nothing is sent unless the person says yes. A window and not a
+/// A question and not a notice: no usage data is sent unless the person says yes. A window and not a
 /// notification, which can be missed, and not an alert, which stops the app until it is answered:
 /// the app may have been started at login with nobody there, and the pen must be taken care of
 /// meanwhile.
@@ -91,7 +95,8 @@ struct TelemetryNoticeView: View {
             Text(([TelemetryInfo.ids] + (encrypted ? [TelemetryInfo.transit] : [])
                   + (ours ? [TelemetryInfo.storage] : [])).joined(separator: " "))
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Nothing is sent unless you say yes. You can change your answer at any time in Settings → General.")
+            Text("No usage data is sent unless you say yes. " + TelemetryInfo.always
+                 + " You can change your answer at any time in Settings → General.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
