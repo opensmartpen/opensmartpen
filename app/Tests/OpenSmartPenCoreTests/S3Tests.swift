@@ -84,6 +84,22 @@ final class S3Tests: XCTestCase {
         }
     }
 
+    /// The service's sentence can name an account, a key or a file. Telemetry gets the status
+    /// and the code, in a span's error and in the line of the log.
+    func testTelemetryGetsTheCodeOfARefusalAndNotItsSentence() {
+        let error = S3Error.refused(status: 403, code: "AccessDenied",
+            message: "User: arn:aws:iam::123456789012:user/notes-uploader is not authorized to perform: s3:PutObject")
+        XCTAssertEqual(Telemetry.describe(error), "The bucket answered 403: AccessDenied")
+        XCTAssertTrue(error.localizedDescription.contains("user/notes-uploader"), "the person still reads it")
+
+        let sink = RecordingTelemetry()
+        Telemetry.start(sink)
+        defer { Telemetry.stop() }
+        Log.error("upload failed (1x): \(error.localizedDescription)",
+                  sent: "upload failed (1x): \(Telemetry.describe(error))")
+        XCTAssertEqual(sink.events.map(\.body), ["upload failed (1x): The bucket answered 403: AccessDenied"])
+    }
+
     /// The bucket belongs to its owner. Testing the connection asks one question and leaves
     /// nothing behind.
     func testTheConnectionTestWritesNothing() throws {

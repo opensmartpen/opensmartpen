@@ -339,7 +339,8 @@ final class PenConnection: NSObject {
                 }
                 self.endDrain()
             case let .failure(error):
-                Log.error("publish after drain failed, keeping data on pen: \(error)")
+                Log.error("publish after drain failed, keeping data on pen: \(error)",
+                          sent: "publish after drain failed, keeping data on pen: \(Telemetry.describe(error))")
                 self.endDrain("upload failed: \(Telemetry.describe(error))")
             }
             self.draining = nil

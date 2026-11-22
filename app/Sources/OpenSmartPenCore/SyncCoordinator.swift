@@ -293,7 +293,8 @@ public final class SyncCoordinator {
             let delay = min(30.0, pow(2.0, Double(consecutiveFailures - 1))) * 60
             nextRetry = now.addingTimeInterval(delay)
             lastError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-            Log.error("upload failed (\(consecutiveFailures)x): \(lastError ?? "")")
+            Log.error("upload failed (\(consecutiveFailures)x): \(lastError ?? "")",
+                      sent: "upload failed (\(consecutiveFailures)x): \(Telemetry.describe(error))")
             if consecutiveFailures >= 3 {
                 notifier.post(Notice(key: "publish-failed", title: "Open Smart Pen cannot upload notes",
                                      body: "\(consecutiveFailures) attempts failed. Strokes are safe on this Mac. \(lastError ?? "")"))

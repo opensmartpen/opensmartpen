@@ -119,6 +119,25 @@ final class StoreAndTrackerTests: XCTestCase {
         XCTAssertEqual(try Config.loadOrCreate(at: url), Config())
     }
 
+    /// A pen says its address in the open, so another device can say it too. A pen that has
+    /// connected before is known by what macOS calls it, and the address alone is not enough.
+    func testADeviceThatOnlySaysThePensAddressIsNotThePen() {
+        var config = Config()
+        config.pairedPens = [PairedPen(mac: "9c7bd24833d9", peripheralId: "P-1")]
+        XCTAssertTrue(config.isPaired(mac: "9c7bd24833d9", peripheralId: "P-1"))
+        XCTAssertFalse(config.isPaired(mac: "9c7bd24833d9", peripheralId: "P-2"), "a copy of the address")
+        XCTAssertFalse(config.isPaired(mac: "9c7bd24833d9", peripheralId: nil))
+        XCTAssertFalse(config.isPaired(mac: "aabbccddeeff", peripheralId: "P-1"), "the pen does not change its address")
+        XCTAssertTrue(config.saysThePenOfAnother(mac: "9C:7B:D2:48:33:D9", peripheralId: "P-2"))
+        XCTAssertFalse(config.saysThePenOfAnother(mac: "9c7bd24833d9", peripheralId: "P-1"))
+        XCTAssertFalse(config.saysThePenOfAnother(mac: "aabbccddeeff", peripheralId: "P-2"), "a stranger")
+
+        // A pen that has not connected yet has only its address, and the first connection fills in the rest.
+        config.pairedPens = [PairedPen(mac: "9c7bd24833d9")]
+        XCTAssertTrue(config.isPaired(mac: "9c7bd24833d9", peripheralId: "P-9"))
+        XCTAssertFalse(config.saysThePenOfAnother(mac: "9c7bd24833d9", peripheralId: "P-9"))
+    }
+
     /// A config from before pens were a list names one pen. It must come back as a list of one,
     /// or upgrading unpairs the pen somebody is writing with.
     func testSinglePairedPenIsReadIntoTheList() throws {
@@ -126,7 +145,7 @@ final class StoreAndTrackerTests: XCTestCase {
         try Data("{\"penMac\": \"9C:7B:D2:48:33:D9\", \"penPeripheralId\": \"P-1\"}".utf8).write(to: url)
         let config = try Config.loadOrCreate(at: url)
         XCTAssertEqual(config.pairedPens, [PairedPen(mac: "9c7bd24833d9", peripheralId: "P-1")])
-        XCTAssertTrue(config.isPaired(mac: "9c:7b:d2:48:33:d9", peripheralId: nil))
+        XCTAssertTrue(config.isPaired(mac: "9c:7b:d2:48:33:d9", peripheralId: "P-1"))
         XCTAssertTrue(config.isPaired(mac: "", peripheralId: "P-1"))
         XCTAssertFalse(config.isPaired(mac: "aabbccddeeff", peripheralId: "P-2"))
 

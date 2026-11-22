@@ -893,14 +893,28 @@ private struct TranscriptPane: View {
 
     /// Emphasis and strike-through inside one line, with its indentation kept, and a list
     /// marker drawn as the bullet it stands for.
+    ///
+    /// A link stays a link only when it goes to the web. The text came from the bucket, and a
+    /// click must not open a file, a network share or another app.
     static func inline(_ line: String) -> AttributedString {
         let indent = line.prefix { $0 == " " || $0 == "\t" }
         var rest = String(line.dropFirst(indent.count))
         if rest.hasPrefix("- ") || rest.hasPrefix("* ") { rest = "• " + rest.dropFirst(2) }
         let options = AttributedString.MarkdownParsingOptions(
             interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        let parsed = (try? AttributedString(markdown: rest, options: options)) ?? AttributedString(rest)
+        var parsed = (try? AttributedString(markdown: rest, options: options)) ?? AttributedString(rest)
+        parsed.keepOnlyWebLinks()
         return AttributedString(String(indent).replacingOccurrences(of: " ", with: "\u{00A0}")) + parsed
+    }
+}
+
+extension AttributedString {
+    /// Take the link off every run that does not go to the web. The words stay.
+    mutating func keepOnlyWebLinks() {
+        for run in runs {
+            guard let link = run.link, !["http", "https"].contains(link.scheme?.lowercased() ?? "") else { continue }
+            self[run.range].link = nil
+        }
     }
 }
 

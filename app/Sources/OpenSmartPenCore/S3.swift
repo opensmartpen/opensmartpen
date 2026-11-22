@@ -106,6 +106,19 @@ public enum S3Error: Error, LocalizedError, Equatable {
     }
 }
 
+extension S3Error: TelemetryDescribed {
+    /// The status and the service's own code, which name nothing. Not the service's message:
+    /// those are words the service chose, and they can name an account, a key or a file.
+    public var telemetryDescription: String {
+        switch self {
+        case let .refused(status, code, _):
+            return "The bucket answered \(status)" + (code.map { ": \($0)" } ?? "")
+        case let .unreachable(why):
+            return "The bucket cannot be reached: \(why)"
+        }
+    }
+}
+
 /// How a request leaves the Mac. A protocol so that the tests can stand where the network is.
 public protocol S3Transport {
     func send(_ request: URLRequest, body: Data) -> Result<(status: Int, body: Data), Error>

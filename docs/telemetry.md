@@ -198,17 +198,17 @@ Before any text leaves the Mac, the app cleans it. This applies to every string 
 - The name of a pen's file, which is made from the name you gave the pen, becomes `pens/<pen>.json`.
 - Text longer than 8,000 characters is cut.
 
-An error message that comes from macOS or from the bucket service is sent after this cleaning. The cleaning is a net, not a proof: if you find private text in what is sent, report it as a bug.
+An error message that comes from macOS is sent after this cleaning. When the bucket service refuses a request, only the status and the service's code (`AccessDenied`) are sent: the service's own sentence stays in the log on the Mac. The cleaning is a net, not a proof: if you find private text in what is sent, report it as a bug.
 
 Two lines of the log name a file of yours (a file that could not be added as a photo). They stay in the log on the Mac, and telemetry gets `photo.rejected` in their place. The words of a notification stay on the Mac too.
 
-For a developer: a WARN or ERROR line must not carry a name that a person gave to something. A line that must carry one is written as `Log.warn("…", telemetry: false)`.
+For a developer: a WARN or ERROR line must not carry a name that a person gave to something. A line that must carry one is written as `Log.warn("…", telemetry: false)`. An error whose sentence holds words that another party chose gives telemetry a sentence of its own (`TelemetryDescribed`), and `Log.error("…", sent: "…")` sends that one.
 
 ## Where it goes, and how
 
 The app uses the OpenTelemetry SDK for Swift and sends OTLP over HTTP with protobuf, to `<endpoint>/v1/logs`, `<endpoint>/v1/traces` and `<endpoint>/v1/metrics`.
 
-What is to be sent is written to `~/Library/Caches/org.opensmartpen.app/telemetry` first and sent from there, so events from a time without network are sent later. The queue holds at most 20 MB for events and 20 MB for spans, and nothing older than one week. It is deleted when telemetry is turned off.
+What is to be sent is written to `~/Library/Caches/org.opensmartpen.app/telemetry` first and sent from there, so events from a time without network are sent later. The queue holds at most 20 MB for events and 20 MB for spans, and nothing older than one week. When telemetry is turned off, the queue is deleted and not sent.
 
 The address comes from three places. The first one that is set is used:
 
