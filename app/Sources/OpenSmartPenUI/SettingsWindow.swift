@@ -1033,7 +1033,7 @@ private struct AboutTab: View {
                 VStack(spacing: 6) {
                     // Run as a bare binary there is no icon, only the Finder's stand-in for one.
                     if Bundle.main.bundlePath.hasSuffix(".app") {
-                        Image(nsImage: NSApp.applicationIconImage)
+                        Image(nsImage: AppLogo.image)
                             .resizable().frame(width: 84, height: 84)
                     }
                     Text(store.info.name).font(.title2.weight(.semibold))

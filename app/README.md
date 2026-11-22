@@ -40,6 +40,7 @@ swift test                         # core logic, no hardware needed
 scripts/make-signing-identity.sh   # once per Mac: a certificate, so rebuilds keep their grants
 scripts/make-app.sh                # dist/"Open Smart Pen.app", signed with it (ad hoc without it)
 scripts/install-launchagent.sh     # start at login, restart on exit
+scripts/fresh.sh [app]             # run a build as a new person sees it, apart from the real app
 ```
 
 The first time, run the installer from a terminal and stay with it: it opens the app once from the

@@ -109,7 +109,7 @@ struct TelemetryNoticeView: View {
         VStack(spacing: 18) {
             VStack(spacing: 6) {
                 // The icon of the app itself, which is the logo.
-                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 72, height: 72)
+                Image(nsImage: AppLogo.image).resizable().frame(width: 72, height: 72)
                 Text("Welcome").font(.title2.weight(.semibold))
             }
             VStack(spacing: 14) {
