@@ -136,9 +136,7 @@ final class PublishTests: XCTestCase {
         XCTAssertTrue(files.contains(refA.rawRelativePath))
         XCTAssertTrue(files.contains(transcript))
         XCTAssertEqual(flow.books.pageCount(of: refA.folder), 1)
-        let client = try XCTUnwrap(sync.connection)
-        for file in files { try client.delete(file) }
-        sync.forget(files)
+        try sync.delete(files)
         try flow.books.delete(refA.folder)
         flow.coordinator.forget(refA.folder)
 
@@ -152,6 +150,26 @@ final class PublishTests: XCTestCase {
         XCTAssertNotNil(flow.books.record(for: refB))
         XCTAssertFalse(flow.coordinator.pendingPages.contains(refA))
         XCTAssertTrue(flow.coordinator.pendingPages.contains(refB))
+    }
+
+    /// The next page on that paper must not go into the older copy, among pages it does not
+    /// belong to.
+    func testDeletingTheCopyInUseBeginsANewOneWhenAnOlderCopyStays() throws {
+        let books = BookRegistry(root: notes)
+        let page = PageID(section: 3, owner: 27, book: 5, page: 1)
+        let old = try XCTUnwrap(books.ensureRecord(for: page))
+        let inUse = try XCTUnwrap(books.startNewCopy(of: page.surface, at: 1000, because: .inkOverlap))
+        XCTAssertEqual(books.current(for: page.surface)?.folder, inUse.folder)
+
+        try books.delete(inUse.folder)
+
+        let now = try XCTUnwrap(books.current(for: page.surface))
+        XCTAssertNotEqual(now.folder, old.folder)
+        XCTAssertNotEqual(now.folder, inUse.folder)
+        XCTAssertEqual(books.copies(of: page.surface).count, 2)
+
+        try books.delete(old.folder)
+        XCTAssertEqual(books.copies(of: page.surface).map(\.folder), [now.folder], "an older copy leaves alone")
     }
 
     /// A key that may not delete stops the delete with the bucket's own words.

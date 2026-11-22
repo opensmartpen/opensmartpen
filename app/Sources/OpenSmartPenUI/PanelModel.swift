@@ -390,14 +390,14 @@ public final class PanelModel: ObservableObject {
         return .asleep
     }
 
-    /// Scanning the repo is too much for the one-second tick, so the recent list is rebuilt only
-    /// when the panel is opened.
     /// Notebooks that a person took out of the list, by folder name. Set by the app delegate,
     /// from the config.
     public var hiddenBooks: Set<String> = [] {
         didSet { if hiddenBooks != oldValue { refreshRecent() } }
     }
 
+    /// Scanning the repo is too much for the one-second tick, so the recent list is rebuilt only
+    /// when the panel is opened.
     public func refreshRecent() {
         guard let books = live?.books else { return }
         let hidden = hiddenBooks

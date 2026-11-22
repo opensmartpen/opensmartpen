@@ -286,18 +286,28 @@ public final class BookRegistry {
 
     /// How many pages one copy has.
     public func pageCount(of folder: BookFolder) -> Int {
-        S3Sync.files(under: folder.relativePath, in: root).compactMap(PageRef.init(rawRelativePath:)).count
+        files(of: folder).filter { $0.hasPrefix("transcripts/") }.count
     }
 
     /// Remove one copy from this Mac: its folder, and the transcripts kept for it. This cannot
     /// be undone.
+    ///
+    /// When the copy in use is deleted and an older copy of the same paper stays, a new and
+    /// empty copy begins. Without it the next page on that paper would go into the older copy,
+    /// among pages it does not belong to.
     public func delete(_ folder: BookFolder) throws {
+        let copies = copies(of: folder.surface)
+        let wasInUse = copies.last?.folder == folder && copies.count > 1
         for path in [folder.relativePath, "transcripts/\(folder.name)"] {
             let url = root.appendingPathComponent(path)
             if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
         }
         loadedStamp = nil
         reloadIfNeeded()
+        copyWatcher.forget(folder.surface)
+        if wasInUse {
+            _ = make(surface: folder.surface, startedAt: Int(Date().timeIntervalSince1970 * 1000), decidedBy: nil)
+        }
     }
 
     // MARK: - Loading

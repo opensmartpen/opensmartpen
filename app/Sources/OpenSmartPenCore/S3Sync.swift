@@ -137,6 +137,15 @@ public final class S3Sync: Publishing {
         return out
     }
 
+    /// Delete these files from the bucket, by name: a notebook that a person deleted. With no
+    /// bucket connected it does nothing. In each case, also when the bucket refuses part of the
+    /// way, the files leave the list of what was uploaded, so what stays on disk goes up again.
+    public func delete(_ paths: [String]) throws {
+        guard let client = connection else { return }
+        defer { forget(paths) }
+        for path in paths { try client.delete(path) }
+    }
+
     /// Drop these files from the list of what was uploaded: they were deleted from the bucket,
     /// or may have been. A file that is still on disk then goes up again at the next sync.
     public func forget(_ paths: [String]) {

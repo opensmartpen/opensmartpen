@@ -128,7 +128,11 @@ public final class SettingsStore: ObservableObject {
     /// went wrong. Set by the app, which has the bucket. Nil in the design window.
     public var onDeleteBook: ((BookRecord, @escaping (String?) -> Void) -> Void)?
     /// Removes an agent's record, by its number. Set by the app, which has the bucket.
-    public var onRemoveAgent: ((Int) -> Void)?
+    public var onRemoveAgent: ((Int, @escaping (String?) -> Void) -> Void)?
+    /// Why an agent could not be removed. Shown under the agents until the next try.
+    @Published var agentProblem: String?
+    /// The number of pages of each notebook, by folder name. Counted at each reload, not at each draw.
+    @Published private var pageCounts: [String: Int] = [:]
 
     public init(pens: PenRegistry, books: BookRegistry, config: Config, configURL: URL,
                 info: AppInfo, link: PenLink? = nil, secretURL: URL = S3Secret.location) {
@@ -186,6 +190,7 @@ public final class SettingsStore: ObservableObject {
         let paired = Set(pairedMacs)
         pens = link == nil ? penRegistry.pens : penRegistry.pens.filter { paired.contains($0.mac) }
         books = bookRegistry.books.sorted { $0.title < $1.title }
+        pageCounts = Dictionary(uniqueKeysWithValues: books.map { ($0.folder.name, bookRegistry.pageCount(of: $0.folder)) })
         palette = Palette.load(root: config.dataURL)
     }
 
@@ -211,7 +216,7 @@ public final class SettingsStore: ObservableObject {
         onRecordsChange?()
     }
 
-    func pageCount(of book: BookRecord) -> Int { bookRegistry.pageCount(of: book.folder) }
+    func pageCount(of book: BookRecord) -> Int { pageCounts[book.folder.name] ?? 0 }
 
     func isShownInPanel(_ book: BookRecord) -> Bool { !config.hiddenBooks.contains(book.folder.name) }
 
@@ -683,9 +688,15 @@ private struct DeleteBookSheet: View {
     @State private var deleting = false
     @State private var problem: String?
 
+    /// What the person must type. A notebook with no title has nothing to type, so it is the
+    /// word "delete": an empty field must never be enough.
+    private var wanted: String {
+        let title = book.title.trimmingCharacters(in: .whitespaces)
+        return title.isEmpty ? "delete" : title
+    }
+
     private var matches: Bool {
-        func tidy(_ text: String) -> String { text.trimmingCharacters(in: .whitespaces).lowercased() }
-        return tidy(typed) == tidy(book.title)
+        typed.trimmingCharacters(in: .whitespaces).lowercased() == wanted.lowercased()
     }
 
     private var message: String {
@@ -699,11 +710,11 @@ private struct DeleteBookSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Delete “\(book.title)”?").font(.headline)
             Text(message).fixedSize(horizontal: false, vertical: true)
-            TextField("", text: $typed, prompt: Text(book.title))
+            TextField("", text: $typed, prompt: Text(wanted))
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
                 .disabled(deleting)
-            Text("Type the title of the notebook to confirm.")
+            Text(wanted == "delete" ? "Type the word delete to confirm." : "Type the title of the notebook to confirm.")
                 .font(.callout).foregroundStyle(.secondary)
             if let problem {
                 Text(problem).font(.callout).foregroundStyle(.red)
@@ -773,6 +784,10 @@ private struct SyncTab: View {
                         Button("Remove…") { removing = agent }
                     }
                 }
+                if let problem = store.agentProblem {
+                    Text(problem).font(.callout).foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 LabeledContent(store.sync.agents.isEmpty ? "Not connected" : "Another agent") {
                     Button(agentCopied ? "Copied" : "Copy Instructions") {
                         NSPasteboard.general.clearContents()
@@ -818,7 +833,8 @@ private struct SyncTab: View {
                             presenting: removing) { agent in
             Button("Remove", role: .destructive) {
                 Telemetry.event("ui.agent.removed")
-                store.onRemoveAgent?(agent.id)
+                store.agentProblem = nil
+                store.onRemoveAgent?(agent.id) { store.agentProblem = $0 }
             }
         } message: { _ in
             Text("The app stops showing it. This does not stop the agent: stop it where it runs, "

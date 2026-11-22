@@ -89,10 +89,14 @@ public enum Agents {
 
     /// Remove one agent's record, from the bucket and from the folder. The agent is not stopped:
     /// the app cannot reach it. One that still runs writes its record again at its next check.
+    ///
+    /// The folder first: an agent on this Mac has its record only there, and a bucket that
+    /// refuses must not keep it in the list. When the bucket refuses, the error says so, and the
+    /// record comes back from the bucket at the next look.
     public static func remove(_ number: Int, root: URL, client: S3Client?) throws {
-        try client?.delete(path(number))
         let url = root.appendingPathComponent(path(number))
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        try client?.delete(path(number))
     }
 
     /// When a page picture last changed, as `last-modified.txt` has it.

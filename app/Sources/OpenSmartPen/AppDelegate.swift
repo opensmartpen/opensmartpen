@@ -622,29 +622,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func delete(_ book: BookRecord, done: @escaping (String?) -> Void) {
         let folder = book.folder
         let files = books.files(of: folder)
-        let client = sync.connection
+        let sync: S3Sync = sync
         agentQueue.async { [weak self] in
             var problem: String?
-            if let client {
-                do {
-                    for file in files { try client.delete(file) }
-                } catch {
-                    Log.warn("could not delete a notebook from the bucket: \(error)")
-                    problem = "The bucket did not delete the notebook: \(error.localizedDescription) "
-                        + "Nothing was deleted on this Mac."
-                }
+            do {
+                try sync.delete(files)
+            } catch {
+                // The bucket's own words can name the bucket and a file. Telemetry gets the short form.
+                Log.warn("could not delete a notebook from the bucket: \(Telemetry.describe(error))")
+                problem = "The bucket did not delete the notebook: \(error.localizedDescription) "
+                    + "Nothing was deleted on this Mac."
             }
             DispatchQueue.main.async {
                 guard let self else { return }
-                // Deleted from the bucket, or partly: in each case the list of what was uploaded
-                // is wrong for these files. What stays on disk goes up again at the next sync.
-                if client != nil { self.sync.forget(files) }
                 if problem == nil {
                     do {
                         try self.books.delete(folder)
                         self.coordinator.forget(folder)
                     } catch {
-                        Log.error("could not delete a notebook from this Mac: \(error)")
+                        // The error names a path with the folder of the notebook: not for telemetry.
+                        Log.error("could not delete a notebook from this Mac: \(error)", telemetry: false)
                         problem = "The notebook could not be deleted from this Mac: \(error.localizedDescription)"
                     }
                 }
@@ -654,18 +651,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Remove one agent's record, from the bucket and from the folder.
-    private func removeAgent(_ number: Int) {
+    /// Remove one agent's record, from the folder and from the bucket. Answers with nil, or with
+    /// what went wrong.
+    private func removeAgent(_ number: Int, done: @escaping (String?) -> Void) {
         let root = config.dataURL, client = sync.connection
         agentQueue.async { [weak self] in
+            var problem: String?
             do {
                 try Agents.remove(number, root: root, client: client)
             } catch {
-                Log.warn("could not remove an agent's record: \(error)")
+                Log.warn("could not remove an agent's record: \(Telemetry.describe(error))")
+                problem = "The agent could not be removed: \(error.localizedDescription)"
             }
             DispatchQueue.main.async {
                 self?.showAgents()
                 self?.pushSyncStatus()
+                done(problem)
             }
         }
     }
@@ -849,7 +850,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // A new title is a changed file with no page to carry it, so it is sent now.
             store.onRecordsChange = { [weak self] in self?.coordinator.publishAll() }
             store.onDeleteBook = { [weak self] book, done in self?.delete(book, done: done) }
-            store.onRemoveAgent = { [weak self] number in self?.removeAgent(number) }
+            store.onRemoveAgent = { [weak self] number, done in self?.removeAgent(number, done: done) }
             store.onSyncNow = { [weak self] in
                 self?.coordinator.publishAll()
                 self?.stateChanged()

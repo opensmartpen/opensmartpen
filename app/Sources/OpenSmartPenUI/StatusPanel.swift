@@ -135,8 +135,11 @@ public struct StatusPanel: View {
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text("Looking for your pen").font(.system(size: 11.5))
-                            Text("Switch it on, near this Mac.")
+                            // With no pen in the row, this is the one place that can say it.
+                            Text(model.status == .bluetoothOff ? "Bluetooth is off" : "Looking for your pen")
+                                .font(.system(size: 11.5))
+                            Text(model.status == .bluetoothOff ? "Turn on Bluetooth on this Mac."
+                                 : "Switch it on, near this Mac.")
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(.secondary)
                         }
@@ -281,8 +284,6 @@ public struct StatusPanel: View {
         }
     }
 
-    /// Shown until an agent has transcribed the sample page. The app captures and stops; without
-    /// an agent a page never becomes text, and nothing else in the panel would say why.
     /// The name of a step, with its number in a small disc when the panel shows the steps in a row.
     private func stepTitle(_ number: Int?, _ title: String) -> some View {
         HStack(spacing: 6) {
@@ -296,6 +297,8 @@ public struct StatusPanel: View {
         }
     }
 
+    /// Shown until an agent keeps a record. The app captures and stops; without an agent a page
+    /// never becomes text, and nothing else in the panel would say why.
     private var connectAgent: some View {
         VStack(alignment: .leading, spacing: 7) {
             // The second step while the first is on screen above it. Alone, it has no number.

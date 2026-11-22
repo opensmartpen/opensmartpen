@@ -119,6 +119,10 @@ public final class CopyWatcher {
 
     public init() {}
 
+    /// Drop what is known about one product: its copy in use was deleted, so what was written
+    /// there says nothing about the next page.
+    public func forget(_ surface: String) { seen[surface] = nil }
+
     /// Feed every page as strokes arrive for it. Returns the signal that decided a new copy, or
     /// nil to keep writing where we are.
     public func decide(_ e: CopyEvidence) -> CopySignal? {
