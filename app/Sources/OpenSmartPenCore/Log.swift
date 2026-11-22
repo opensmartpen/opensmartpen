@@ -42,11 +42,13 @@ public enum Log {
         else { Telemetry.count(.problems, ["log.level": "warn"]) }
     }
 
+    /// `sent` is the line for telemetry when the line for the log holds words that stay here.
     public static func error(_ message: @autoclosure () -> String, telemetry: Bool = true,
+                             sent: @autoclosure () -> String? = nil,
                              file: String = #fileID, line: Int = #line) {
         let text = message()
         write("ERROR", text)
-        if telemetry { Telemetry.problem(.error, text, file: file, line: line) }
+        if telemetry { Telemetry.problem(.error, sent() ?? text, file: file, line: line) }
         else { Telemetry.count(.problems, ["log.level": "error"]) }
     }
 

@@ -161,7 +161,7 @@ one captured file and could only be repaired by cutting it.
 | `dataPath` | `~/OpenSmartPen` | Where the notes are kept. |
 | `quietSeconds` | `30` | Seconds with no event from any pen before the waiting pages are uploaded. |
 | `s3` | none | The bucket: `bucket`, `region`, `accessKeyId`, and optionally `prefix` (a folder in the bucket) and `endpoint` (for a service other than Amazon S3). Set in Settings → Sync, which tests the connection before saving it. The secret key is not here: it is in `s3-secret` beside this file, mode 0600. |
-| `pairedPens` | none | The pens this Mac accepts, each with its Bluetooth address. The first pen seen is added automatically; add and remove the others in Settings → Pens. |
+| `pairedPens` | none | The pens this Mac accepts, each with its Bluetooth address and the identifier macOS gave it. A pen that has connected before must agree in both. The first pen seen is added automatically; add and remove the others in Settings → Pens. |
 | `startAtLogin` | `true` | Start the app when you log in. Set in Settings → General. |
 | `penPassword` | none | PIN for a locked pen. Sent once per connection; never retried, because repeated wrong PINs factory-reset the pen. |
 | `deleteFromPenAfterPublish` | `true` | Free pen memory once a notebook is synced: uploaded when a bucket is connected, on this Mac's disk when none is. |

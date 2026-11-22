@@ -53,13 +53,28 @@ public struct Config: Codable, Equatable {
 
     public init() {}
 
-    /// Whether this pen is one of ours, by MAC or, when the advertisement carried no MAC, by the
-    /// identifier CoreBluetooth gave it.
+    /// Whether this device is one of our pens.
+    ///
+    /// A pen says its own MAC in the open, so any device can say it too. The identifier is what
+    /// CoreBluetooth gave the device, and the device does not choose it. So when a paired pen
+    /// has both, the identifier must agree, and the MAC must agree when the device says one.
+    /// A paired pen with only one of the two is matched by that one: the first connection
+    /// fills in the other.
     public func isPaired(mac: String, peripheralId: String?) -> Bool {
         let mac = PenRecord.normalise(mac)
         return pairedPens.contains { pen in
-            (!mac.isEmpty && pen.mac == mac) || (peripheralId != nil && pen.peripheralId == peripheralId)
+            guard let known = pen.peripheralId else { return !mac.isEmpty && pen.mac == mac }
+            guard known == peripheralId else { return false }
+            return pen.mac.isEmpty || mac.isEmpty || pen.mac == mac
         }
+    }
+
+    /// Whether this device says the MAC of a paired pen and is not that pen to CoreBluetooth.
+    /// A copy of the pen, or the pen after macOS gave it a new identifier.
+    public func saysThePenOfAnother(mac: String, peripheralId: String?) -> Bool {
+        let mac = PenRecord.normalise(mac)
+        guard !mac.isEmpty, !isPaired(mac: mac, peripheralId: peripheralId) else { return false }
+        return pairedPens.contains { $0.mac == mac }
     }
 
     /// Missing keys take their defaults, so an older or hand-edited file keeps loading.

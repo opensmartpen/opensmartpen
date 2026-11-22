@@ -323,9 +323,11 @@ public enum Telemetry {
         }
     }
 
-    /// An error in words. The localised sentence when there is one, which is what a person saw.
+    /// An error in words, for telemetry. The error's own words for telemetry when it has them,
+    /// or the localised sentence, which is what a person saw.
     public static func describe(_ error: Error) -> String {
-        (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        (error as? TelemetryDescribed)?.telemetryDescription
+            ?? (error as? LocalizedError)?.errorDescription ?? "\(error)"
     }
 
     /// The spans open on this thread, innermost last.
@@ -335,6 +337,12 @@ public enum Telemetry {
     }
 
     private static let stackKey = "org.opensmartpen.telemetry.spans"
+}
+
+/// An error whose sentence for a person holds words that must stay on the Mac: words that
+/// another party chose. It gives telemetry a sentence of its own.
+public protocol TelemetryDescribed {
+    var telemetryDescription: String { get }
 }
 
 /// A span while telemetry is off or holding. It does nothing.

@@ -26,6 +26,8 @@ final class OTelTelemetry: TelemetrySink {
     private let logProcessor: BatchLogRecordProcessor?
     private let meterProvider: MeterProviderSdk?
     private let meter: MeterSdk?
+    /// Closed when the person turns telemetry off. Nothing passes it after that.
+    private let gate = SendGate()
     /// The instruments made so far, by the name of the metric. One lock keeps the tables.
     private let instruments = NSLock()
     private var counters: [String: LongCounterSdk] = [:]
@@ -52,9 +54,10 @@ final class OTelTelemetry: TelemetrySink {
                                                requeueOnFailure: false)
             let folder = queue.appendingPathComponent("logs")
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let kept = try? PersistenceLogExporterDecorator(logRecordExporter: exporter, storageURL: folder,
+            let gated = GatedLogExporter(exporter, gate: gate)
+            let kept = try? PersistenceLogExporterDecorator(logRecordExporter: gated, storageURL: folder,
                                                             performancePreset: Self.queuePreset)
-            let processor = BatchLogRecordProcessor(logRecordExporter: kept ?? exporter,
+            let processor = BatchLogRecordProcessor(logRecordExporter: kept ?? gated,
                                                     scheduleDelay: plan.logDelay)
             logProcessors = [processor]
             batch = processor
@@ -69,9 +72,10 @@ final class OTelTelemetry: TelemetrySink {
                                                  requeueOnFailure: false)
             let folder = queue.appendingPathComponent("traces")
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            let kept = try? PersistenceSpanExporterDecorator(spanExporter: exporter, storageURL: folder,
+            let gated = GatedSpanExporter(exporter, gate: gate)
+            let kept = try? PersistenceSpanExporterDecorator(spanExporter: gated, storageURL: folder,
                                                              performancePreset: Self.queuePreset)
-            _ = tracerBuilder.add(spanProcessor: BatchSpanProcessor(spanExporter: kept ?? exporter,
+            _ = tracerBuilder.add(spanProcessor: BatchSpanProcessor(spanExporter: kept ?? gated,
                                                                     scheduleDelay: plan.spanDelay))
         }
         tracerProvider = tracerBuilder.build()
@@ -212,6 +216,17 @@ final class OTelTelemetry: TelemetrySink {
         _ = meterProvider?.shutdown()
     }
 
+    /// Stop, and send nothing more. For the moment a person turns telemetry off.
+    ///
+    /// The SDK sends what waits when it is shut down, so the gate is closed first: what the SDK
+    /// then hands over is dropped. The metrics go first, because they do not pass the gate.
+    func discard() {
+        gate.close()
+        _ = meterProvider?.shutdown()
+        _ = logProcessor?.shutdown(explicitTimeout: 2)
+        tracerProvider.shutdown()
+    }
+
     private static func value(_ value: TelemetryValue) -> AttributeValue {
         switch value {
         case let .string(text): return .string(text)
@@ -290,4 +305,63 @@ private final class OTelSpan: TelemetrySpan {
         if let error { span.status = .error(description: error) }
         span.end()
     }
+}
+
+/// Open while telemetry may be sent. Closed one time, and never opened again.
+final class SendGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var closed = false
+
+    var isOpen: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return !closed
+    }
+
+    func close() {
+        lock.lock(); defer { lock.unlock() }
+        closed = true
+    }
+}
+
+/// Sends log records while the gate is open, and drops them when it is closed. A dropped batch
+/// is reported as sent, so the queue on disk does not keep it for another try.
+final class GatedLogExporter: LogRecordExporter, @unchecked Sendable {
+    private let inner: LogRecordExporter
+    private let gate: SendGate
+
+    init(_ inner: LogRecordExporter, gate: SendGate) {
+        self.inner = inner
+        self.gate = gate
+    }
+
+    func export(logRecords: [ReadableLogRecord], explicitTimeout: TimeInterval?) -> ExportResult {
+        gate.isOpen ? inner.export(logRecords: logRecords, explicitTimeout: explicitTimeout) : .success
+    }
+
+    func shutdown(explicitTimeout: TimeInterval?) { inner.shutdown(explicitTimeout: explicitTimeout) }
+
+    func forceFlush(explicitTimeout: TimeInterval?) -> ExportResult {
+        gate.isOpen ? inner.forceFlush(explicitTimeout: explicitTimeout) : .success
+    }
+}
+
+/// The same for spans.
+final class GatedSpanExporter: SpanExporter, @unchecked Sendable {
+    private let inner: SpanExporter
+    private let gate: SendGate
+
+    init(_ inner: SpanExporter, gate: SendGate) {
+        self.inner = inner
+        self.gate = gate
+    }
+
+    func export(spans: [SpanData], explicitTimeout: TimeInterval?) -> SpanExporterResultCode {
+        gate.isOpen ? inner.export(spans: spans, explicitTimeout: explicitTimeout) : .success
+    }
+
+    func flush(explicitTimeout: TimeInterval?) -> SpanExporterResultCode {
+        gate.isOpen ? inner.flush(explicitTimeout: explicitTimeout) : .success
+    }
+
+    func shutdown(explicitTimeout: TimeInterval?) { inner.shutdown(explicitTimeout: explicitTimeout) }
 }

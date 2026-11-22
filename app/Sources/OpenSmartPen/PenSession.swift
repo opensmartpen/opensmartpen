@@ -84,6 +84,8 @@ final class PenSession: NSObject {
     /// Off once a pen has been forgotten in this launch. Forgetting the last pen empties the list,
     /// and without this the pen just forgotten would be paired again the moment it reconnects.
     private var autoPair = true
+    /// The paired pens that a device has copied in this launch, by MAC.
+    private var copiesRefused: Set<String> = []
 
     var isAnyConnected: Bool { links.values.contains { $0.isConnected } }
 
@@ -294,9 +296,22 @@ final class PenSession: NSObject {
     /// Whether a pen just seen is one to connect to: a paired pen, or any pen while pairing is
     /// open — but only one new pen at a time, so two strangers are never both taken.
     private func wants(_ peripheral: CBPeripheral, _ ad: PenAdvertisementStruct) -> Bool {
-        if config.isPaired(mac: ad.mac, peripheralId: peripheral.identifier.uuidString) { return true }
-        guard pairingOpen else { return false }
+        let id = peripheral.identifier.uuidString
+        if config.isPaired(mac: ad.mac, peripheralId: id) { return true }
+        guard pairingOpen else {
+            if config.saysThePenOfAnother(mac: ad.mac, peripheralId: id) { refuseCopy(of: ad.mac) }
+            return false
+        }
         return !links.values.contains { !isPaired($0) }
+    }
+
+    /// A device says the address of a paired pen, and macOS knows it as another device. It is
+    /// not connected. Said one time for each pen in a launch: the device says it many times a second.
+    private func refuseCopy(of mac: String) {
+        guard copiesRefused.insert(PenRecord.normalise(mac)).inserted else { return }
+        Log.warn("a device says the address of a paired pen and is not the device that was paired; not connected")
+        notifier.post(Notice(key: "pen-copy-\(PenRecord.normalise(mac))", title: "A pen was not connected",
+                             body: "A device says it is one of your pens, but this Mac does not know it as that pen. If it is your pen, add it again in Settings → Pens."))
     }
 
     private func isPaired(_ c: PenConnection) -> Bool {

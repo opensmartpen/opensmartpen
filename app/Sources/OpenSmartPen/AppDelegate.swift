@@ -250,7 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Stop sending, and delete what was waiting to be sent.
     private func stopTelemetry() {
         Telemetry.stop()
-        telemetrySink?.shutdown()
+        telemetrySink?.discard()
         telemetrySink = nil
         OTelTelemetry.emptyQueue()
     }
