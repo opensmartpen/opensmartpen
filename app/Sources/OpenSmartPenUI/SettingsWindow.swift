@@ -763,7 +763,7 @@ private struct SyncTab: View {
                 Note("Every page is kept on this Mac as its strokes and a PNG, and copied to this bucket. Nothing in the "
                      + "bucket is deleted unless you delete a notebook, and the only thing read from it is the transcript of a "
                      + "page you open. Fill in Endpoint only for a service other than Amazon S3, "
-                     + "such as Cloudflare R2 or MinIO.")
+                     + "such as Cloudflare R2, Supabase or MinIO.")
             }
             .autocorrectionDisabled()
 

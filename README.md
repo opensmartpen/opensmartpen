@@ -86,7 +86,7 @@ The app never starts an agent. Your agent decides when it runs.
 All files are in `~/OpenSmartPen`, outside the app. You can delete the app and install it again, and no page is lost.
 
 - **Your pages go nowhere by themselves.** With no bucket connected, all files stay on your Mac.
-- **An S3 bucket is optional.** Connect one in Settings → Sync if your agent runs on a different computer. Amazon S3 and services with the same interface work, for example Cloudflare R2 and MinIO.
+- **An S3 bucket is optional.** Connect one in Settings → Sync if your agent runs on a different computer. Amazon S3 and services with the same interface work, for example Cloudflare R2, Supabase and MinIO.
 - **Your agent uses its own model.** When it reads a page, it sends the picture of the page to that model, as it does with any file you give it.
 
 [`docs/processing.md`](docs/processing.md) lists each file, and is the full contract between the app and an agent: what the app writes, where, and when.
