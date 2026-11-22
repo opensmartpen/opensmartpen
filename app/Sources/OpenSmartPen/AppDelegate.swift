@@ -651,13 +651,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Asked each time: an agent can be installed or removed while this runs.
         var found: [PanelModel.NewAgent] = []
         if Agents.claudeCommand() != nil {
-            found.append(.init(id: "claude-code", title: "Claude Code", note: "Fast \u{00B7} recommended",
-                               recommended: true))
+            found.append(.claudeCode(recommended: true))
         }
         if NSWorkspace.shared.urlForApplication(withBundleIdentifier: Agents.claudeDesktop) != nil {
-            found.append(.init(id: "claude-cowork", title: "Claude Cowork",
-                               note: found.isEmpty ? "Checks each hour" : "Simple \u{00B7} checks each hour",
-                               recommended: found.isEmpty))
+            found.append(.claudeCowork(recommended: found.isEmpty))
         }
         if model.newAgents != found { model.newAgents = found }
         if let client = sync.connection, Date().timeIntervalSince(agentsAsked) > 60 {
@@ -905,6 +902,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         guard let button = statusItem.button else { return }
+        model.closeAgentPage()
         Telemetry.event("ui.panel.opened")
         session.requestSettingRefresh()
         model.refreshRecent()
