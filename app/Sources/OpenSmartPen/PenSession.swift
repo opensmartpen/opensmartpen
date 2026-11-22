@@ -34,6 +34,8 @@ final class PenSession: NSObject {
     /// The Bluetooth link being made, timed for telemetry: from the first call to the link.
     private var connectSpan: TelemetrySpan?
     private var scanning = false
+    /// The SDK's finder has been used, and so its Bluetooth manager exists.
+    private var finderTaken = false
     private var scanTimer: Timer?
     private var addingTimer: Timer?
     /// How long "Add pen…" keeps looking.
@@ -98,7 +100,6 @@ final class PenSession: NSObject {
         workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.didWake()
         }
-        PenFinder.shared.delegate = self
         scanTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.scanIfNeeded() }
         scanIfNeeded()
     }
@@ -210,6 +211,12 @@ final class PenSession: NSObject {
             }
             bluetoothOff = false
             return
+        }
+        // Here and not at the start: the first use of the finder makes its Bluetooth manager,
+        // and macOS asks its question the moment an app makes one.
+        if !finderTaken {
+            finderTaken = true
+            PenFinder.shared.delegate = self
         }
         guard PenFinder.shared.bluetoothOn else {
             // The person said no to macOS while a pen was being added: stop looking. The panel
