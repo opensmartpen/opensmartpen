@@ -85,7 +85,7 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `pen.powered_off` | The pen said it is switching off | `pen.mac`, `pen.power_off_reason` |
 | `pen.forgotten` | A pen was removed in Settings | `pen.mac`, `pens.paired` |
 | `pen.rejected` | A pen that is not paired connected and was let go | None |
-| `pen.add_timed_out` | "Add Pen…" found no pen in two minutes | None |
+| `pen.add_timed_out` | "Add Pen" found no pen in two minutes | None |
 | `bluetooth.unavailable` | Bluetooth is off or not allowed | `bluetooth.authorization` |
 | `control.tap` | A tap on the paper control strip | `control.button` (for example `ink red`, `width thin`, `no button`) |
 
@@ -129,7 +129,8 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.settings.opened` | The settings window was opened | None |
 | `ui.settings.tab` | A tab of the settings window came on screen | `settings.tab` |
 | `ui.setting.changed` | A setting was changed | `setting.name`, `setting.value`. For: `startAtLogin`, `quietSeconds`, `deleteFromPenAfterPublish`, `lowBatteryPercent`, `memoryWarnPercent`, `updateAutomatically`, and `telemetry` when it is turned on |
-| `ui.pen.add`, `ui.pen.add_cancelled` | "Add Pen…" or its "Cancel" was clicked | None |
+| `ui.pen.add`, `ui.pen.add_cancelled` | "Add Pen" or its "Cancel" was clicked, in the panel or in Settings | `ui.source` (`panel`, `settings`) |
+| `ui.pens.website` | "See pens that work" was clicked in the panel | None |
 | `ui.pen.forget` | "Remove" was confirmed for a pen | `pen.mac` |
 | `ui.pen.edited` | A pen was changed in Settings | `pen.mac`, and what changed: `pen.renamed` (only that it was), `pen.mode`, `pen.ink`, `pen.width` |
 | `ui.book.renamed` | A notebook got a new title | `book.surface`. Not the title |

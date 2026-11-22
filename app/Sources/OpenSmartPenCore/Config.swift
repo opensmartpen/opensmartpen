@@ -12,8 +12,8 @@ public struct Config: Codable, Equatable {
     /// because whatever reads the bucket should see a page soon after the pen is put down; long
     /// enough that a page in the middle of a sentence is not sent once per word.
     public var quietSeconds: Double = 30
-    /// The pens this Mac accepts. Empty until the first pen is paired automatically; every pen
-    /// after that is added in Settings, so a pen on the next desk is never taken by accident.
+    /// The pens this Mac accepts. Each one is added with "Add Pen", so a pen on the next desk
+    /// is never taken by accident.
     /// An older config's single `penMac` and `penPeripheralId` are read into this list.
     public var pairedPens: [PairedPen] = []
     /// PIN for a password-protected pen. Nil means no PIN.

@@ -346,12 +346,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// After "Get Started" the panel opens by itself: the app has no other window, and a person
-    /// who never used it does not know to look for a pencil in the menu bar. When macOS asks
-    /// about Bluetooth now, the panel waits for that answer: it closes at a click elsewhere, so
-    /// it would be gone before it was seen.
+    /// who never used it does not know to look for a pencil in the menu bar. With no pen paired
+    /// that is at once: macOS asks about Bluetooth only at "Add Pen". A Mac with a paired pen
+    /// and no answer about Bluetooth is asked now, and the panel waits for that answer: it
+    /// closes at a click elsewhere, so it would be gone before it was seen.
     private func openPanelAfterWelcome(tries: Int = 0) {
         // Two minutes is long enough for the question. After that the person is elsewhere.
-        if PenSession.bluetoothNotAskedYet, tries < 240 {
+        if session.willAskForBluetooth, tries < 240 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.openPanelAfterWelcome(tries: tries + 1)
             }

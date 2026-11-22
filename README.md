@@ -59,7 +59,6 @@ The camera of your phone is sufficient. Take a photo of any handwritten page: fr
 
 Download the newest [`OpenSmartPen-<version>.dmg`](https://github.com/opensmartpen/opensmartpen/releases/latest), open it, and drag Open Smart Pen to the Applications folder. Then open the app. If you open the app from the disk image or from Downloads, it offers to move itself to the Applications folder.
 
-- macOS asks one time for the Bluetooth permission. Allow it; without it the pen cannot connect.
 - The app is in the menu bar, as a pencil. It has no window of its own and no icon in the Dock.
 - The app starts when you log in, and it updates itself. A new version installs with no window, at a moment when no pen is writing. Settings → About has the switch for this, and "Check for Updates…".
 
@@ -69,7 +68,7 @@ To build the app from the source, see [`app/README.md`](app/README.md).
 
 ### 2. Add a page
 
-- **With a pen:** switch the pen on near your Mac. The app pairs with the first pen it sees. Then write.
+- **With a pen:** click the pencil in the menu bar, then "Add Pen", and switch the pen on near your Mac. macOS asks one time for the Bluetooth permission; allow it. Then write.
 - **Without a pen:** click the pencil in the menu bar, then "Add Photo…". Take a photo with your iPhone, select a file, or use the sample page.
 
 ### 3. Connect your agent

@@ -259,6 +259,7 @@ public final class PanelModel: ObservableObject {
         isPublishing = coordinator.isPublishing
         let refused = session.bluetoothRefused
         if bluetoothRefused != refused { bluetoothRefused = refused }
+        if isAddingPen != session.isAdding { isAddingPen = session.isAdding }
 
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
         // and the macOS Bluetooth menu sets the convention: a battery for what is connected,
@@ -535,6 +536,32 @@ public final class PanelModel: ObservableObject {
 
     func addPhoto() { onAddPhoto?() }
 
+    // MARK: adding a pen
+
+    /// The app looks for a new pen, after "Add Pen". It scans for no pen before that click, so
+    /// macOS asks about Bluetooth at the moment a person sees why.
+    @Published public private(set) var isAddingPen = false
+
+    /// The pens that work with the app, on the website: for a person who has none.
+    public static let pensURL = URL(string: "https://opensmartpen.org/#pens")!
+
+    func addPen() {
+        Telemetry.event("ui.pen.add", ["ui.source": "panel"])
+        live?.session.addPen()
+        refresh()
+    }
+
+    func cancelAddingPen() {
+        Telemetry.event("ui.pen.add_cancelled", ["ui.source": "panel"])
+        live?.session.cancelAdding()
+        refresh()
+    }
+
+    func showPensThatWork() {
+        Telemetry.event("ui.pens.website")
+        NSWorkspace.shared.open(Self.pensURL)
+    }
+
     // MARK: Bluetooth that was refused
 
     /// The app may not use Bluetooth, so no pen can connect, whatever the person does with the
@@ -633,6 +660,8 @@ public final class PanelModel: ObservableObject {
         public var asksForAgent = false
         /// As if the person had said no to Bluetooth.
         public var bluetoothRefused = false
+        /// As if "Add Pen" was clicked and no pen has answered yet.
+        public var addingPen = false
         public var newAgents: [NewAgent] = []
 
         public init() {}
@@ -660,6 +689,7 @@ public final class PanelModel: ObservableObject {
         agents = snapshot.agents
         asksForAgent = snapshot.asksForAgent
         bluetoothRefused = snapshot.bluetoothRefused
+        isAddingPen = snapshot.addingPen
         newAgents = snapshot.newAgents
         agentSentence = "Read the setup text and set yourself up."
         markActiveBook()

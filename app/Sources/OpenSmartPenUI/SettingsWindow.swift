@@ -147,13 +147,13 @@ public final class SettingsStore: ObservableObject {
     }
 
     func addPen() {
-        Telemetry.event("ui.pen.add")
+        Telemetry.event("ui.pen.add", ["ui.source": "settings"])
         link?.addPen()
         readLink()
     }
 
     func cancelAdding() {
-        Telemetry.event("ui.pen.add_cancelled")
+        Telemetry.event("ui.pen.add_cancelled", ["ui.source": "settings"])
         link?.cancelAdding()
         readLink()
     }
@@ -409,11 +409,6 @@ private struct PensTab: View {
                         Spacer()
                         Button("Add Pen…") { store.addPen() }
                     }
-                }
-            } footer: {
-                if store.pens.isEmpty {
-                    Note("The first pen that is switched on near this Mac is paired by itself. "
-                         + "Every pen after it is added here.")
                 }
             }
         }
