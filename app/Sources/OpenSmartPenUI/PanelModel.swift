@@ -521,7 +521,7 @@ public final class PanelModel: ObservableObject {
     /// The pens that work with the app, on the website: for a person who has none.
     public static let pensURL = URL(string: "https://opensmartpen.org/#pens")!
     /// The agents that work with the app and how each differs, on the website.
-    public static let agentsURL = URL(string: "https://opensmartpen.org/agents/")!
+    public static let agentsURL = URL(string: "https://opensmartpen.org/#agents")!
 
     func addPen() {
         Telemetry.event("ui.pen.add", ["ui.source": "panel"])

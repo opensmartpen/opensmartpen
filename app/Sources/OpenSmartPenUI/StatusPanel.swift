@@ -300,7 +300,7 @@ public struct StatusPanel: View {
         VStack(alignment: .leading, spacing: 7) {
             // The second step while the first is on screen above it. Alone, it has no number.
             stepTitle(model.pens.isEmpty && !model.bluetoothRefused ? 2 : nil, "Connect your agent")
-            Text("Paste this into Claude, Codex or another agent. It does the setup.")
+            Text("Paste this into Claude Code, Codex or another agent. It does the setup.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
