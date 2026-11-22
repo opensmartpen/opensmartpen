@@ -520,6 +520,8 @@ public final class PanelModel: ObservableObject {
 
     /// The pens that work with the app, on the website: for a person who has none.
     public static let pensURL = URL(string: "https://opensmartpen.org/#pens")!
+    /// The agents that work with the app and how each differs, on the website.
+    public static let agentsURL = URL(string: "https://opensmartpen.org/agents/")!
 
     func addPen() {
         Telemetry.event("ui.pen.add", ["ui.source": "panel"])
@@ -536,6 +538,11 @@ public final class PanelModel: ObservableObject {
     func showPensThatWork() {
         Telemetry.event("ui.pens.website")
         NSWorkspace.shared.open(Self.pensURL)
+    }
+
+    func showAgentsThatWork() {
+        Telemetry.event("ui.agents.website")
+        NSWorkspace.shared.open(Self.agentsURL)
     }
 
     // MARK: Bluetooth that was refused

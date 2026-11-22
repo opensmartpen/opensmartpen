@@ -148,13 +148,7 @@ public struct StatusPanel: View {
                         // One filled button in a panel, and it is the first step while that
                         // step is on screen.
                         .buttonStyle(InkButtonStyle(filled: true))
-                    HStack(spacing: 4) {
-                        Text("No pen yet?").foregroundStyle(.secondary)
-                        Button("See pens that work", action: model.showPensThatWork)
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Ink.accent)
-                    }
-                    .font(.system(size: 10.5))
+                    websiteLink("No pen yet?", "See pens that work", action: model.showPensThatWork)
                 }
             }
         }
@@ -313,7 +307,19 @@ public struct StatusPanel: View {
             // One filled button in the panel at a time. While "Add Pen" is above, it is that one.
             Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
                 .buttonStyle(InkButtonStyle(filled: !model.pens.isEmpty))
+            websiteLink("Which agent?", "Learn more", action: model.showAgentsThatWork)
         }
+    }
+
+    /// A small question and a link to the website, under the button of a step.
+    private func websiteLink(_ question: String, _ label: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 4) {
+            Text(question).foregroundStyle(.secondary)
+            Button(label, action: action)
+                .buttonStyle(.plain)
+                .foregroundStyle(Ink.accent)
+        }
+        .font(.system(size: 10.5))
     }
 
     /// Who reads the pages. A dot for each: the accent while it keeps up, grey when pages changed

@@ -130,6 +130,7 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.setting.changed` | A setting was changed | `setting.name`, `setting.value`. For: `startAtLogin`, `quietSeconds`, `deleteFromPenAfterPublish`, `lowBatteryPercent`, `memoryWarnPercent`, `updateAutomatically`, and `telemetry` when it is turned on |
 | `ui.pen.add`, `ui.pen.add_cancelled` | "Add Pen" or its "Cancel" was clicked, in the panel or in Settings | `ui.source` (`panel`, `settings`) |
 | `ui.pens.website` | "See pens that work" was clicked in the panel | None |
+| `ui.agents.website` | "Learn more" was clicked under "Connect your agent" in the panel | None |
 | `ui.pen.forget` | "Remove" was confirmed for a pen | `pen.mac` |
 | `ui.pen.edited` | A pen was changed in Settings | `pen.mac`, and what changed: `pen.renamed` (only that it was), `pen.mode`, `pen.ink`, `pen.width` |
 | `ui.book.renamed` | A notebook got a new title | `book.surface`. Not the title |
