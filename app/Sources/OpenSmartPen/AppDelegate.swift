@@ -7,7 +7,7 @@ import OpenSmartPenUI
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    static let version = "0.3.0"
+    static let version = "0.3.1"
     static let sdkVersion = "NISDK3/1.1.5"
     /// The build that writes a raw file, for its header line. Every raw file the app creates says
     /// this, so a file can always be traced to what made it.
