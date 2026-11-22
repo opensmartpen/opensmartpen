@@ -235,8 +235,9 @@ final class PenSession: NSObject {
             // ever scanned. So while the answer is "not asked yet", scan once and let the question
             // be put. It is asked once per launch, not once per tick, because a person who has
             // said no should not be asked again every five seconds.
-            if CBCentralManager.authorization == .notDetermined, !askedForBluetooth {
+            if Self.bluetoothAnswer == .notDetermined, !askedForBluetooth {
                 askedForBluetooth = true
+                Self.bluetoothQuestionAsked = true
                 Log.info("no Bluetooth grant yet; scanning once so macOS asks for one")
                 PenFinder.shared.scan(0)
                 return
@@ -259,7 +260,7 @@ final class PenSession: NSObject {
                 // lie that costs an afternoon, because switching Bluetooth off and on again will
                 // never fix it. A missing grant also never repairs itself, so it is exactly the
                 // kind of thing this app is supposed to speak up about. Deduped by the notifier.
-                if CBCentralManager.authorization != .allowedAlways {
+                if Self.bluetoothAnswer != .allowedAlways {
                     notifier.post(Notice(key: "bluetooth-permission",
                                          title: "Open Smart Pen cannot use Bluetooth",
                                          body: problem))
@@ -293,7 +294,7 @@ final class PenSession: NSObject {
     /// The grant is tied to the code signature as well as the bundle identifier, and an ad-hoc
     /// signature changes with every build, so it is lost on a rename *and* on a plain rebuild.
     static func bluetoothProblem() -> String {
-        switch CBCentralManager.authorization {
+        switch Self.bluetoothAnswer {
         case .notDetermined:
             return "Bluetooth permission has not been asked for yet. macOS only prompts an app "
                  + "launched from the Finder, so open Open Smart Pen.app once by hand; the LaunchAgent "
@@ -310,7 +311,7 @@ final class PenSession: NSObject {
 
     /// The Bluetooth grant, as one word for telemetry.
     private static var authorizationName: String {
-        switch CBCentralManager.authorization {
+        switch Self.bluetoothAnswer {
         case .notDetermined: return "not asked"
         case .restricted: return "restricted"
         case .denied: return "denied"
@@ -531,12 +532,34 @@ extension PenSession: PenFinderDelegate {
 /// that `OpenSmartPenUI` builds and runs with no pen and no SDK behind it.
 extension PenSession {
     /// macOS has not asked this person about Bluetooth yet. It asks at the first scan.
-    static var bluetoothNotAskedYet: Bool { CBCentralManager.authorization == .notDetermined }
+    static var bluetoothNotAskedYet: Bool { Self.bluetoothAnswer == .notDetermined }
+
+    /// The answer macOS has about Bluetooth, read rarely and only on the main thread.
+    ///
+    /// Each read is a request to the permission service of macOS. The panel reads the answer
+    /// several times at each of its ticks, and with the panel open under the question of macOS
+    /// that was two requests each second: the question then did not take a click on "Don't
+    /// Allow" for most of a minute. So an answer is kept for a second, and for three seconds
+    /// while the question is on screen.
+    static var bluetoothAnswer: CBManagerAuthorization {
+        let now = Date()
+        if let kept = keptAnswer {
+            let life: TimeInterval = kept.value == .notDetermined && bluetoothQuestionAsked ? 3 : 1
+            if now.timeIntervalSince(kept.at) < life { return kept.value }
+        }
+        let value = CBCentralManager.authorization
+        keptAnswer = (value, now)
+        return value
+    }
+
+    private static var keptAnswer: (value: CBManagerAuthorization, at: Date)?
+    /// True from the scan that makes macOS ask.
+    fileprivate static var bluetoothQuestionAsked = false
 }
 
 extension PenSession: PenLink {
     var bluetoothRefused: Bool {
-        let answer = CBCentralManager.authorization
+        let answer = Self.bluetoothAnswer
         return answer == .denied || answer == .restricted
     }
 
