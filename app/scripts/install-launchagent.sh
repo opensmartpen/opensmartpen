@@ -28,6 +28,9 @@ UID_="$(id -u)"
 # Stop our own agent before touching any bundle it might be executing. KeepAlive is armed, so
 # deleting the binary out from under a live agent gets it respawned into an ENOENT.
 launchctl bootout "gui/$UID_/$LABEL" 2>/dev/null || true
+# A copy that a person opened by hand is not the agent's, and the bootout leaves it. Two copies
+# would both take the pen, so it goes too.
+pkill -x opensmartpen 2>/dev/null || true
 
 # What each signature says the app is, read before the old bundle goes. macOS keeps a grant for as
 # long as that answer stays the same, so this is how the script knows whether a person is needed.
