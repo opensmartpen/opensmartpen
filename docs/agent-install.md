@@ -15,6 +15,8 @@ The pages are in one of two places, with the same layout:
 
 Use the folder if you run on that Mac. Use the bucket if you run somewhere else. Use one of them, not both.
 
+If you run somewhere else and the person gave you no bucket, stop. You cannot read the folder, and you cannot connect a bucket: only the person can, in the app, in Settings, under "Sync". Tell them to connect a bucket there, then to copy the instructions again and give them to you.
+
 ## The layout
 
 ```
