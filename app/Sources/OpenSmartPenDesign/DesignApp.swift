@@ -74,8 +74,13 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
             controller = ViewerWindowController(viewer: viewer)
             controller.window?.delegate = self
         } else if arguments.contains("--notice") {
+            // The design app has no icon of its own. The window shows the app's icon, so it is
+            // given the one the build draws, when a build has drawn it.
+            if let icon = NSImage(contentsOfFile: FileManager.default.currentDirectoryPath + "/Resources/AppIcon.icns") {
+                NSApp.applicationIconImage = icon
+            }
             let notice = TelemetryNoticeController(installId: "3f2a9c1e-7b4d-4e6a-9c0d-5a1b2c3d4e5f", encrypted: true, ours: true)
-            notice.onAnswer = { _ in NSApp.terminate(nil) }
+            notice.onAnswer = { _, _ in NSApp.terminate(nil) }
             controller = notice
         } else {
             controller = DesignWindowController()

@@ -4,15 +4,15 @@ A macOS menubar app that captures what a smartpen writes and uploads it to one S
 
 ## What the app is, and is not
 
-The app captures strokes, keeps them in `~/OpenSmartPen`, and uploads each page to the bucket as strokes and a PNG. That is all of it (decided 2026-11-11).
+The app captures strokes, keeps them in `~/OpenSmartPen`, and uploads each page to the bucket as strokes and a PNG. That is all of it.
 
-The app can also report to its makers how it is used and what goes wrong (telemetry, decided 2026-11-17). It is off unless a person says yes, and it is never on by default: the app asks one time at the first start (decided 2026-11-19). The built-in address is the collector of the project, `https://telemetry.opensmartpen.org`. What the question says must be true: do not add a sentence about how the data is sent or kept that the code or a contract does not back. It never reports what was written. `docs/telemetry.md` is the list of what is sent.
+The app can also report to its makers how it is used and what goes wrong (telemetry), never what was written. `docs/telemetry.md` is the one place that says when it is on, what the first window does and what is sent. What that window says must be true: do not add a sentence about how the data is sent or kept that the code or a contract does not back.
 
 Do not add these back to the app: transcription, actions, agents, calls to an agent platform, git. Transcription happens on the other side of the bucket. The app only shows the result: the viewer fetches `transcripts/<copy>/p<N>.md` for the page on screen.
 
 ## The contract with the other side
 
-`docs/processing.md` is the contract with whatever reads the bucket: the layout, the upload order, how time is read, and the exact instructions the agent was given.
+`docs/processing.md` is the contract with whatever reads the bucket: the layout, the upload order and how time is read.
 
 If you change what the app uploads, where, or when, update `docs/processing.md` in the same change, and tell the user that the agent needs the new instructions.
 
@@ -28,4 +28,7 @@ An agent learns all of this from the website, not from this repository: `https:/
 - A `Log.warn` or `Log.error` line is sent as telemetry. Do not put a name that a person gave to something in one. If the line needs such a name, write `Log.warn("…", telemetry: false)`.
 - The decision log is not in this repository. The maintainers keep it in their private `product` repository, at `engineering/decisions.md`; on a maintainer's Mac that is `../product/engineering/decisions.md`. Write a decision there when that folder exists. When it does not, tell the user the decision and add no log here.
 - This repository is public. Do not write here: the name of a person, another product of the company, a remark about a vendor or its license, or a legal question that is open.
+- Say each thing in one place, in the code and in the documents. Another place gives one short line and a link, not the same text again. The homes: `docs/processing.md` for the files and the contract, `docs/telemetry.md` for telemetry, `app/README.md` for the build, the config and the code.
+- Write what is true now. Do not write when something was decided, what it was before, or what it replaces.
+- A commit message and the title of a pull request use Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `build:`, `chore:`.
 - A formal decision record goes in `docs/adrs/`, written for a reader outside. Terms are in `docs/ubiquitous-language.md`.

@@ -48,12 +48,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var telemetryState = TelemetryState()
     private var telemetrySink: OTelTelemetry?
     private var telemetryNotice: TelemetryNoticeController?
+    /// The first window has not been answered yet.
+    private var welcomeOwed = false
+    /// The pens have not been started, so that macOS asks about Bluetooth after the first window.
+    private var pensWaitForWelcome = false
     private let startedAt = Date()
     private var lastHeartbeat = Date()
     private var lastGauges = Date.distantPast
     private var reportedAgents: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.keep(in: Log.defaultURL)
         Log.verbose = ProcessInfo.processInfo.environment["OPENSMARTPEN_VERBOSE"] != nil
 
         let base: Notifier = UserNotifier.isAvailable ? UserNotifier() : OSAScriptNotifier()
@@ -66,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             notifier.post(Notice(key: "config", title: "Open Smart Pen config is invalid",
                                  body: "\(configURL.path): \(error.localizedDescription). Running with defaults."))
         }
+        // Before the updater, the pen and the start at login: all three want the app to be where
+        // it will stay. When the person says yes, this copy quits and the one in Applications starts.
+        if MoveToApplications.offerIfNeeded() { return }
         // Started here, not when the settings open: the regular check runs from the start.
         updater = Updater()
         Log.info("Open Smart Pen \(Self.version) starting; notes \(config.dataURL.path); config \(configURL.path)")
@@ -163,11 +171,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showSettings(tab: SettingsTab.allCases.first { "\($0)" == named } ?? .sync)
         }
         checkAgents()
-        applyStartAtLogin()
+        // The first window is owed: it has the switch for the start at login, so nothing is set
+        // up before the person has seen it. And when macOS has not asked about Bluetooth yet, the
+        // pens wait too: the first scan is what makes macOS ask, and its question would land on
+        // top of ours. A Mac that was asked before has pens to take care of, and they do not wait.
+        welcomeOwed = TelemetryPlan.questionIsOwed(asked: telemetryState.noticed, settings: config.telemetry)
+        if !welcomeOwed { applyStartAtLogin() }
         model.refresh()
         refreshStatusButton()
 
-        session.start()
+        if welcomeOwed, PenSession.bluetoothNotAskedYet {
+            pensWaitForWelcome = true
+        } else {
+            session.start()
+        }
         // Often, because the wait before a page is uploaded is counted in seconds. A tick with
         // nothing quiet is a dictionary scan, so it costs nothing to ask.
         tickTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -285,16 +302,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ours = plan.goesToProject
         }
         let notice = TelemetryNoticeController(installId: telemetryState.installId, encrypted: encrypted,
-                                               ours: ours)
-        notice.onAnswer = { [weak self] yes in self?.telemetryNoticeAnswered(keep: yes) }
+                                               ours: ours, startAtLogin: config.startAtLogin)
+        notice.onAnswer = { [weak self] yes, login in self?.telemetryNoticeAnswered(keep: yes, startAtLogin: login) }
         telemetryNotice = notice
         NSApp.activate(ignoringOtherApps: true)
         notice.showWindow(nil)
         notice.window?.makeKeyAndOrderFront(nil)
     }
 
-    private func telemetryNoticeAnswered(keep: Bool) {
+    private func telemetryNoticeAnswered(keep: Bool, startAtLogin: Bool) {
         telemetryNotice = nil
+        // What waited for the window goes now, whatever else is true of the answer.
+        defer { afterWelcome() }
         guard telemetryState.noticed == nil else { return }
         telemetryState.noticed = Date()
         telemetryState.save(directory: configDirectory)
@@ -302,11 +321,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // and the settings window write it too.
         var latest = (try? Config.loadOrCreate(at: configURL)) ?? config
         latest.telemetry.enabled = keep
+        latest.startAtLogin = startAtLogin
         do { try latest.save(to: configURL) } catch { Log.error("saving config failed: \(error)") }
         config.telemetry.enabled = keep
+        config.startAtLogin = startAtLogin
         settingsStore?.adopt(telemetry: config.telemetry)
-        Log.info(keep ? "the person said yes to telemetry" : "the person said no to telemetry; nothing was sent")
+        Log.info(keep ? "the first window was answered with telemetry on" : "the first window was answered with telemetry off; nothing was sent")
         applyTelemetry()
+    }
+
+    /// The first window is answered or gone: set up the start at login as the switch stood, and
+    /// start the pens if they waited. macOS asks about Bluetooth now, after our window and not
+    /// on top of it.
+    private func afterWelcome() {
+        guard welcomeOwed else { return }
+        welcomeOwed = false
+        applyStartAtLogin()
+        settingsStore?.adopt(startAtLogin: config.startAtLogin)
+        if pensWaitForWelcome {
+            pensWaitForWelcome = false
+            session.start()
+        }
+        openPanelAfterWelcome()
+    }
+
+    /// After "Get Started" the panel opens by itself: the app has no other window, and a person
+    /// who never used it does not know to look for a pencil in the menu bar. When macOS asks
+    /// about Bluetooth now, the panel waits for that answer: it closes at a click elsewhere, so
+    /// it would be gone before it was seen.
+    private func openPanelAfterWelcome(tries: Int = 0) {
+        // Two minutes is long enough for the question. After that the person is elsewhere.
+        if PenSession.bluetoothNotAskedYet, tries < 240 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.openPanelAfterWelcome(tries: tries + 1)
+            }
+            return
+        }
+        // A moment for the window, or the question, to leave the screen and give the focus back.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self, !self.panel.isVisible else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            self.togglePanel()
+        }
     }
 
     /// Crashes since the last start, read from the reports macOS wrote. Off the main thread: the
@@ -749,8 +805,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showSettings(tab: SettingsTab? = nil) {
         panel?.dismiss()
         if settingsWindow == nil {
-            let log = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Logs/OpenSmartPen/opensmartpen.log")
+            let log = Log.defaultURL
             var info = AppInfo(version: Self.version, sdk: Self.sdkVersion.replacingOccurrences(of: "/", with: " "),
                                configURL: configURL, logURL: log)
             info.updates = updater?.controls
@@ -837,6 +892,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func togglePanel() {
         if panel.isVisible {
             panel.dismiss()
+            return
+        }
+        // The first window comes before the app: a click on the pencil shows it again, and the
+        // panel opens only after "Get Started".
+        if welcomeOwed {
+            if let telemetryNotice { telemetryNotice.comeForward() } else { showTelemetryNoticeIfOwed() }
             return
         }
         guard let button = statusItem.button else { return }

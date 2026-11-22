@@ -488,6 +488,11 @@ extension PenSession: PenFinderDelegate {
 
 /// The UI's view of the pens. Everything the SDK reports is turned into plain numbers here, so
 /// that `OpenSmartPenUI` builds and runs with no pen and no SDK behind it.
+extension PenSession {
+    /// macOS has not asked this person about Bluetooth yet. It asks at the first scan.
+    static var bluetoothNotAskedYet: Bool { CBCentralManager.authorization == .notDetermined }
+}
+
 extension PenSession: PenLink {
     var bluetoothRefused: Bool {
         let answer = CBCentralManager.authorization

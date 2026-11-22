@@ -567,12 +567,11 @@ public final class PanelModel: ObservableObject {
 
     func openConfig() { onOpenSettings?() }
 
-    /// Where the LaunchAgent sends stderr. Falls back to revealing the notes folder when the app
-    /// was started by hand and the log is only on the terminal.
+    /// The log the app keeps. Falls back to revealing the notes folder when there is no file,
+    /// as in the design tool.
     func openLog() {
         Telemetry.event("ui.log.opened", ["ui.source": "panel"])
-        let log = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/OpenSmartPen/opensmartpen.log")
+        let log = Log.defaultURL
         if FileManager.default.fileExists(atPath: log.path) {
             NSWorkspace.shared.open(log)
         } else if let repo = live?.config.dataURL {

@@ -32,8 +32,6 @@ The app does one job. It does not transcribe, it has no account, and it never se
 2. **The app keeps each page** in `~/OpenSmartPen`: the strokes, with the time of each one, and a picture of the page. If you connect an S3 bucket, it copies the same files there.
 3. **Your agent reads the pages.** One small file says when a page changed, so an agent can check often at almost no cost. The agent writes the text of each page back, and the app shows it beside the ink.
 
-You do not need a pen to try it. The app also takes a photo of a handwritten page, from an iPhone or from a file.
-
 ## What you need
 
 - A Mac with macOS 13 or later.
@@ -59,7 +57,7 @@ The camera of your phone is sufficient. Take a photo of any handwritten page: fr
 
 ### 1. Install the app
 
-Download the newest [`OpenSmartPen-<version>.dmg`](https://github.com/opensmartpen/opensmartpen/releases/latest), open it, and drag Open Smart Pen to the Applications folder. Then open the app.
+Download the newest [`OpenSmartPen-<version>.dmg`](https://github.com/opensmartpen/opensmartpen/releases/latest), open it, and drag Open Smart Pen to the Applications folder. Then open the app. If you open the app from the disk image or from Downloads, it offers to move itself to the Applications folder.
 
 - macOS asks one time for the Bluetooth permission. Allow it; without it the pen cannot connect.
 - The app is in the menu bar, as a pencil. It has no window of its own and no icon in the Dock.
@@ -88,20 +86,11 @@ The app never starts an agent. Your agent decides when it runs.
 
 All files are in `~/OpenSmartPen`, outside the app. You can delete the app and install it again, and no page is lost.
 
-```
-last-modified.txt             when a page last changed: the one file an agent watches
-books/<copy>/book.json        the name of the notebook and its paper size
-books/<copy>/raw/p<N>.jsonl   the strokes of one page, with the time of each stroke
-books/<copy>/pages/p<N>.png   a picture of that page
-transcripts/<copy>/p<N>.md    the text of the page, written by your agent
-agents/<n>.json               each agent's name, and when it was last alive
-```
-
 - **Your pages go nowhere by themselves.** With no bucket connected, all files stay on your Mac.
 - **An S3 bucket is optional.** Connect one in Settings → Sync if your agent runs on a different computer. Amazon S3 and services with the same interface work, for example Cloudflare R2 and MinIO.
 - **Your agent uses its own model.** When it reads a page, it sends the picture of the page to that model, as it does with any file you give it.
 
-[`docs/processing.md`](docs/processing.md) is the full contract between the app and an agent: what the app writes, where, and when.
+[`docs/processing.md`](docs/processing.md) lists each file, and is the full contract between the app and an agent: what the app writes, where, and when.
 
 ## Documentation
 
@@ -117,7 +106,7 @@ agents/<n>.json               each agent's name, and when it was last alive
 
 ## Telemetry
 
-Off unless you say yes. The app asks one time, at the first start, and Settings → General has the switch after that. With a yes, the app reports how it is used and what goes wrong, and never what you write. [`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
+The app reports to its makers how it is used and what goes wrong, and never what you write. It is on unless you turn it off, in the first window of the app or in Settings → General. [`docs/telemetry.md`](docs/telemetry.md) has the rest: each thing that is sent, and when.
 
 ## Contributing
 

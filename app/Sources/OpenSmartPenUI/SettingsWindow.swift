@@ -279,6 +279,12 @@ public final class SettingsStore: ObservableObject {
         lastSaved.telemetry = telemetry
     }
 
+    /// The start at login was chosen outside this window, in the first window. The same reason.
+    public func adopt(startAtLogin: Bool) {
+        config.startAtLogin = startAtLogin
+        lastSaved.startAtLogin = startAtLogin
+    }
+
     func syncNow() {
         Telemetry.event("ui.sync_now", ["ui.source": "settings"])
         onSyncNow?()
@@ -765,70 +771,69 @@ private struct SyncTab: View {
 
 private struct GeneralTab: View {
     @ObservedObject var store: SettingsStore
+    @State private var showsFolderInfo = false
+    @State private var showsWhatIsSent = false
+    @State private var copied = false
 
     var body: some View {
         Page(store: store) {
             Section {
-                LabeledContent("Notes folder") {
+                LabeledContent {
                     // With a limit, because a row whose value is too wide stops being a row: the
                     // form stacks it under its label.
                     Text((store.config.dataURL.path as NSString).abbreviatingWithTildeInPath)
                         .font(.callout.monospaced()).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
-                        .frame(maxWidth: 330, alignment: .trailing)
+                        .frame(maxWidth: 250, alignment: .trailing)
                         .help(store.config.dataURL.path)
-                    Button("Show") {
+                    Button("Show in Finder") {
                         Telemetry.event("ui.notes.opened", ["ui.source": "settings"])
                         NSWorkspace.shared.open(store.config.dataURL)
                     }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Notes folder")
+                        // What the folder is, for a person who asks. Not a line under the row,
+                        // which each person read each time.
+                        Button { showsFolderInfo.toggle() } label: { Image(systemName: "info.circle") }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.secondary)
+                            .help("What is kept here")
+                            .popover(isPresented: $showsFolderInfo, arrowEdge: .bottom) {
+                                Text("Everything the pens write is kept here, outside the app, so the app "
+                                     + "can be deleted and installed again without losing a page.")
+                                    .font(.callout)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(14)
+                                    .frame(width: 300)
+                            }
+                    }
                 }
-            } footer: {
-                Note("Everything the pens write is kept here, outside the app, so the app can be "
-                     + "deleted and installed again without losing a page.")
             }
 
             Section {
                 Toggle("Start at login", isOn: $store.config.startAtLogin)
                     .onChange(of: store.config.startAtLogin) { _ in store.saveConfig() }
-            } footer: {
-                Note("The app must be running to take pages from a pen. With this on, it starts "
-                     + "when you log in to this Mac.")
             }
 
             Section {
-                Toggle("Send usage data and error reports", isOn: $store.config.telemetry.enabled)
-                    .onChange(of: store.config.telemetry.enabled) { _ in store.saveConfig() }
-                if !store.info.installId.isEmpty {
-                    LabeledContent("Install ID") {
-                        Text(store.info.installId).font(.callout.monospaced()).foregroundStyle(.secondary)
-                            .lineLimit(1).truncationMode(.middle)
-                            .textSelection(.enabled)
-                            .help("A random id for this install. Give it to the makers when you report a problem.")
+                Toggle(isOn: $store.config.telemetry.enabled) {
+                    HStack(spacing: 8) {
+                        Text("Help us improve")
+                        // The same words the first window has, one click from the switch.
+                        Button("What is sent") { showsWhatIsSent.toggle() }
+                            .buttonStyle(.link)
+                            .font(.callout)
+                            .popover(isPresented: $showsWhatIsSent, arrowEdge: .bottom) { WhatIsSent() }
                     }
                 }
+                .onChange(of: store.config.telemetry.enabled) { _ in store.saveConfig() }
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Note(TelemetryInfo.summary + " " + TelemetryInfo.never)
-                    if TelemetryPlan.builtInIsLocal {
-                        Note("The project has no server for this yet. With this on, the app sends to "
-                             + "a collector on this Mac, at \(TelemetryPlan.builtInEndpoint), unless the "
-                             + "config names another.")
-                    }
-                    Link("What is sent", destination: TelemetryInfo.url).font(.callout)
+                if TelemetryPlan.builtInIsLocal {
+                    Note("The project has no server for this yet. With this on, the app sends to "
+                         + "a collector on this Mac, at \(TelemetryPlan.builtInEndpoint), unless the "
+                         + "config names another.")
                 }
-            }
-
-            Section("Warnings") {
-                LabeledContent("Battery is low at") {
-                    Text("\(store.config.lowBatteryPercent)%").monospacedDigit()
-                    Stepper("", value: $store.config.lowBatteryPercent, in: 5...50, step: 5).labelsHidden()
-                }
-                .onChange(of: store.config.lowBatteryPercent) { _ in store.saveConfig() }
-                LabeledContent("Pen memory is full at") {
-                    Text("\(store.config.memoryWarnPercent)%").monospacedDigit()
-                    Stepper("", value: $store.config.memoryWarnPercent, in: 30...95, step: 5).labelsHidden()
-                }
-                .onChange(of: store.config.memoryWarnPercent) { _ in store.saveConfig() }
             }
 
             Section("Troubleshooting") {
@@ -842,6 +847,20 @@ private struct GeneralTab: View {
                 LabeledContent("Settings file") {
                     Button("Show in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting([store.info.configURL])
+                    }
+                }
+                if !store.info.installId.isEmpty {
+                    LabeledContent("Install ID") {
+                        Text(store.info.installId).font(.callout.monospaced()).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                            .textSelection(.enabled)
+                            .help("A random id for this install. Give it to the makers when you report a problem.")
+                        Button(copied ? "Copied" : "Copy") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(store.info.installId, forType: .string)
+                            copied = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+                        }
                     }
                 }
             }
@@ -866,51 +885,48 @@ private struct AboutTab: View {
                     }
                     Text(store.info.name).font(.title2.weight(.semibold))
                     Text("Version \(store.info.version)").foregroundStyle(.secondary)
-                    Text("Keeps what you write with a smartpen: on this Mac as it is written, "
-                         + "and in your S3 bucket soon after.")
-                        .multilineTextAlignment(.center)
+                    Text("You write. Your agent acts.")
                         .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
             }
-            if let updates = store.info.updates {
-                Section {
-                    LabeledContent("Updates") {
-                        Button("Check for Updates…") { updates.check() }
-                    }
-                    Toggle("Update automatically", isOn: $checksAutomatically)
-                        .onChange(of: checksAutomatically) { updates.setAutomatic($0) }
-                    Note("A new version installs by itself, with no window, at a moment when "
-                         + "no pen is writing. The app starts again and the pen connects again.")
-                }
-                .onAppear { checksAutomatically = updates.isAutomatic() }
-            }
+            // Always there, so the window is the same in each build. A build with no address
+            // to get updates from, such as one made from the source, shows the two rows greyed.
             Section {
-                LabeledContent("Copyright", value: "Apoco s.r.o.")
+                Toggle("Update automatically", isOn: $checksAutomatically)
+                    .onChange(of: checksAutomatically) { store.info.updates?.setAutomatic($0) }
+                LabeledContent("Updates") {
+                    Button("Check for Updates…") { store.info.updates?.check() }
+                }
+            } footer: {
+                if store.info.updates == nil {
+                    Note("This build does not update itself.")
+                }
+            }
+            .disabled(store.info.updates == nil)
+            .onAppear { checksAutomatically = store.info.updates?.isAutomatic() ?? false }
+            Section {
                 LabeledContent("Website") {
                     Link("opensmartpen.org", destination: store.info.websiteURL)
                 }
                 LabeledContent("Source") {
                     Link("github.com/opensmartpen/opensmartpen", destination: store.info.sourceURL)
                 }
-                LabeledContent("Pen SDK") {
-                    Link("\(store.info.sdk), GPL-3.0", destination: store.info.sdkSourceURL)
-                }
-            }
-            Section {
-                LabeledContent("License") {
-                    // Only a packaged app carries the texts, so only a packaged app offers them.
-                    if let licenses = store.info.licensesURL {
-                        Button("Show Licenses") { NSWorkspace.shared.open(licenses) }
-                    } else {
-                        Text("Apache-2.0 and GPL-3.0").foregroundStyle(.secondary)
+                // Only a packaged app carries the texts, so only a packaged app offers them. They
+                // name each part the app contains and its license.
+                if let licenses = store.info.licensesURL {
+                    LabeledContent("Licenses") {
+                        Button("Show") { NSWorkspace.shared.open(licenses) }
                     }
                 }
-                Note("Open source. The source code is Apache-2.0. This app contains the pen SDK, "
-                     + "so the app as a whole is GPL-3.0.")
+            } footer: {
+                Text("© Apoco s.r.o.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 6)
             }
         }
     }
