@@ -300,14 +300,17 @@ public struct StatusPanel: View {
         VStack(alignment: .leading, spacing: 7) {
             // The second step while the first is on screen above it. Alone, it has no number.
             stepTitle(model.pens.isEmpty && !model.bluetoothRefused ? 2 : nil, "Connect your agent")
-            Text("Paste this into Claude Code, Codex or another agent. It does the setup.")
+            // The link is at the end of the text, so it wraps with it. It goes through the model,
+            // which also counts the click.
+            (Text("Paste this into Claude Code, Codex or another agent. ").foregroundColor(.secondary)
+             + Text(.init("[Learn more](\(PanelModel.agentsURL.absoluteString))")))
                 .font(.system(size: 10.5))
-                .foregroundStyle(.secondary)
+                .tint(Ink.accent)
                 .fixedSize(horizontal: false, vertical: true)
+                .environment(\.openURL, OpenURLAction { _ in model.showAgentsThatWork(); return .handled })
             // One filled button in the panel at a time. While "Add Pen" is above, it is that one.
             Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
                 .buttonStyle(InkButtonStyle(filled: !model.pens.isEmpty))
-            websiteLink("Which agent?", "Learn more", action: model.showAgentsThatWork)
         }
     }
 
