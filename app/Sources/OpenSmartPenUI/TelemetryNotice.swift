@@ -142,14 +142,6 @@ struct TelemetryNoticeView: View {
             }
             .padding(14)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.05)))
-            HStack(alignment: .top, spacing: 8) {
-                // Three short facts, and each says what the app is, not what it lacks: a row of
-                // "no" read as a list of warnings. The notes are in a folder on this Mac first,
-                // nobody else gets them, and the code is there to read.
-                promise("internaldrive.fill", "Local first", "No server")
-                promise("lock.fill", "Private", "No account")
-                promise("chevron.left.forwardslash.chevron.right", "Open source", "Auditable code")
-            }
             HStack {
                 Spacer()
                 Button("Get Started") { answer(choices.helpImprove) }
@@ -169,26 +161,13 @@ struct TelemetryNoticeView: View {
 
     /// The two rows have a sign in a colour of their own, so the eye finds them. The switches,
     /// the link and the button keep the colour macOS gives every app, which is the one a person
-    /// chose for their Mac. The three facts below have no colour: they are read, not pressed.
+    /// chose for their Mac.
     private func glyph(_ name: String, _ tint: Color) -> some View {
         Image(systemName: name)
             .font(.system(size: 15, weight: .medium))
             .foregroundStyle(tint)
             .frame(width: 32, height: 32)
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint.opacity(0.14)))
-    }
-
-    /// A fact in one or two bold words, and under it the plain thing that makes it true.
-    private func promise(_ symbol: String, _ title: String, _ detail: String) -> some View {
-        VStack(spacing: 4) {
-            // One height for each sign, so the three lines of words stand on one line.
-            Image(systemName: symbol).font(.system(size: 18, weight: .medium)).foregroundStyle(.secondary)
-                .frame(height: 24)
-            Text(title).font(.callout.weight(.semibold))
-            Text(detail).font(.caption).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity)
     }
 }
 
