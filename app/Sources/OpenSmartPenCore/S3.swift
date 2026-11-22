@@ -124,9 +124,10 @@ public protocol S3Transport {
     func send(_ request: URLRequest, body: Data) -> Result<(status: Int, body: Data), Error>
 }
 
-/// Puts files in a bucket, and reads one back when asked for it by name. That is all the app
-/// asks of S3, so that is all this does: no listing, no deleting. A key that can only write is
-/// enough to upload; reading the transcripts needs one that can also read.
+/// Puts files in a bucket, reads one back when asked for it by name, and deletes one by name when
+/// a person deletes a notebook. That is all the app asks of S3, so that is all this does: no
+/// listing. A key that can only write is enough to upload; reading the transcripts needs one that
+/// can also read, and deleting a notebook needs one that can also delete.
 public final class S3Client {
     public let account: S3Account
     private let transport: S3Transport
@@ -159,6 +160,14 @@ public final class S3Client {
         if response.status == 404 { return nil }
         guard (200..<300).contains(response.status) else { throw Self.refusal(response) }
         return response.body
+    }
+
+    /// Delete one file. A file that is not there is already gone, which is the wanted result and
+    /// not a failure. Blocks, like `put`.
+    public func delete(_ relativePath: String, now: Date = Date()) throws {
+        let response = try ask("DELETE", for: relativePath, now: now)
+        if response.status == 404 { return }
+        guard (200..<300).contains(response.status) else { throw Self.refusal(response) }
     }
 
     /// Prove the keys, the bucket and the region, and leave nothing in the bucket.
@@ -194,11 +203,12 @@ public final class S3Client {
         return .refused(status: response.status, code: tag("Code", in: text), message: tag("Message", in: text))
     }
 
-    /// One signed GET, answered or unreachable. What the answer means is the caller's business.
-    private func ask(for relativePath: String, now: Date) throws -> (status: Int, body: Data) {
+    /// One signed request with no body, answered or unreachable. What the answer means is the
+    /// caller's business.
+    private func ask(_ method: String = "GET", for relativePath: String, now: Date) throws -> (status: Int, body: Data) {
         let url = account.url(forKey: account.key(for: relativePath))
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
+        request.httpMethod = method
         let hash = SigV4.hex(SHA256.hash(data: Data()))
         var headers = [
             "host": SigV4.host(of: url),
@@ -206,7 +216,7 @@ public final class S3Client {
             "x-amz-date": SigV4.timestamp(now),
         ]
         headers["authorization"] = SigV4.authorization(
-            method: "GET", url: url, headers: headers, payloadHash: hash,
+            method: method, url: url, headers: headers, payloadHash: hash,
             accessKeyId: account.accessKeyId, secret: account.secret, region: account.region, now: now)
         for (name, value) in headers where name != "host" {
             request.setValue(value, forHTTPHeaderField: name)

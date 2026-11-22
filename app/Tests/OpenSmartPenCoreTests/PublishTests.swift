@@ -29,6 +29,10 @@ final class FakeBucket: S3Transport {
             }
             return .success((200, found))
         }
+        if request.httpMethod == "DELETE" {
+            stored[path] = nil
+            return .success((204, Data()))
+        }
         stored[path] = body
         return .success((200, Data()))
     }
@@ -112,6 +116,59 @@ final class PublishTests: XCTestCase {
         XCTAssertEqual(try sync.publish(paths: [refA.rawRelativePath]), 0, "nothing new to send")
         XCTAssertEqual(try sync.publish(paths: [refB.rawRelativePath]), 1)
         XCTAssertEqual(bucket.requests.count, 2)
+    }
+
+    /// Deleting a notebook takes its files and its transcripts out of the bucket by name, and
+    /// off this Mac. The other notebook and what an agent keeps elsewhere stay.
+    func testADeletedNotebookLeavesTheBucketAndTheFolder() throws {
+        let sync = try makeSync()
+        let flow = makeFlow(publisher: sync)
+        let a = PageID(section: 3, owner: 27, book: 5, page: 1)
+        let b = PageID(section: 3, owner: 27, book: 6, page: 1)
+        flow.coordinator.ingestLive([stroke(a, start: 1), stroke(b, start: 1)])
+        let refA = try ref(a, flow.books), refB = try ref(b, flow.books)
+        _ = try sync.publish(paths: [refA.rawRelativePath, refA.folder.recordPath, refB.rawRelativePath])
+        let transcript = TranscriptStore.path(for: refA)
+        bucket.place(Data("text".utf8), at: key(transcript))
+        bucket.place(Data("{}".utf8), at: key("agents/0.json"))
+
+        let files = flow.books.files(of: refA.folder)
+        XCTAssertTrue(files.contains(refA.rawRelativePath))
+        XCTAssertTrue(files.contains(transcript))
+        XCTAssertEqual(flow.books.pageCount(of: refA.folder), 1)
+        let client = try XCTUnwrap(sync.connection)
+        for file in files { try client.delete(file) }
+        sync.forget(files)
+        try flow.books.delete(refA.folder)
+        flow.coordinator.forget(refA.folder)
+
+        XCTAssertNil(bucket.objects[key(refA.rawRelativePath)])
+        XCTAssertNil(bucket.objects[key(refA.folder.recordPath)])
+        XCTAssertNil(bucket.objects[key(transcript)])
+        XCTAssertNotNil(bucket.objects[key(refB.rawRelativePath)], "the other notebook stays")
+        XCTAssertNotNil(bucket.objects[key("agents/0.json")], "what an agent keeps elsewhere stays")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: notes.appendingPathComponent(refA.folder.relativePath).path))
+        XCTAssertNil(flow.books.record(for: refA))
+        XCTAssertNotNil(flow.books.record(for: refB))
+        XCTAssertFalse(flow.coordinator.pendingPages.contains(refA))
+        XCTAssertTrue(flow.coordinator.pendingPages.contains(refB))
+    }
+
+    /// A key that may not delete stops the delete with the bucket's own words.
+    func testABucketThatRefusesToDeleteSaysSo() throws {
+        let client = S3Client(account: try account(), transport: bucket)
+        bucket.refusal = (403, "<Error><Code>AccessDenied</Code><Message>no</Message></Error>")
+        XCTAssertThrowsError(try client.delete("books/x/book.json"))
+        bucket.refusal = nil
+        XCTAssertNoThrow(try client.delete("books/x/book.json"), "a file that is not there is already gone")
+    }
+
+    func testHiddenNotebooksAreKeptInTheConfig() throws {
+        var config = Config()
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(config), as: UTF8.self).contains("hiddenBooks"))
+        config.hiddenBooks = ["s3-o27-b5-abc123"]
+        let back = try JSONDecoder().decode(Config.self, from: JSONEncoder().encode(config))
+        XCTAssertEqual(back.hiddenBooks, ["s3-o27-b5-abc123"])
     }
 
     final class Drawer: PageImaging {

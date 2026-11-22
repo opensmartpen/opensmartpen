@@ -392,8 +392,15 @@ public final class PanelModel: ObservableObject {
 
     /// Scanning the repo is too much for the one-second tick, so the recent list is rebuilt only
     /// when the panel is opened.
+    /// Notebooks that a person took out of the list, by folder name. Set by the app delegate,
+    /// from the config.
+    public var hiddenBooks: Set<String> = [] {
+        didSet { if hiddenBooks != oldValue { refreshRecent() } }
+    }
+
     public func refreshRecent() {
         guard let books = live?.books else { return }
+        let hidden = hiddenBooks
         // Newest first, one row per copy of a notebook: the same book appearing four times
         // because you wrote four pages in it says nothing you did not already know. A second copy
         // of one product is a second row, which is how a person learns the app decided there was
@@ -404,6 +411,7 @@ public final class PanelModel: ObservableObject {
         var seen = Set<String>()
         recent = books.recentPages(limit: 60).compactMap { entry in
             guard !utility.contains(entry.page.folder.surface) else { return nil }
+            guard !hidden.contains(entry.page.folder.name) else { return nil }
             guard seen.insert(entry.page.folder.name).inserted else { return nil }
             let label = books.label(for: entry.page)
             return RecentBook(id: entry.page.folder.name,

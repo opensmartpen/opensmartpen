@@ -147,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model = PanelModel(session: session, coordinator: coordinator, config: config,
                            books: books, pens: pens, penState: penState)
+        model.hiddenBooks = Set(config.hiddenBooks)
         model.onShowLive = { [weak self] in self?.showViewer(nil) }
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
@@ -611,6 +612,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Delete one notebook: from the bucket first, by the names of its files, then from this
+    /// Mac. When the bucket refuses, nothing on this Mac is deleted, and the person can try again.
+    private func delete(_ book: BookRecord, done: @escaping (String?) -> Void) {
+        let folder = book.folder
+        let files = books.files(of: folder)
+        let client = sync.connection
+        agentQueue.async { [weak self] in
+            var problem: String?
+            if let client {
+                do {
+                    for file in files { try client.delete(file) }
+                } catch {
+                    Log.warn("could not delete a notebook from the bucket: \(error)")
+                    problem = "The bucket did not delete the notebook: \(error.localizedDescription) "
+                        + "Nothing was deleted on this Mac."
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                // Deleted from the bucket, or partly: in each case the list of what was uploaded
+                // is wrong for these files. What stays on disk goes up again at the next sync.
+                if client != nil { self.sync.forget(files) }
+                if problem == nil {
+                    do {
+                        try self.books.delete(folder)
+                        self.coordinator.forget(folder)
+                    } catch {
+                        Log.error("could not delete a notebook from this Mac: \(error)")
+                        problem = "The notebook could not be deleted from this Mac: \(error.localizedDescription)"
+                    }
+                }
+                self.model.refreshRecent()
+                done(problem)
+            }
+        }
+    }
+
     /// Read the agents' records: from the folder each time, from the bucket once a minute.
     private func checkAgents() {
         model.agentSentence = Agents.sentence(folder: config.dataURL,
@@ -778,6 +816,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let telemetryChanged = updated.telemetry != config.telemetry
                 config = updated
                 coordinator.quietWindow = updated.quietSeconds
+                model.hiddenBooks = Set(updated.hiddenBooks)
                 applyStartAtLogin()
                 if bucketChanged { connectBucket() }
                 // A bucket's name is hidden from the moment it is connected. Only a change to the
@@ -788,6 +827,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // A new title is a changed file with no page to carry it, so it is sent now.
             store.onRecordsChange = { [weak self] in self?.coordinator.publishAll() }
+            store.onDeleteBook = { [weak self] book, done in self?.delete(book, done: done) }
             store.onSyncNow = { [weak self] in
                 self?.coordinator.publishAll()
                 self?.stateChanged()

@@ -169,6 +169,7 @@ one captured file and could only be repaired by cutting it.
 | `memoryWarnPercent` | `70` | Notify when pen memory usage reaches this level. |
 | `controlBooks` | `["s3/o1013/b1"]` | Printed control surfaces rather than paper to write on. Taps on them are kept as evidence and decoded as settings, but they are never pages. |
 | `sdkDebugLog` | `false` | Print the SDK's protocol log. |
+| `hiddenBooks` | none | Notebooks that the panel does not list, by folder name. Set with "Show in panel" in Settings → Notebooks. |
 | `telemetry` | see the link | What the app reports to its makers: `enabled`, and optionally `endpoint` (the collector) and `headers`. `../docs/telemetry.md` says when it is on and where it goes. |
 
 ## The bucket
@@ -176,8 +177,9 @@ one captured file and could only be repaired by cutting it.
 The layout of the bucket is the layout of the notes folder, under `prefix` if one is set.
 `../docs/processing.md` has it, with the order of the uploads and what an agent watches.
 
-A key that is only allowed `s3:PutObject` on the bucket is enough to upload: the app never lists
-and never deletes. To show a transcript in the viewer the key needs `s3:GetObject` too.
+A key that is only allowed `s3:PutObject` on the bucket is enough to upload: the app never lists,
+and a sync never deletes. To show a transcript in the viewer the key needs `s3:GetObject` too, and
+to delete a notebook in Settings it needs `s3:DeleteObject`.
 
 A PNG that is missing or older than its strokes is drawn again at the next start.
 

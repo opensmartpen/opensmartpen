@@ -129,6 +129,8 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.settings.tab` | A tab of the settings window came on screen | `settings.tab` |
 | `ui.setting.changed` | A setting was changed | `setting.name`, `setting.value`. For: `startAtLogin`, `quietSeconds`, `deleteFromPenAfterPublish`, `lowBatteryPercent`, `memoryWarnPercent`, `updateAutomatically`, and `telemetry` when it is turned on |
 | `ui.pen.add`, `ui.pen.add_cancelled` | "Add Pen" or its "Cancel" was clicked, in the panel or in Settings | `ui.source` (`panel`, `settings`) |
+| `ui.book.shown_in_panel` | "Show in panel" was changed for a notebook | `book.surface`, `book.shown` |
+| `ui.book.deleted` | A notebook was deleted in Settings | `book.surface`, `book.pages`, `book.bucket` (a bucket was connected) |
 | `ui.pens.website` | "See pens that work" was clicked in the panel | None |
 | `ui.agents.website` | "Learn more" was clicked under "Connect your agent" in the panel | None |
 | `ui.pen.forget` | "Remove" was confirmed for a pen | `pen.mac` |

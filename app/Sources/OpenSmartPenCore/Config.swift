@@ -40,6 +40,9 @@ public struct Config: Codable, Equatable {
     /// colour strip that came with the LAMY pad. Taps on these are commands, not notes, so they
     /// are logged and discarded instead of being filed as pages.
     public var controlBooks: [String] = ["s3/o1013/b1"]
+    /// Notebooks that the panel does not list, by folder name. They are captured and synced as
+    /// each other notebook.
+    public var hiddenBooks: [String] = []
 
     /// Notify when battery falls to or below this percentage.
     public var lowBatteryPercent: Int = 20
@@ -97,6 +100,7 @@ public struct Config: Codable, Equatable {
         penAutoPowerOffMinutes = try c.decodeIfPresent(Int.self, forKey: .penAutoPowerOffMinutes)
         penCapPowerOff = try c.decodeIfPresent(Bool.self, forKey: .penCapPowerOff)
         controlBooks = try c.decodeIfPresent([String].self, forKey: .controlBooks) ?? d.controlBooks
+        hiddenBooks = try c.decodeIfPresent([String].self, forKey: .hiddenBooks) ?? d.hiddenBooks
         s3 = try c.decodeIfPresent(S3Settings.self, forKey: .s3) ?? d.s3
         lowBatteryPercent = try c.decodeIfPresent(Int.self, forKey: .lowBatteryPercent) ?? d.lowBatteryPercent
         memoryWarnPercent = try c.decodeIfPresent(Int.self, forKey: .memoryWarnPercent) ?? d.memoryWarnPercent
@@ -121,7 +125,7 @@ public struct Config: Codable, Equatable {
         case dataPath, quietSeconds, pairedPens, penMac, penPeripheralId, penPassword
         case deleteFromPenAfterPublish, s3, penAutoPowerOn, penAutoPowerOffMinutes
         case penCapPowerOff, controlBooks, lowBatteryPercent, memoryWarnPercent, sdkDebugLog
-        case startAtLogin, telemetry
+        case startAtLogin, telemetry, hiddenBooks
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -137,6 +141,7 @@ public struct Config: Codable, Equatable {
         try c.encodeIfPresent(penAutoPowerOffMinutes, forKey: .penAutoPowerOffMinutes)
         try c.encodeIfPresent(penCapPowerOff, forKey: .penCapPowerOff)
         try c.encode(controlBooks, forKey: .controlBooks)
+        if !hiddenBooks.isEmpty { try c.encode(hiddenBooks, forKey: .hiddenBooks) }
         try c.encode(lowBatteryPercent, forKey: .lowBatteryPercent)
         try c.encode(memoryWarnPercent, forKey: .memoryWarnPercent)
         try c.encode(sdkDebugLog, forKey: .sdkDebugLog)

@@ -274,6 +274,32 @@ public final class BookRegistry {
         return found.sorted { $0.1 > $1.1 }.prefix(limit).map { (page: $0.0, written: $0.1) }
     }
 
+    // MARK: - Deleting
+
+    /// Each file of one copy, relative to the notes folder: all that is under its folder, and
+    /// the transcript of each page. The bucket has them under the same names, and that is how
+    /// they are deleted there: the app does not list a bucket.
+    public func files(of folder: BookFolder) -> [String] {
+        let own = S3Sync.files(under: folder.relativePath, in: root)
+        return own + own.compactMap(PageRef.init(rawRelativePath:)).map(TranscriptStore.path(for:))
+    }
+
+    /// How many pages one copy has.
+    public func pageCount(of folder: BookFolder) -> Int {
+        S3Sync.files(under: folder.relativePath, in: root).compactMap(PageRef.init(rawRelativePath:)).count
+    }
+
+    /// Remove one copy from this Mac: its folder, and the transcripts kept for it. This cannot
+    /// be undone.
+    public func delete(_ folder: BookFolder) throws {
+        for path in [folder.relativePath, "transcripts/\(folder.name)"] {
+            let url = root.appendingPathComponent(path)
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        }
+        loadedStamp = nil
+        reloadIfNeeded()
+    }
+
     // MARK: - Loading
 
     private func folderNames() -> [String] {

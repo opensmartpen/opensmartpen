@@ -113,6 +113,9 @@ public final class SettingsStore: ObservableObject {
     /// Told when a pen or a notebook was renamed: a changed file with no page to ride along with.
     public var onRecordsChange: (() -> Void)?
     public var onSyncNow: (() -> Void)?
+    /// Deletes a notebook, from the bucket and from this Mac, and answers with nil or with what
+    /// went wrong. Set by the app, which has the bucket. Nil in the design window.
+    public var onDeleteBook: ((BookRecord, @escaping (String?) -> Void) -> Void)?
 
     public init(pens: PenRegistry, books: BookRegistry, config: Config, configURL: URL,
                 info: AppInfo, link: PenLink? = nil, secretURL: URL = S3Secret.location) {
@@ -193,6 +196,39 @@ public final class SettingsStore: ObservableObject {
         bookRegistry.save(book)
         reload()
         onRecordsChange?()
+    }
+
+    func pageCount(of book: BookRecord) -> Int { bookRegistry.pageCount(of: book.folder) }
+
+    func isShownInPanel(_ book: BookRecord) -> Bool { !config.hiddenBooks.contains(book.folder.name) }
+
+    func show(_ book: BookRecord, inPanel shown: Bool) {
+        Telemetry.event("ui.book.shown_in_panel", ["book.surface": .string(book.folder.surface),
+                                                    "book.shown": .bool(shown)])
+        config.hiddenBooks.removeAll { $0 == book.folder.name }
+        if !shown { config.hiddenBooks.append(book.folder.name) }
+        saveConfig()
+    }
+
+    /// Delete a notebook and all its pages. This cannot be undone, so the view asks for the
+    /// title first.
+    func delete(_ book: BookRecord, completion: @escaping (String?) -> Void) {
+        guard let onDeleteBook else { completion(nil); return }
+        let pages = pageCount(of: book)
+        onDeleteBook(book) { [weak self] problem in
+            guard let self else { return }
+            if problem == nil {
+                Telemetry.event("ui.book.deleted", ["book.surface": .string(book.folder.surface),
+                                                    "book.pages": .int(pages),
+                                                    "book.bucket": .bool(s3Connected)])
+                if config.hiddenBooks.contains(book.folder.name) {
+                    config.hiddenBooks.removeAll { $0 == book.folder.name }
+                    saveConfig()
+                }
+                reload()
+            }
+            completion(problem)
+        }
     }
 
     // MARK: the bucket
@@ -570,24 +606,7 @@ private struct BooksTab: View {
                 }
             }
             ForEach(store.books, id: \.folder) { book in
-                Section {
-                    LiveField(label: "Title", value: book.title) { title in
-                        var updated = book
-                        updated.title = title
-                        store.save(updated)
-                    }
-                    LabeledContent("Paper", value: paper(book))
-                    LabeledContent("Folder") {
-                        Text(book.folder.name).font(.callout.monospaced()).foregroundStyle(.secondary)
-                            .lineLimit(1).truncationMode(.middle)
-                        Button("Show") {
-                            NSWorkspace.shared.open(store.config.dataURL
-                                .appendingPathComponent(book.folder.relativePath))
-                        }
-                    }
-                } header: {
-                    Text(book.title)
-                }
+                BookSection(book: book, store: store)
             }
             if !store.books.isEmpty {
                 Section {} footer: {
@@ -598,9 +617,104 @@ private struct BooksTab: View {
         }
     }
 
-    private func paper(_ book: BookRecord) -> String {
+}
+
+private struct BookSection: View {
+    let book: BookRecord
+    @ObservedObject var store: SettingsStore
+    @State private var confirmingDelete = false
+
+    var body: some View {
+        Section {
+            LiveField(label: "Title", value: book.title) { title in
+                var updated = book
+                updated.title = title
+                store.save(updated)
+            }
+            LabeledContent("Paper", value: paper)
+            LabeledContent("Folder") {
+                Text(book.folder.name).font(.callout.monospaced()).foregroundStyle(.secondary)
+                    .lineLimit(1).truncationMode(.middle)
+                Button("Show") {
+                    NSWorkspace.shared.open(store.config.dataURL
+                        .appendingPathComponent(book.folder.relativePath))
+                }
+            }
+            Toggle("Show in panel", isOn: Binding(get: { store.isShownInPanel(book) },
+                                                  set: { store.show(book, inPanel: $0) }))
+            LabeledContent("Pages") {
+                Text("\(store.pageCount(of: book))").foregroundStyle(.secondary)
+                Button("Delete…") { confirmingDelete = true }
+            }
+        } header: {
+            Text(book.title)
+        }
+        .sheet(isPresented: $confirmingDelete) {
+            DeleteBookSheet(book: book, store: store) { confirmingDelete = false }
+        }
+    }
+
+    private var paper: String {
         guard let w = book.widthMM, let h = book.heightMM else { return "Size not recorded" }
         return String(format: "%.0f × %.0f mm", w, h)
+    }
+}
+
+/// The last question before a notebook is deleted. A delete cannot be undone, so the button
+/// stays off until the person has typed the title of the notebook.
+private struct DeleteBookSheet: View {
+    let book: BookRecord
+    @ObservedObject var store: SettingsStore
+    let close: () -> Void
+    @State private var typed = ""
+    @State private var deleting = false
+    @State private var problem: String?
+
+    private var matches: Bool {
+        func tidy(_ text: String) -> String { text.trimmingCharacters(in: .whitespaces).lowercased() }
+        return tidy(typed) == tidy(book.title)
+    }
+
+    private var message: String {
+        let count = store.pageCount(of: book)
+        var text = "This deletes \(count == 1 ? "its 1 page" : "its \(count) pages"), with the transcripts, from this Mac"
+        text += store.s3Connected ? " and from your S3 bucket." : "."
+        return text + " You cannot undo this."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Delete “\(book.title)”?").font(.headline)
+            Text(message).fixedSize(horizontal: false, vertical: true)
+            TextField("", text: $typed, prompt: Text(book.title))
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+                .disabled(deleting)
+            Text("Type the title of the notebook to confirm.")
+                .font(.callout).foregroundStyle(.secondary)
+            if let problem {
+                Text(problem).font(.callout).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                if deleting { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel", role: .cancel, action: close)
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(deleting)
+                Button("Delete", role: .destructive) {
+                    deleting = true
+                    problem = nil
+                    store.delete(book) { result in
+                        deleting = false
+                        if let result { problem = result } else { close() }
+                    }
+                }
+                .disabled(!matches || deleting)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
     }
 }
 
@@ -633,7 +747,7 @@ private struct SyncTab: View {
                 }
             } footer: {
                 Note("Every page is kept on this Mac as its strokes and a PNG, and copied to this bucket. Nothing in the "
-                     + "bucket is deleted, and the only thing read from it is the transcript of a "
+                     + "bucket is deleted unless you delete a notebook, and the only thing read from it is the transcript of a "
                      + "page you open. Fill in Endpoint only for a service other than Amazon S3, "
                      + "such as Cloudflare R2 or MinIO.")
             }
