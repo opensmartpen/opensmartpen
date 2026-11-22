@@ -513,16 +513,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var photoImport: PhotoImportController?
 
-    /// One entry in the panel, one menu at the mouse: a file, the sample while there is no Photos
-    /// notebook, and below them what macOS adds for each iPhone or iPad near this Mac. The panel
-    /// stays until the menu closes.
+    /// One entry in the panel, one menu at the mouse: a file, the sample photos, and below them
+    /// what macOS adds for each iPhone or iPad near this Mac. The panel stays until the menu closes.
     private func addPhoto() {
         Telemetry.event("ui.photo.menu")
         let menu = PhotoImportController()
         menu.addEntry("Choose a File\u{2026}") { [weak self] in self?.uploadPhoto() }
-        if books.current(for: PhotoPages.surface) == nil {
-            menu.addEntry("Use the Sample Page") { [weak self] in self?.addSample() }
-        }
+        menu.addEntry("Use Sample Photo\u{2026}") { [weak self] in self?.showSamples() }
         menu.onImage = { [weak self] data, ext in
             self?.file(photo: data, ext: ext, from: "device", show: true, taken: Date())
         }
@@ -574,12 +571,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The page the app brings itself, for a person with no pen and no photo at hand who wants to
-    /// see an agent read something. Offered only until the Photos notebook exists: the notebook
-    /// is made when the first picture is filed, and not before.
-    private func addSample() {
+    private var sampleGallery: SampleGalleryController?
+
+    /// The window with the sample pages. The one that is clicked is filed as a photo.
+    private func showSamples() {
         panel?.dismiss()
-        if let picture = SamplePicture.png() { file(photo: picture, ext: "png", from: "sample", show: true) }
+        Telemetry.event("ui.photo.samples")
+        let gallery = SampleGalleryController { [weak self] sample in
+            self?.sampleGallery = nil
+            Telemetry.event("ui.photo.sample", ["photo.sample": .string(sample.id)])
+            if let picture = sample.png() { self?.file(photo: picture, ext: "png", from: "sample", show: true) }
+        }
+        sampleGallery = gallery
+        NSApp.activate(ignoringOtherApps: true)
+        gallery.showWindow(nil)
     }
 
     /// A photo is complete when it arrives: there is no pen to wait for. So it is drawn and sent now.

@@ -69,7 +69,7 @@ To build the app from the source, see [`app/README.md`](app/README.md).
 ### 2. Add a page
 
 - **With a pen:** click the pencil in the menu bar, then "Add Pen", and switch the pen on near your Mac. macOS asks one time for the Bluetooth permission; allow it. Then write.
-- **Without a pen:** click the pencil in the menu bar, then "Add Photo…". Take a photo with your iPhone, select a file, or use the sample page.
+- **Without a pen:** click the pencil in the menu bar, then "Add Photo…". Take a photo with your iPhone, select a file, or use a sample photo.
 
 ### 3. Connect your agent
 
