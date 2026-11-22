@@ -120,6 +120,7 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.viewer.transcript` | The transcript pane was opened or closed | `transcript.shown` |
 | `ui.viewer.layout` | A layout was chosen in the viewer | `viewer.layout` (`single`, `spread`, `pair`, `grid`). Not the layout a notebook starts with |
 | `ui.photo.menu` | "Add Photo…" was clicked | None |
+| `ui.bluetooth.settings_opened` | "Open Bluetooth Settings" was clicked, in the panel of an app that may not use Bluetooth | None |
 | `ui.agent.copy_instructions` | "Copy instructions" was clicked | `ui.source` (`panel`, `settings`) |
 | `ui.agent.opened` | An agent's link was opened | None |
 | `ui.agent.setup` | "Set up a new agent" was clicked for one of the agents the app offers | `agent.kind` (`claude-code`, `claude-cowork`) |

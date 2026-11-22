@@ -690,7 +690,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let usable: Bool
         if case .bluetoothOff = model.status { usable = false } else { usable = true }
         let look = StatusIcon.make(pendingPages: model.pending.count, battery: battery, working: usable,
-                                   connected: session.isAnyConnected)
+                                   connected: session.isAnyConnected, refused: model.bluetoothRefused)
         button.image = look.image
         button.attributedTitle = look.title
         button.appearsDisabled = look.dimmed

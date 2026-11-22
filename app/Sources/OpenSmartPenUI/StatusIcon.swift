@@ -19,7 +19,7 @@ public enum StatusIcon {
     }
 
     public static func make(pendingPages: Int, battery: (percent: Int, low: Bool)?, working: Bool,
-                            connected: Bool) -> Appearance {
+                            connected: Bool, refused: Bool = false) -> Appearance {
         if let battery, battery.low {
             return Appearance(
                 image: pencil(drop: pendingPages > 0, tint: .systemRed),
@@ -40,7 +40,9 @@ public enum StatusIcon {
             }
             tip = "Open Smart Pen — \(link), \(pages)"
         } else {
-            tip = "Open Smart Pen — Bluetooth is off or not permitted"
+            // Two causes with opposite fixes, so the tooltip names the one it is.
+            tip = refused ? "Open Smart Pen — not allowed to use Bluetooth. Open the panel to change it."
+                : "Open Smart Pen — Bluetooth is off"
         }
         return Appearance(image: pencil(drop: pendingPages > 0, tint: nil),
                           title: NSAttributedString(string: ""),

@@ -489,6 +489,11 @@ extension PenSession: PenFinderDelegate {
 /// The UI's view of the pens. Everything the SDK reports is turned into plain numbers here, so
 /// that `OpenSmartPenUI` builds and runs with no pen and no SDK behind it.
 extension PenSession: PenLink {
+    var bluetoothRefused: Bool {
+        let answer = CBCentralManager.authorization
+        return answer == .denied || answer == .restricted
+    }
+
     var isAdding: Bool { adding }
 
     var pairedMacs: [String] { config.pairedPens.map(\.mac).filter { !$0.isEmpty } }

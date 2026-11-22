@@ -257,6 +257,8 @@ public final class PanelModel: ObservableObject {
             width = mode.width
         }
         isPublishing = coordinator.isPublishing
+        let refused = session.bluetoothRefused
+        if bluetoothRefused != refused { bluetoothRefused = refused }
 
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
         // and the macOS Bluetooth menu sets the convention: a battery for what is connected,
@@ -320,7 +322,9 @@ public final class PanelModel: ObservableObject {
                 // The header used to carry this, above everything, in bold. It belongs to the
                 // pen: the reason you cannot see your writing is a fact about this pen, and
                 // Bluetooth being off is a different reason from the pen being asleep.
-                if session.bluetoothOff {
+                if session.bluetoothRefused {
+                    state = "Bluetooth not allowed"
+                } else if session.bluetoothOff {
                     state = "Bluetooth off"
                 } else if link != nil {
                     state = "Connecting"
@@ -531,6 +535,20 @@ public final class PanelModel: ObservableObject {
 
     func addPhoto() { onAddPhoto?() }
 
+    // MARK: Bluetooth that was refused
+
+    /// The app may not use Bluetooth, so no pen can connect, whatever the person does with the
+    /// pen. The panel says so and leads to the one place where it can be changed.
+    @Published public private(set) var bluetoothRefused = false
+
+    /// The page of System Settings that lists the apps allowed to use Bluetooth.
+    public static let bluetoothSettings = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth")!
+
+    func openBluetoothSettings() {
+        Telemetry.event("ui.bluetooth.settings_opened")
+        NSWorkspace.shared.open(Self.bluetoothSettings)
+    }
+
     // MARK: things to do
 
     public func publishNow() {
@@ -614,6 +632,8 @@ public final class PanelModel: ObservableObject {
         /// The agents shown. With none, and `asksForAgent`, the panel asks for one.
         public var agents: [AgentRow] = []
         public var asksForAgent = false
+        /// As if the person had said no to Bluetooth.
+        public var bluetoothRefused = false
         public var newAgents: [NewAgent] = []
 
         public init() {}
@@ -640,6 +660,7 @@ public final class PanelModel: ObservableObject {
         chosenPen = snapshot.openPen
         agents = snapshot.agents
         asksForAgent = snapshot.asksForAgent
+        bluetoothRefused = snapshot.bluetoothRefused
         newAgents = snapshot.newAgents
         agentSentence = "Read the setup text and set yourself up."
         markActiveBook()

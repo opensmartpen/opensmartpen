@@ -11,6 +11,10 @@ import Foundation
 public protocol PenLink: AnyObject {
     /// No pen can be reached, because Bluetooth itself cannot.
     var bluetoothOff: Bool { get }
+    /// The reason is that this app may not use Bluetooth: the person said no when macOS asked,
+    /// or a rule on this Mac forbids it. Switching Bluetooth off and on does not help then, so
+    /// the panel must not say "off". Only System Settings can change it.
+    var bluetoothRefused: Bool { get }
     /// Every pen this Mac is connected or connecting to. A paired pen that is asleep is absent.
     var connections: [PenConnectionInfo] { get }
     /// The MACs of the pens this Mac accepts. A pen paired only by peripheral identifier is not

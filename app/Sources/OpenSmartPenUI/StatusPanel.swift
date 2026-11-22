@@ -64,6 +64,8 @@ public struct StatusPanel: View {
                 // whole app — and it was saying a third time what the pen's own line and the
                 // page countdowns already say, in a larger type size than either.
                 top
+                // With pens in the row, the reason none of them connects goes right under them.
+                if model.bluetoothRefused, !model.pens.isEmpty { section { bluetoothRefused } }
                 // No list of pages waiting. It named the same notebook that is already in the
                 // list below, one row further down, and the countdown beside it answered a
                 // question about a thing the app finishes on its own. What survives of it is the
@@ -123,7 +125,9 @@ public struct StatusPanel: View {
                         .buttonStyle(InkButtonStyle(filled: true))
                     }
                 }
-                wakeHint
+                // Waking a pen does nothing while the app may not use Bluetooth. Saying "press its
+                // button" then sends a person to a pen that cannot answer.
+                if model.bluetoothRefused { bluetoothRefused } else { wakeHint }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
@@ -310,6 +314,23 @@ public struct StatusPanel: View {
             ForEach(model.agents) { agent in
                 AgentRowView(agent: agent) { model.open(agent) }
             }
+        }
+    }
+
+    /// The person said no when macOS asked for Bluetooth, or a rule on this Mac forbids it. A pen
+    /// can then never connect, and nothing else in the panel would say why: the pen is on, the
+    /// radio is on, and still nothing happens. One sentence and the one place to change it.
+    /// Not a filled button while the panel leads with a photo: a photo needs no Bluetooth.
+    private var bluetoothRefused: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Bluetooth is not allowed")
+                .font(.system(size: 11.5, weight: .medium))
+            Text("A pen cannot connect until Open Smart Pen may use Bluetooth. Allow it in System Settings. If the pen still does not connect, quit Open Smart Pen and open it again.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Open Bluetooth Settings", action: model.openBluetoothSettings)
+                .buttonStyle(InkButtonStyle(filled: !startsWithoutAPen))
         }
     }
 
