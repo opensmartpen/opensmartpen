@@ -28,7 +28,7 @@ public enum TelemetryInfo {
 /// The first window a person sees: two things to decide, one time.
 ///
 /// Whether the app starts at login, and whether the app reports to its makers. Both are switches,
-/// and both are on when the window opens (decided 2026-11-22). Nothing is sent before the person
+/// and both are on when the window opens. Nothing is sent before the person
 /// presses "Get Started": they see the switch, and what is sent, first, and can turn it off there.
 ///
 /// A window and not a notification, which can be missed, and not an alert, which stops the app

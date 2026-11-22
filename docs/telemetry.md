@@ -2,8 +2,6 @@
 
 The app can report to its makers how it is used and what goes wrong. This page is the full list of what it sends, when, and how to turn it off. If the code sends something that is not on this page, that is a bug.
 
-Decided 2026-11-17. On unless you turn it off, with the switch shown in the first window, since 2026-11-22. Before that it was off unless a person said yes.
-
 ## The short version
 
 - **It is on unless you turn it off.** The first window of the app has a row "Help us improve: share usage and error data", with a switch. The switch is on when the window opens. "What is sent", under it, shows in the window what is sent and what is not.

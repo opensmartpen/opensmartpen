@@ -3,7 +3,7 @@ import Foundation
 /// The `telemetry` part of the config: whether the app reports at all, and to where.
 public struct TelemetrySettings: Codable, Equatable {
     /// False until the first window is answered, so nothing is sent before a person has seen the
-    /// switch. The switch in that window is on when it opens (decided 2026-11-22), and this
+    /// switch. The switch in that window is on when it opens, and this
     /// takes its value at "Get Started". After that, Settings → General and this file change it.
     public var enabled = false
     /// The collector, as `https://host` or `https://host:4318`. Empty means the built-in one.
@@ -74,8 +74,8 @@ public struct TelemetryPlan: Equatable {
     /// is encrypted on its way. A name of the project's own, so the server behind it can change
     /// and an app of today still reaches it.
     public static let builtInEndpoint = "https://telemetry.opensmartpen.org"
-    /// True when the built-in address is this Mac and not a collector of the project. It was so
-    /// until 2026-11-19, and a test still asks, so that a build for a developer can go back.
+    /// True when the built-in address is this Mac and not a collector of the project, as a build
+    /// for a developer can have it.
     public static var builtInIsLocal: Bool { url(builtInEndpoint)?.host == "localhost" }
     /// What the project's collector asks for with each export. Public by nature: this is open
     /// source, so it keeps out noise, not people.
