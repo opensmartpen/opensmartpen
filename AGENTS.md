@@ -28,4 +28,7 @@ An agent learns all of this from the website, not from this repository: `https:/
 - A `Log.warn` or `Log.error` line is sent as telemetry. Do not put a name that a person gave to something in one. If the line needs such a name, write `Log.warn("…", telemetry: false)`.
 - The decision log is not in this repository. The maintainers keep it in their private `product` repository, at `engineering/decisions.md`; on a maintainer's Mac that is `../product/engineering/decisions.md`. Write a decision there when that folder exists. When it does not, tell the user the decision and add no log here.
 - This repository is public. Do not write here: the name of a person, another product of the company, a remark about a vendor or its license, or a legal question that is open.
+- Say each thing in one place, in the code and in the documents. Another place gives one short line and a link, not the same text again. The homes: `docs/processing.md` for the files and the contract, `docs/telemetry.md` for telemetry, `app/README.md` for the build, the config and the code.
+- Write what is true now. Do not write when something was decided, what it was before, or what it replaces.
+- A commit message and the title of a pull request use Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `build:`, `chore:`.
 - A formal decision record goes in `docs/adrs/`, written for a reader outside. Terms are in `docs/ubiquitous-language.md`.
