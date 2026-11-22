@@ -32,6 +32,22 @@ The app does one job. It does not transcribe, it has no account, and it never se
 2. **The app keeps each page** in `~/OpenSmartPen`: the strokes, with the time of each one, and a picture of the page. If you connect an S3 bucket, it copies the same files there.
 3. **Your agent reads the pages.** One small file says when a page changed, so an agent can check often at almost no cost. The agent writes the text of each page back, and the app shows it beside the ink.
 
+## What you can do with it
+
+You write on paper as always. What happens next is between you and your agent. Some uses:
+
+| You write | You ask your agent to |
+|---|---|
+| A to-do list | add the open tasks to your task list |
+| Meeting notes | send the notes to the team |
+| Study notes | test you on the page |
+| A plan on a whiteboard, as a photo | make a document from it |
+| A sketch of a screen | build it |
+
+The first four are in the app as sample photos, so you can try them with no pen: click the pencil in the menu bar, then "Add Photo", then "Use Sample Photo…".
+
+Show us what you do with your pen. Open an issue with your use, or add a sample page: each one is a few lines in [`app/Sources/OpenSmartPenUI/SamplePhotos.swift`](app/Sources/OpenSmartPenUI/SamplePhotos.swift).
+
 ## What you need
 
 - A Mac with macOS 13 or later.
