@@ -824,7 +824,7 @@ private struct GeneralTab: View {
                         Button("What is sent") { showsWhatIsSent.toggle() }
                             .buttonStyle(.link)
                             .font(.callout)
-                            .popover(isPresented: $showsWhatIsSent, arrowEdge: .bottom) { whatIsSent }
+                            .popover(isPresented: $showsWhatIsSent, arrowEdge: .bottom) { WhatIsSent() }
                     }
                 }
                 .onChange(of: store.config.telemetry.enabled) { _ in store.saveConfig() }
@@ -865,19 +865,6 @@ private struct GeneralTab: View {
                 }
             }
         }
-    }
-
-    private var whatIsSent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(TelemetryInfo.summary + " " + TelemetryInfo.purpose)
-            Text(TelemetryInfo.never)
-            Text(TelemetryInfo.ids)
-            Link("The full list", destination: TelemetryInfo.url)
-        }
-        .font(.callout)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(16)
-        .frame(width: 340)
     }
 }
 

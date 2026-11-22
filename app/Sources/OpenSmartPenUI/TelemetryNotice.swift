@@ -161,22 +161,10 @@ struct TelemetryNoticeView: View {
         .frame(width: 400)
     }
 
-    /// The same words Settings has, and all of them: what is sent, what never is, what it is
-    /// for, and the two ids that go with it.
     private var whatIsSent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(TelemetryInfo.summary + " " + TelemetryInfo.purpose)
-            Text(TelemetryInfo.never)
-            Text(([TelemetryInfo.ids] + (encrypted ? [TelemetryInfo.transit] : [])
-                  + (ours ? [TelemetryInfo.storage] : [])).joined(separator: " "))
-            Text("Nothing is sent before you press Get Started. Turn it off here, or at any time in Settings → General.")
-                .foregroundStyle(.secondary)
-            Link("The full list", destination: TelemetryInfo.url)
-        }
-        .font(.callout)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(16)
-        .frame(width: 340)
+        WhatIsSent(sentences: [TelemetryInfo.ids] + (encrypted ? [TelemetryInfo.transit] : [])
+                       + (ours ? [TelemetryInfo.storage] : []),
+                   note: "Nothing is sent before you press Get Started. Turn it off here, or at any time in Settings → General.")
     }
 
     /// The two rows have a sign in a colour of their own, so the eye finds them. The switches,
@@ -201,5 +189,28 @@ struct TelemetryNoticeView: View {
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// What is sent, what never is, what it is for, and the ids that go with it. The one text for
+/// this, shown from the first window and from Settings.
+struct WhatIsSent: View {
+    /// What is said of the ids, and of the way and the storage where that is true.
+    var sentences = [TelemetryInfo.ids]
+    /// A last line in grey, for the place the text is shown in.
+    var note: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(TelemetryInfo.summary + " " + TelemetryInfo.purpose)
+            Text(TelemetryInfo.never)
+            Text(sentences.joined(separator: " "))
+            if let note { Text(note).foregroundStyle(.secondary) }
+            Link("The full list", destination: TelemetryInfo.url)
+        }
+        .font(.callout)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(16)
+        .frame(width: 340)
     }
 }
