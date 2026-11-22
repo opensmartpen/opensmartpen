@@ -59,7 +59,7 @@ The camera of your phone is sufficient. Take a photo of any handwritten page: fr
 
 ### 1. Install the app
 
-Download the newest [`OpenSmartPen-<version>.dmg`](https://github.com/opensmartpen/opensmartpen/releases/latest), open it, and drag Open Smart Pen to the Applications folder. Then open the app.
+Download the newest [`OpenSmartPen-<version>.dmg`](https://github.com/opensmartpen/opensmartpen/releases/latest), open it, and drag Open Smart Pen to the Applications folder. Then open the app. If you open the app from the disk image or from Downloads, it offers to move itself to the Applications folder.
 
 - macOS asks one time for the Bluetooth permission. Allow it; without it the pen cannot connect.
 - The app is in the menu bar, as a pencil. It has no window of its own and no icon in the Dock.
@@ -117,7 +117,7 @@ agents/<n>.json               each agent's name, and when it was last alive
 
 ## Telemetry
 
-Off unless you say yes. The app asks one time, at the first start, and Settings → General has the switch after that. With a yes, the app reports how it is used and what goes wrong, and never what you write. [`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
+On unless you turn it off. The first window of the app shows the switch, "Help us improve", and what is sent, before anything is sent. Turn it off there, or at any time in Settings → General. With it on, the app reports how it is used and what goes wrong, and never what you write. [`docs/telemetry.md`](docs/telemetry.md) lists each thing that is sent.
 
 ## Contributing
 

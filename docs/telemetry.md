@@ -2,12 +2,13 @@
 
 The app can report to its makers how it is used and what goes wrong. This page is the full list of what it sends, when, and how to turn it off. If the code sends something that is not on this page, that is a bug.
 
-Decided 2026-11-17. Off by default since 2026-11-18, and a question at the first start since 2026-11-19.
+Decided 2026-11-17. On unless you turn it off, with the switch shown in the first window, since 2026-11-22. Before that it was off unless a person said yes.
 
 ## The short version
 
-- **It is off unless you say yes.** The app never turns it on by itself. You say yes in one of two places: the question at the first start, or Settings → General → "Send usage data and error reports" (`"telemetry": {"enabled": true}` in the config).
-- **You are asked one time.** A window asks at the first start: "Help improve Open Smart Pen?", with "Send" and "Not Now". "Not Now", or closing the window, is a no. The app does not ask again; Settings → General has the switch. Until you answer, nothing is sent: what happens meanwhile is kept in memory, and is sent after a yes or deleted after a no.
+- **It is on unless you turn it off.** The first window of the app has a row "Help us improve: share usage and error data", with a switch. The switch is on when the window opens. "What is sent", under it, shows in the window what is sent and what is not.
+- **Nothing is sent before you press "Get Started" in that window.** What happens until then is kept in memory. With the switch on at "Get Started" it is sent; with the switch off it is deleted. The window has no close button, and the panel of the app does not open before "Get Started", so each person sees the switch first.
+- **You see that window one time,** at the first start, and again at each start until you press "Get Started". After it, the switch is in Settings → General → "Help us improve" (`"telemetry": {"enabled": true}` in the config).
 - **Where it goes.** To the collector of the project, at `https://telemetry.opensmartpen.org`, unless the config or the environment names another collector.
 - **What it is for.** To find problems and to decide what to improve. Nothing else is done with it.
 - **On its way it is encrypted,** when the collector's address is `https`. The project's own collector will be. The window says so only when it is true for where the app sends.
@@ -251,7 +252,7 @@ A variable cannot turn telemetry on. Only the setting does.
 
 1. Start a collector that takes OTLP over HTTP on port 4318.
 2. Put `"telemetry": {"enabled": true, "endpoint": "http://localhost:4318"}` in the config and start the app.
-3. Answer the question with "Send". The events of the start arrive some seconds later: they wait in the queue on disk for about five seconds first.
+3. Leave "Help us improve" on in the first window and press "Get Started". The events of the start arrive some seconds later: they wait in the queue on disk for about five seconds first.
 
 With Apple's `container`, and `collector.yaml` in the current folder (an `otlp` receiver on `0.0.0.0:4318`, a `debug` exporter with `verbosity: detailed`, and a pipeline for each of logs, traces and metrics):
 

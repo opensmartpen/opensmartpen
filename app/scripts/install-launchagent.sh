@@ -53,8 +53,6 @@ cat > "$PLIST" <<PLIST
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Interactive</string>
-  <key>StandardErrorPath</key><string>${LOGDIR}/opensmartpen.log</string>
-  <key>StandardOutPath</key><string>${LOGDIR}/opensmartpen.log</string>
 </dict>
 </plist>
 PLIST

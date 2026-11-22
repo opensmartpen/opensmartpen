@@ -39,13 +39,15 @@ cd app
 swift test                         # core logic, no hardware needed
 scripts/make-signing-identity.sh   # once per Mac: a certificate, so rebuilds keep their grants
 scripts/make-app.sh                # dist/"Open Smart Pen.app", signed with it (ad hoc without it)
-scripts/install-launchagent.sh     # start at login, restart on exit, logs in ~/Library/Logs/OpenSmartPen
+scripts/install-launchagent.sh     # start at login, restart on exit
 ```
 
 The first time, run the installer from a terminal and stay with it: it opens the app once from the
 Finder so macOS raises the Bluetooth prompt, waits for you to allow it, and only then hands over to
 the LaunchAgent. That order is not cosmetic — see [Bluetooth permission](#bluetooth-permission).
 After that, a build signed with the same certificate is installed and started with nobody watching.
+
+The app keeps its log in `~/Library/Logs/OpenSmartPen/opensmartpen.log`, however it was started. At 2 MB the file becomes `opensmartpen.1.log` and a new one starts, so the log is never more than about 4 MB.
 
 Running the bare binary with `swift run` also works for debugging (stderr log, AppleScript notifications), but Bluetooth permission is then attributed to the terminal and macOS notifications are unavailable. Set `OPENSMARTPEN_VERBOSE=1` for debug logging.
 

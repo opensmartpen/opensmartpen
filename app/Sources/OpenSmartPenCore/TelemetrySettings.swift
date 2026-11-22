@@ -2,9 +2,9 @@ import Foundation
 
 /// The `telemetry` part of the config: whether the app reports at all, and to where.
 public struct TelemetrySettings: Codable, Equatable {
-    /// Off unless the person says yes: to the question at the first start, in Settings →
-    /// General, or here. It is never on by default: reading an id from a person's Mac and
-    /// sending it needs their yes first.
+    /// False until the first window is answered, so nothing is sent before a person has seen the
+    /// switch. The switch in that window is on when it opens (decided 2026-11-22), and this
+    /// takes its value at "Get Started". After that, Settings → General and this file change it.
     public var enabled = false
     /// The collector, as `https://host` or `https://host:4318`. Empty means the built-in one.
     public var endpoint = ""

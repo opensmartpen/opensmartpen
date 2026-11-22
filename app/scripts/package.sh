@@ -163,11 +163,8 @@ else
   echo "package: no update feed (FEED_KEY or SPARKLE_PRIVATE_KEY is not set)" >&2
 fi
 
-# The disk image: the app, and the Applications folder to drag it to.
-mkdir "$work/dmg"
-ditto "$app" "$work/dmg/Open Smart Pen.app"
-ln -s /Applications "$work/dmg/Applications"
-hdiutil create -quiet -volname "Open Smart Pen" -srcfolder "$work/dmg" -format UDZO -ov "$dmg"
+# The disk image: the app, the Applications folder to drag it to, and a window that says so.
+scripts/make-dmg.sh "$app" "$dmg"
 
 if [ "$signed" = true ]; then
   # Gatekeeper judges the disk image before the app in it, so the image is signed and notarised
