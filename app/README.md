@@ -8,7 +8,7 @@ macOS menubar app that keeps a smartpen's strokes flowing into `~/OpenSmartPen` 
 - Scans whenever a paired pen is not connected, and connects one pen at a time. Each connected pen authorises, drains and streams on its own.
 - On connect, per pen: authorises (sends the configured PIN once if the pen asks), sets the pen clock, subscribes to all notebooks, then drains offline memory one notebook at a time.
 - Live strokes are appended to `books/<copy>/raw/p{page}.jsonl` as they finish. Each physical copy of a notebook is one folder (ADR-002).
-- Pages are finished once no pen has reported any event for `quietSeconds` (default 30). The wait is on the pen, not on each page: every page written in a sitting goes together. Each page is then drawn as `books/<copy>/pages/p<N>.png`, with or without a bucket. With a bucket, the strokes go up, then the PNG. The notebook and pen records, the ink log and the palette ride along whenever they have changed.
+- Pages are finished once no pen has reported any event for `quietSeconds`. Each page is then drawn as a PNG, and with a bucket both files go up. `../docs/processing.md` has the layout, the order and the timing.
 - Offline strokes are uploaded as soon as a notebook has been fully transferred. Only after the upload succeeds is that notebook deleted from the pen.
 - Failures are retried with backoff and surfaced as macOS notifications after three attempts. Battery, memory, PIN, duplicate connection and stalled transfers also notify. Normal operation is silent.
 
@@ -169,27 +169,17 @@ one captured file and could only be repaired by cutting it.
 | `memoryWarnPercent` | `70` | Notify when pen memory usage reaches this level. |
 | `controlBooks` | `["s3/o1013/b1"]` | Printed control surfaces rather than paper to write on. Taps on them are kept as evidence and decoded as settings, but they are never pages. |
 | `sdkDebugLog` | `false` | Print the SDK's protocol log. |
-| `telemetry` | `{"enabled": false}` | What the app reports to its makers: `enabled`, and optionally `endpoint` (the collector) and `headers`. With no `endpoint` here and none in the environment, it goes to the collector of the project, `https://telemetry.opensmartpen.org`. See [Telemetry](#telemetry). |
+| `telemetry` | see the link | What the app reports to its makers: `enabled`, and optionally `endpoint` (the collector) and `headers`. `../docs/telemetry.md` says when it is on and where it goes. |
 
 ## The bucket
 
-The app writes, and never lists or deletes. A key that is only allowed `s3:PutObject` on the
-bucket is enough to upload. The one thing the app reads is the transcript of a page open in the
-viewer, which needs `s3:GetObject` too; see "Transcripts" below. Under the bucket (and `prefix`, if set) the layout is the
-notes folder's own:
+The layout of the bucket is the layout of the notes folder, under `prefix` if one is set.
+`../docs/processing.md` has it, with the order of the uploads and what an agent watches.
 
-```
-books/<copy>/book.json        what the notebook is called, its paper, when this copy began
-books/<copy>/raw/p<N>.jsonl   the strokes of one page; replaced whole each time the page changes
-books/<copy>/pages/p<N>.png   the page drawn from those strokes; written and uploaded after them
-pens/<slug>.json              each pen's name, mode, default ink and width
-mode.jsonl, palette.json      which ink and width was in force when, and what each ink looks like
-```
+A key that is only allowed `s3:PutObject` on the bucket is enough to upload: the app never lists
+and never deletes. To show a transcript in the viewer the key needs `s3:GetObject` too.
 
-The PNG arrives last, so it is the object to listen for, in the folder and in the bucket: when it
-lands, the strokes it was drawn from are already there. A page written on again is drawn and
-uploaded again, under the same two names. The file in the folder is only replaced when the picture
-is different. A PNG that is missing or older than its strokes is drawn again at the next start.
+A PNG that is missing or older than its strokes is drawn again at the next start.
 
 What has been uploaded is remembered in `~/.config/opensmartpen/s3-uploaded.json`, by file size and
 date, for one bucket. Connect a different bucket — or delete that file — and everything on disk is
@@ -199,12 +189,9 @@ write; a key that may not shows at the first upload, as a notification.
 
 ## Transcripts
 
-The app does not transcribe. Whatever reads the bucket or the folder does, and stores the text at
-`transcripts/<copy>/p<N>.md` there (`../docs/processing.md` is the contract). With no bucket, the
-viewer shows the file in the folder. The viewer can show that
-text beside the ink: the button in its bar, or T. It fetches the one file for the page on screen,
-asks again every 30 seconds while the pane is open, and keeps each transcript at the same path
-under `~/OpenSmartPen` so it can be read offline.
+The app does not transcribe. The viewer shows the text an agent wrote, beside the ink: the button
+in its bar, or T. `../docs/processing.md` says where an agent puts that text and how the app
+fetches it.
 
 In the viewer, ⌘+ and ⌘− zoom, ⌘0 shows the whole page again, and scroll or pinch zooms about the
 pointer. While a zoom is moving the page is stretched, and it is redrawn sharp when it stops.
@@ -214,7 +201,6 @@ pointer. While a zoom is moving the page is stretched, and it is redrawn sharp w
 The app reports how it is used and what goes wrong, with the OpenTelemetry SDK, as OTLP over HTTP: events and log lines to `/v1/logs`, spans to `/v1/traces`, metrics to `/v1/metrics`. `../docs/telemetry.md` is the list of everything that is sent and of the `OTEL_*` variables the app reads.
 
 - **The first window** is `TelemetryNoticeController`, and `TelemetryPlan.questionIsOwed` says when it is owed. `opensmartpen-design --notice` shows it. What it does for telemetry is in `../docs/telemetry.md`.
-- **The built-in address is the collector of the project.** `TelemetryPlan.builtInEndpoint` is `https://telemetry.opensmartpen.org`. The config (`telemetry.endpoint`) and the `OTEL_*` variables come before it.
 - **To test against a local collector:** start one on port 4318 and put `"telemetry": {"enabled": true, "endpoint": "http://localhost:4318"}` in the config. `../docs/telemetry.md` has the command for a collector in a container. The installed app is started by launchd and does not see the variables of a shell; a binary started from a terminal does.
 - **In the code:** `Telemetry` in `OpenSmartPenCore` is what every layer calls (`Telemetry.event`, `Telemetry.span`, `Telemetry.count`, `Telemetry.measure`). Every span is also measured as `opensmartpen.operation.duration`, so new timed work needs no metric of its own. It knows nothing of OpenTelemetry. `OTelTelemetry` in the app target is the only file that imports the SDK. A line written with `Log.warn` or `Log.error` is sent too, so it must not carry a name a person gave to something; `telemetry: false` keeps a line on the Mac.
 - **Files:** `~/.config/opensmartpen/telemetry.json` holds the install id and whether the person was told. `~/Library/Caches/org.opensmartpen.app/telemetry` is the queue of what is not sent yet.

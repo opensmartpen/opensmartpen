@@ -4,8 +4,6 @@ Open Smart Pen stops at the page. It captures pages, keeps them in `~/OpenSmartP
 
 The folder and the bucket have one layout. An agent on the Mac reads the folder; an agent anywhere else reads the bucket. All that follows applies to both, unless it says bucket.
 
-The agent today sweeps the bucket. The instructions it was given are at the bottom, word for word.
-
 ## What the app writes
 
 Under `~/OpenSmartPen`, and the same under the bucket (and under the folder set in Settings → Sync if there is one):
@@ -17,6 +15,8 @@ books/<copy>/pages/p<N>.png   image of that page, drawn from those strokes
 pens/<slug>.json              each pen's name, mode, default ink and width
 mode.jsonl, palette.json      which ink and width was in force when, and what each ink looks like
 last-modified.txt             when a page picture last changed, and the version of these rules
+transcripts/<copy>/p<N>.md    the text of a page, written by an agent
+agents/<n>.json               each agent's name, and when it was last alive
 ```
 
 - **One direction, with one exception.** The app writes under `books/`, `pens/` and the two ink files. In the bucket it never lists and never deletes, so anything the agent stores there is left alone. The one thing it reads is the transcript of a page that is open in the viewer (see below).
@@ -26,7 +26,6 @@ last-modified.txt             when a page picture last changed, and the version 
 - **Photos.** A page can arrive as a picture: "Add Photo…" in the panel takes one from an iPhone or iPad or from a file, and a file can be dropped on the pen in the menu bar. Each one is the next page of a notebook the app makes, "Photos", at `books/s0-o0-b0-<id>`. The address is in the pen's form and means nothing; no paper is printed with it. The picture as it arrived is kept as `raw/p<N>.<ext>`, and `raw/p<N>.jsonl` holds one line, `{"t":"image","file":"p<N>.<ext>","added":<ms>}`, and no strokes. `added` is when the picture was filed, in epoch milliseconds. A second field, `taken`, is when the photo was taken, when that is known: from what the camera wrote into the picture, else the moment of arrival for a picture that came from an iPhone, else the file's own creation date. The sample page has none. Both go to the bucket in this file, so an agent there has them. A bucket itself keeps only the time of upload. The page picture `pages/p<N>.png` is made from it, at most 1568 pixels on the long side and turned the way the camera says is up. A photo is complete when it arrives, so it goes up at once. The only time it has is `added`.
 - **The sample page.** The notebook "Photos" is made when the first picture is filed, not before. Until it exists, "Add Photo…" also offers "Use the Sample Page", a page that the app brings itself, for a person with no pen and no photo at hand. It is filed like a photo. It is drawn from a typeface for now; it will be a page written with a pen.
 - **Replaced whole.** A page written on again is drawn and uploaded again under the same two names. The PNG always shows the whole page, cropped to the ink, so its size changes as the page grows. In the folder the PNG is replaced in one step and only when the picture is different, so an agent never sees half a file and is not woken for nothing.
-- **The folder holds more.** `books/<copy>/pages/` on a Mac that ran earlier builds can also hold `.svg`, `.md` and `.actions.json` files. The app no longer reads or writes them, and they do not go to the bucket.
 - **The control strip.** `books/s3-o1013-b1-*` is the printed strip of colour and width buttons. Its taps are uploaded as strokes, because they are the record, but it gets no PNG and it is not a notebook.
 - **Colour.** The PNG is already drawn in the right inks. `mode.jsonl` and `palette.json` are only needed by an agent that draws pages itself.
 
@@ -55,7 +54,7 @@ The pane draws Markdown a line at a time: `# ` as the title, `## ` as a heading 
 
 ## The setup text for a new agent
 
-`docs/agent-install.md` is what a new agent sets itself up from. The website serves a copy at `https://opensmartpen.org/agent-install.md`, and `https://opensmartpen.org/llms.txt` is the door: it tells an agent where it is (folder or bucket), how the person gets the app, and to read the setup text. The copy is made by hand: after a change, copy the file to `public/agent-install.md` in the `web` repository and publish it. The text carries the same version number as `last-modified.txt`: change the rules, and raise both.
+`docs/agent-install.md` is what a new agent sets itself up from. The website serves a copy at `https://opensmartpen.org/agent-install.md`, and `https://opensmartpen.org/llms.txt` is the door: it tells an agent where it is (folder or bucket), how the person gets the app, and to read the setup text. `AGENTS.md` says how the copy is kept the same. The text carries the same version number as `last-modified.txt`: change the rules, and raise both.
 
 The app puts no instructions in the folder or in the bucket. The folder and the bucket hold data: pages, transcripts and the agents' own small files.
 
@@ -63,40 +62,3 @@ An agent is started in one of two ways, both in the panel under "Connect your ag
 
 - **Set up a new agent.** The app offers what it finds on the Mac. "Claude Code", when the `claude` command is installed, opens the Terminal in the notes folder and starts Claude Code there with the sentence. "Claude Cowork", when Claude Desktop is installed, opens a Cowork task with the folder and the sentence typed. Claude Code is marked as recommended, because it can run a check each minute that costs nothing; Cowork wakes on its own schedule, hourly at the shortest.
 - **Use an agent you have.** "Copy instructions" copies the sentence. This is the way for every other agent, and for one in the cloud.
-
-## The instructions given to the agent
-
-Sent 2026-11-11, before `last-modified.txt` existed, so they say to trigger on the PNG. That still works. An agent that should use the time file must be told about it. `<BUCKET>` and `<PREFIX>` were filled in. They name a marker file to ignore. The app wrote one when a bucket was connected, until 2026-11-15; it writes none now. A bucket connected before then can still hold the old file, and it is not a note.
-
-```
-My smart pen writes to S3 bucket <BUCKET>, folder <PREFIX>. Add it to the sweep.
-
-Layout (the Mac app only writes here; it never reads or deletes):
-  books/<copy>/book.json        notebook title, paper size, first_page
-  books/<copy>/raw/p<N>.jsonl   strokes of one page
-  books/<copy>/pages/p<N>.png   image of that page
-  pens/<slug>.json              pen names
-  mode.jsonl, palette.json      ink colour data (already drawn into the PNG)
-Ignore opensmartpen-connected.txt and the folder books/s3-o1013-b1-* (a control strip, not notes).
-
-How it updates:
-- Pages upload 30 seconds after the last event from the pen. The jsonl goes first, the PNG second.
-  Trigger on the PNG.
-- Both files are replaced whole each time. The PNG always shows the full page, old and new
-  writing, cropped to the ink. Pages only grow; I do not erase.
-
-Transcribe:
-- For each new or changed PNG, transcribe the full page as plain text. No summary, no cleanup.
-- Read your previous transcript of that page first. Keep the earlier text stable and add what
-  is new, so you know which part is new.
-- Store it at transcripts/<copy>/p<N>.md in the same bucket. Do not write under books/.
-
-Time (important):
-- Do not use the S3 upload time. The pen also works offline and uploads hours later.
-- Each line in the jsonl with "t":"stroke" has "start" and "end" in epoch milliseconds. That is
-  when I wrote it. Lines are not in time order; sort by "start".
-- One page can hold writing from several sessions. Group strokes by gaps in time, then match
-  each group to the meeting in my calendar at that time. Notes written in a meeting are context
-  for that meeting.
-- Page number for people = N - first_page + 1. Notebook name = "title" in book.json.
-```
