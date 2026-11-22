@@ -472,55 +472,6 @@ public final class PanelModel: ObservableObject {
     @Published private(set) var agentSentenceCopied = false
     /// What a person gives their agent. Set by the app delegate, which knows the folder and the bucket.
     public var agentSentence = ""
-    /// A way to set up a new agent with something that is on this Mac.
-    public struct NewAgent: Identifiable, Equatable {
-        public let id: String
-        public var title: String
-        /// How it differs from the other ones, in one line.
-        public var note: String
-        public var recommended: Bool
-
-        public static func claudeCode(recommended: Bool) -> NewAgent {
-            NewAgent(id: "claude-code", title: "Claude Code",
-                     note: "Looks for new pages each minute. Runs in the Terminal.", recommended: recommended)
-        }
-
-        public static func claudeCowork(recommended: Bool) -> NewAgent {
-            NewAgent(id: "claude-cowork", title: "Claude Cowork",
-                     note: "Looks each hour. Runs in the Claude app, with no Terminal.", recommended: recommended)
-        }
-
-        public init(id: String, title: String, note: String, recommended: Bool) {
-            self.id = id
-            self.title = title
-            self.note = note
-            self.recommended = recommended
-        }
-    }
-
-    /// What can be set up from here, best first. Empty when nothing suitable is installed, and
-    /// then the only way is to copy the instructions. Set by the app delegate.
-    @Published public var newAgents: [NewAgent] = []
-    /// Set by the app delegate, which knows how each one is started.
-    public var onSetUpAgent: ((String) -> Void)?
-
-    func setUp(_ agent: NewAgent) { onSetUpAgent?(agent.id) }
-
-    /// A second view of the panel, under "Connect your agent": the agents of one kind, with
-    /// what makes each different, and the button that starts it.
-    public enum AgentPage: String { case claude, other }
-
-    /// The second view that is open, or nil for the panel itself.
-    @Published public private(set) var agentPage: AgentPage?
-
-    func open(_ page: AgentPage) {
-        Telemetry.event("ui.agent.page", ["agent.page": .string(page.rawValue)])
-        agentPage = page
-    }
-
-    /// Back to the panel itself. Also called each time the panel opens, so it starts there.
-    public func closeAgentPage() { agentPage = nil }
-
     /// Called by the app delegate when it has read the agents' records.
     public func setAgents(_ records: [AgentRecord], changed: Date?, now: Date = Date()) {
         let rows = records.map {
@@ -687,9 +638,6 @@ public final class PanelModel: ObservableObject {
         public var bluetoothRefused = false
         /// As if "Add Pen" was clicked and no pen has answered yet.
         public var addingPen = false
-        /// As if "Claude" or "Other" was clicked under "Connect your agent".
-        public var agentPage: AgentPage?
-        public var newAgents: [NewAgent] = []
 
         public init() {}
     }
@@ -717,8 +665,6 @@ public final class PanelModel: ObservableObject {
         asksForAgent = snapshot.asksForAgent
         bluetoothRefused = snapshot.bluetoothRefused
         isAddingPen = snapshot.addingPen
-        agentPage = snapshot.agentPage
-        newAgents = snapshot.newAgents
         agentSentence = "Read the setup text and set yourself up."
         markActiveBook()
     }

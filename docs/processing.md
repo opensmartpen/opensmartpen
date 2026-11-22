@@ -58,7 +58,5 @@ The pane draws Markdown a line at a time: `# ` as the title, `## ` as a heading 
 
 The app puts no instructions in the folder or in the bucket. The folder and the bucket hold data: pages, transcripts and the agents' own small files.
 
-An agent is started in one of two ways, both in the panel under "Connect your agent". Each way gives the agent the same sentence, which points at `llms.txt` and says where the pages are:
+An agent is started with one sentence, which points at `llms.txt` and says where the pages are. "Copy instructions" copies it: in the panel under "Connect your agent", and in Settings. The person pastes it into the agent. The way is the same for an agent on the Mac and for one in the cloud.
 
-- **"Claude".** Shown when the app finds Claude on the Mac. It opens a second view of the panel with what it found. "Claude Code", when the `claude` command is installed, opens the Terminal in the notes folder and starts Claude Code there with the sentence. "Claude Cowork", when Claude Desktop is installed, opens a Cowork task with the folder and the sentence typed. Claude Code is marked as recommended, because it can run a check each minute that costs nothing; Cowork wakes on its own schedule, hourly at the shortest.
-- **"Other".** It opens a second view with "Copy instructions", which copies the sentence. With no Claude on the Mac, the panel shows "Copy instructions" at once. This is the way for every other agent, and for one in the cloud.

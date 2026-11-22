@@ -122,7 +122,6 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.bluetooth.settings_opened` | "Open Bluetooth Settings" was clicked, in the panel of an app that may not use Bluetooth | None |
 | `ui.agent.copy_instructions` | "Copy instructions" was clicked | `ui.source` (`panel`, `settings`) |
 | `ui.agent.opened` | An agent's link was opened | None |
-| `ui.agent.setup` | "Set up a new agent" was clicked for one of the agents the app offers | `agent.kind` (`claude-code`, `claude-cowork`) |
 | `ui.update.check` | "Check for Updates…" was clicked | None |
 | `ui.sync_now` | A sync was asked for by hand | `ui.source` |
 | `ui.notes.opened`, `ui.log.opened` | The notes folder or the log was opened | `ui.source` |
@@ -131,7 +130,6 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.setting.changed` | A setting was changed | `setting.name`, `setting.value`. For: `startAtLogin`, `quietSeconds`, `deleteFromPenAfterPublish`, `lowBatteryPercent`, `memoryWarnPercent`, `updateAutomatically`, and `telemetry` when it is turned on |
 | `ui.pen.add`, `ui.pen.add_cancelled` | "Add Pen" or its "Cancel" was clicked, in the panel or in Settings | `ui.source` (`panel`, `settings`) |
 | `ui.pens.website` | "See pens that work" was clicked in the panel | None |
-| `ui.agent.page` | "Claude" or "Other" was clicked under "Connect your agent" | `agent.page` (`claude`, `other`) |
 | `ui.pen.forget` | "Remove" was confirmed for a pen | `pen.mac` |
 | `ui.pen.edited` | A pen was changed in Settings | `pen.mac`, and what changed: `pen.renamed` (only that it was), `pen.mode`, `pen.ink`, `pen.width` |
 | `ui.book.renamed` | A notebook got a new title | `book.surface`. Not the title |

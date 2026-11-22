@@ -151,7 +151,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.onAddPhoto = { [weak self] in self?.addPhoto() }
-        model.onSetUpAgent = { [weak self] id in self?.setUpAgent(id) }
         model.onOpenPage = { [weak self] page in self?.showViewer(page) }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         coordinator.onOfflineStored = { [weak self] pages in
@@ -612,51 +611,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Start a new agent in the notes folder, with the sentence that sends it to the website.
-    private func setUpAgent(_ id: String) {
-        panel?.dismiss()
-        // Which of the two the person chose. The id is one of the app's own two words.
-        if ["claude-code", "claude-cowork"].contains(id) {
-            Telemetry.event("ui.agent.setup", ["agent.kind": .string(id)])
-        }
-        switch id {
-        case "claude-cowork":
-            if let link = Agents.coworkLink(folder: config.dataURL, bucket: config.s3Account()?.destination) {
-                NSWorkspace.shared.open(link)
-            }
-        case "claude-code":
-            guard let claude = Agents.claudeCommand() else { return }
-            // A `.command` file is what the Terminal runs when it is opened. It needs no
-            // permission to control the Terminal, which a script sent to it would.
-            let script = FileManager.default.temporaryDirectory
-                .appendingPathComponent("Set up Open Smart Pen agent.command")
-            do {
-                try Agents.terminalScript(folder: config.dataURL, bucket: config.s3Account()?.destination,
-                                          claude: claude)
-                    .write(to: script, atomically: true, encoding: .utf8)
-                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-                NSWorkspace.shared.open(script)
-            } catch {
-                Log.warn("could not start Claude Code in the Terminal: \(error)")
-            }
-        default:
-            break
-        }
-    }
-
     /// Read the agents' records: from the folder each time, from the bucket once a minute.
     private func checkAgents() {
         model.agentSentence = Agents.sentence(folder: config.dataURL,
                                               bucket: config.s3Account()?.destination)
-        // Asked each time: an agent can be installed or removed while this runs.
-        var found: [PanelModel.NewAgent] = []
-        if Agents.claudeCommand() != nil {
-            found.append(.claudeCode(recommended: true))
-        }
-        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: Agents.claudeDesktop) != nil {
-            found.append(.claudeCowork(recommended: found.isEmpty))
-        }
-        if model.newAgents != found { model.newAgents = found }
         if let client = sync.connection, Date().timeIntervalSince(agentsAsked) > 60 {
             agentsAsked = Date()
             let root = config.dataURL
@@ -902,7 +860,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         guard let button = statusItem.button else { return }
-        model.closeAgentPage()
         Telemetry.event("ui.panel.opened")
         session.requestSettingRefresh()
         model.refreshRecent()

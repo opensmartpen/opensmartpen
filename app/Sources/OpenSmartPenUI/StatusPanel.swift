@@ -58,9 +58,6 @@ public struct StatusPanel: View {
 
     public var body: some View {
         ZStack(alignment: .topTrailing) {
-            if let page = model.agentPage, model.asksForAgent {
-                agentPage(page)
-            } else {
             VStack(alignment: .leading, spacing: 0) {
                 // The pens come first and carry no rule above them: there is nothing above them
                 // to be separated from. A headline used to sit here — a dot and a word for the
@@ -79,7 +76,6 @@ public struct StatusPanel: View {
                 if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
                 if !model.recent.isEmpty { section(inset: 5) { recent } }
                 footer
-            }
             }
             // Over the panel rather than in a row of its own. It acts on the window, not on
             // anything the panel is showing, and a row for one 16-point glyph is a row wasted.
@@ -310,74 +306,14 @@ public struct StatusPanel: View {
         VStack(alignment: .leading, spacing: 7) {
             // The second step while the first is on screen above it. Alone, it has no number.
             stepTitle(model.pens.isEmpty && !model.bluetoothRefused ? 2 : nil, "Connect your agent")
-            if model.newAgents.isEmpty {
-                // No Claude on this Mac: one way, so no choice to make.
-                Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
-                    .buttonStyle(InkButtonStyle(filled: !model.pens.isEmpty))
-            } else {
-                // Two kinds, and what is behind each is one click away.
-                HStack(spacing: 6) {
-                    Button { model.open(.claude) } label: { Text("Claude").frame(maxWidth: .infinity) }
-                        // One filled button in the panel at a time. While "Add Pen" is above,
-                        // it is that one.
-                        .buttonStyle(InkButtonStyle(filled: !model.pens.isEmpty))
-                    Button { model.open(.other) } label: { Text("Other").frame(maxWidth: .infinity) }
-                        .buttonStyle(InkButtonStyle(filled: false))
-                }
-            }
-        }
-    }
-
-    /// The second view: the agents of one kind, what makes each different, and its button.
-    private func agentPage(_ page: PanelModel.AgentPage) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button(action: model.closeAgentPage) {
-                HStack(spacing: 4) {
-                    Image(systemName: "chevron.left").font(.system(size: 9, weight: .semibold))
-                    Text("Connect your agent")
-                }
+            Text("Paste this into Claude, Codex or another agent. It does the setup.")
                 .font(.system(size: 10.5))
                 .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            switch page {
-            case .claude:
-                ForEach(model.newAgents) { agent in
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 6) {
-                            Text(agent.title).font(.system(size: 11.5, weight: .medium))
-                            if agent.recommended, model.newAgents.count > 1 {
-                                Text("Recommended").font(.system(size: 9.5)).foregroundStyle(Ink.accent)
-                            }
-                        }
-                        Text(agent.note)
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button { model.setUp(agent) } label: {
-                            Text("Set Up \(agent.title)").frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(InkButtonStyle(filled: agent.recommended))
-                    }
-                }
-            case .other:
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Other agent").font(.system(size: 11.5, weight: .medium))
-                    Text("For Codex, another agent on this Mac, or an agent in the cloud. Copy the instructions and paste them into your agent.")
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
-                        .buttonStyle(InkButtonStyle(filled: true))
-                }
-            }
+                .fixedSize(horizontal: false, vertical: true)
+            // One filled button in the panel at a time. While "Add Pen" is above, it is that one.
+            Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
+                .buttonStyle(InkButtonStyle(filled: !model.pens.isEmpty))
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 12)
-        .padding(.bottom, 14)
-        // Clear of the pin, which is over the top right corner.
-        .padding(.trailing, 14)
     }
 
     /// Who reads the pages. A dot for each: the accent while it keeps up, grey when pages changed

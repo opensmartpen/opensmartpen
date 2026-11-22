@@ -73,7 +73,7 @@ To build the app from the source, see [`app/README.md`](app/README.md).
 
 ### 3. Connect your agent
 
-Click the pencil in the menu bar. Under "Connect your agent", choose "Claude" and the app sets it up for you. For each other agent, choose "Other", then "Copy instructions", and paste the sentence into your agent. It looks like this:
+Click the pencil in the menu bar. Under "Connect your agent", click "Copy instructions" and paste the sentence into your agent. It looks like this:
 
 > Read https://opensmartpen.org/llms.txt and set yourself up to transcribe my Open Smart Pen pages. The pages are in the folder ~/OpenSmartPen on my Mac.
 

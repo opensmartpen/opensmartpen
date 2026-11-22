@@ -655,8 +655,7 @@ private struct SyncTab: View {
                 Text("Agent")
             } footer: {
                 Note("Open Smart Pen does not turn handwriting into text. An agent of your choice "
-                     + "does, for example Claude Code or Codex. To set up a new agent with Claude, "
-                     + "use the panel in the menu bar. For an agent you have, copy the instructions "
+                     + "does, for example Claude Code or Codex. Copy the instructions "
                      + "and paste them into it. "
                      + "An agent is connected when it has written its name beside your pages.")
             }

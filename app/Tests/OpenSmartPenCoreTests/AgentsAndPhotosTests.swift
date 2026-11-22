@@ -67,29 +67,6 @@ final class AgentsAndPhotosTests: XCTestCase {
             .hasSuffix("on my Mac, and in the bucket https://s3.example/notes."))
     }
 
-    /// The link was read out of Claude Desktop and tried by hand. This holds its form still.
-    func testTheCoworkLinkOpensTheNotesFolderWithThePromptTyped() throws {
-        let folder = URL(fileURLWithPath: "/Users/someone/Open Smart Pen")
-        let link = try XCTUnwrap(Agents.coworkLink(folder: folder, bucket: nil))
-        XCTAssertEqual(link.scheme, "claude")
-        XCTAssertEqual(link.host, "cowork")
-        XCTAssertEqual(link.path, "/new")
-        let items = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
-        let query = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
-        XCTAssertEqual(query["folder"], "/Users/someone/Open Smart Pen")
-        XCTAssertEqual(query["q"], Agents.sentence(folder: folder, bucket: nil))
-        XCTAssertFalse(query["q"]!.hasPrefix("/"), "Claude refuses a prompt that starts with a slash")
-    }
-
-    /// A folder with a space or a quote in its name must not break out of the command.
-    func testTheTerminalScriptQuotesWhatItIsGiven() {
-        let script = Agents.terminalScript(folder: URL(fileURLWithPath: "/Users/o'neil/Open Smart Pen"),
-                                           bucket: nil, claude: URL(fileURLWithPath: "/opt/homebrew/bin/claude"))
-        XCTAssertTrue(script.hasPrefix("#!/bin/zsh\n"))
-        XCTAssertTrue(script.contains(#"cd '/Users/o'\''neil/Open Smart Pen' || exit 1"#))
-        XCTAssertTrue(script.contains("exec '/opt/homebrew/bin/claude' '"))
-    }
-
     // MARK: photos
 
     func testEachPhotoIsTheNextPageOfOneNotebook() throws {
