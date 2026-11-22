@@ -110,7 +110,7 @@ public struct StatusPanel: View {
                     Button(action: model.addPhoto) {
                         HStack(spacing: 6) {
                             Image(systemName: "camera").font(.system(size: 11))
-                            Text("Add a Photo")
+                            Text("Add Photo")
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -130,8 +130,7 @@ public struct StatusPanel: View {
             bluetoothRefused
         } else {
             VStack(alignment: .leading, spacing: 7) {
-                Text("Add your pen")
-                    .font(.system(size: 11.5, weight: .medium))
+                stepTitle(1, "Add your pen")
                 if model.isAddingPen {
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
@@ -289,43 +288,43 @@ public struct StatusPanel: View {
 
     /// Shown until an agent has transcribed the sample page. The app captures and stops; without
     /// an agent a page never becomes text, and nothing else in the panel would say why.
-    private var connectAgent: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("Connect your agent")
-                .font(.system(size: 11.5, weight: .medium))
-            Text("Your agent turns pages into text.")
-                .font(.system(size: 10.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            // What is on this Mac, best first. Each one opens with the instructions already in it.
-            if !model.newAgents.isEmpty {
-                caption("Set up a new agent")
-                ForEach(model.newAgents) { agent in
-                    Button { model.setUp(agent) } label: {
-                        VStack(spacing: 1) {
-                            Text(agent.title)
-                            Text(agent.note)
-                                .font(.system(size: 9.5))
-                                .opacity(0.75)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    // One filled button in the panel at a time: the next thing to do. With no
-                    // page yet that is adding one, and an agent has nothing to read.
-                    .buttonStyle(InkButtonStyle(filled: agent.recommended && !startsWithoutAPen))
-                }
-                caption("Or use an agent you have")
+    /// The name of a step, with its number in a small disc when the panel shows the steps in a row.
+    private func stepTitle(_ number: Int?, _ title: String) -> some View {
+        HStack(spacing: 6) {
+            if let number {
+                Text("\(number)")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .frame(width: 15, height: 15)
+                    .background(Circle().fill(Color.primary.opacity(0.12)))
             }
-            Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
-                .buttonStyle(InkButtonStyle(filled: model.newAgents.isEmpty && !startsWithoutAPen))
+            Text(title).font(.system(size: 11.5, weight: .medium))
         }
     }
 
-    private func caption(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10.5))
-            .foregroundStyle(.tertiary)
-            .padding(.top, 2)
+    private var connectAgent: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            // The second step while the first is on screen above it. Alone, it has no number.
+            stepTitle(model.pens.isEmpty && !model.bluetoothRefused ? 2 : nil, "Connect your agent")
+            // What is on this Mac, best first. Each one opens with the instructions already in it.
+            ForEach(model.newAgents) { agent in
+                Button { model.setUp(agent) } label: {
+                    Text(agent.title)
+                        .frame(maxWidth: .infinity)
+                        // A small word at the side, so the three buttons stay one line each.
+                        .overlay(alignment: .trailing) {
+                            if agent.recommended {
+                                Text("Recommended").font(.system(size: 8.5)).opacity(0.7).padding(.trailing, 8)
+                            }
+                        }
+                }
+                // One filled button in the panel at a time: the next thing to do. With no
+                // page yet that is adding one, and an agent has nothing to read.
+                .buttonStyle(InkButtonStyle(filled: agent.recommended && !startsWithoutAPen))
+            }
+            // The way for each other agent, and for one in the cloud.
+            Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
+                .buttonStyle(InkButtonStyle(filled: model.newAgents.isEmpty && !startsWithoutAPen))
+        }
     }
 
     /// Who reads the pages. A dot for each: the accent while it keeps up, grey when pages changed

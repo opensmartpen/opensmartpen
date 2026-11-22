@@ -50,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var telemetryNotice: TelemetryNoticeController?
     /// The first window has not been answered yet.
     private var welcomeOwed = false
+    /// The panel stayed open under the Bluetooth question of macOS.
+    private var heldForBluetooth = false
     /// The pens have not been started, so that macOS asks about Bluetooth after the first window.
     private var pensWaitForWelcome = false
     private let startedAt = Date()
@@ -706,6 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panelHost = NSHostingController(rootView: StatusPanel(model: model, now: panelNow))
         panel = MenuBarPanel(content: panelHost)
+        panel.holdsOpen = { [weak self] in self?.session.asksForBluetoothToAdd ?? false }
         panel.onCommand = { [weak self] key in
             switch key {
             case ",": self?.showSettings(); return true
@@ -927,6 +930,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func tickPanel() {
         panelNow = Date()
         model.refresh(now: panelNow)
+        // The question of macOS took the keyboard from the panel. Take it back when the question
+        // is answered, so that Escape and a click elsewhere close the panel as before.
+        if session.asksForBluetoothToAdd {
+            heldForBluetooth = true
+        } else if heldForBluetooth {
+            heldForBluetooth = false
+            if panel?.isVisible == true {
+                NSApp.activate(ignoringOtherApps: true)
+                panel?.makeKey()
+            }
+        }
         refreshStatusButton()
         panelHost?.rootView = StatusPanel(model: model, now: panelNow)
         panel?.resizeToContent()

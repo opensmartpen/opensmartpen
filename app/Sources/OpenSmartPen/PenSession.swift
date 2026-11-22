@@ -85,6 +85,9 @@ final class PenSession: NSObject {
     /// A pen to look for: one that is paired, or the one somebody is adding. With neither, the
     /// app does not scan and does not touch Bluetooth, so macOS asks nobody who has no pen.
     private var looksForAPen: Bool { adding || !config.pairedPens.isEmpty }
+    /// "Add Pen" was clicked and macOS has not answered about Bluetooth yet: its question is on
+    /// screen, or comes now.
+    var asksForBluetoothToAdd: Bool { adding && Self.bluetoothNotAskedYet }
     /// macOS has not asked about Bluetooth yet, and the next scan makes it ask.
     var willAskForBluetooth: Bool { Self.bluetoothNotAskedYet && looksForAPen }
     /// The paired pens that a device has copied in this launch, by MAC.

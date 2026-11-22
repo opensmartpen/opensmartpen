@@ -107,7 +107,8 @@ public final class MenuBarPanel: NSPanel {
         guard outsideClick == nil else { return }
         outsideClick = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in
-            self?.dismiss()
+            guard let self, self.holdsOpen?() != true else { return }
+            self.dismiss()
         }
     }
 
@@ -121,10 +122,14 @@ public final class MenuBarPanel: NSPanel {
     /// True while something the panel itself opened has the keyboard focus, such as a menu at
     /// the mouse. The panel then stays where it is, so what opened reads as part of it.
     public var staysOpen = false
+    /// Asked each time the panel would close by itself. True while a question of macOS that the
+    /// panel caused is on screen: the answer is a click elsewhere, and the panel must be there
+    /// after it, because it shows what the answer started.
+    public var holdsOpen: (() -> Bool)?
 
     public override func resignKey() {
         super.resignKey()
-        if !staysOpen { dismiss() }
+        if !staysOpen, holdsOpen?() != true { dismiss() }
     }
 
     /// Escape closes it, as it closes a menu.
