@@ -43,7 +43,7 @@ public struct AgentRecord: Equatable {
 public enum Agents {
     /// How long an agent may leave a change unseen before it is shown as behind.
     public static let patience: TimeInterval = 2 * 60 * 60
-    /// The most agents ever asked for. The app asks by name and stops at the first gap.
+    /// The most agents ever asked for. The app asks by name.
     public static let limit = 16
 
     public static func path(_ number: Int) -> String { "agents/\(number).json" }
@@ -61,26 +61,38 @@ public enum Agents {
         return text + "."
     }
 
-    /// The agents recorded in the folder on this Mac, in order, up to the first gap.
+    /// The agents recorded in the folder on this Mac, in order. A number with no file is passed
+    /// over: a person can remove an agent, and the ones after it stay.
     public static func load(root: URL) -> [AgentRecord] {
-        var out: [AgentRecord] = []
-        for number in 0..<limit {
-            guard let data = try? Data(contentsOf: root.appendingPathComponent(path(number))) else { break }
-            if let record = AgentRecord(number: number, json: data) { out.append(record) }
+        (0..<limit).compactMap { number in
+            (try? Data(contentsOf: root.appendingPathComponent(path(number))))
+                .flatMap { AgentRecord(number: number, json: $0) }
         }
-        return out
     }
 
-    /// Ask the bucket for each agent's record, by name, and keep what it has in the folder. Stops
-    /// at the first one that is not there. Nothing is listed, so the key needs no more than it has.
+    /// Ask the bucket for each agent's record, by name, and keep what it has in the folder.
+    /// Nothing is listed, so the key needs no more than it has. It asks for each number the
+    /// folder knows, and then on to the first one that is not there.
     public static func fetch(root: URL, client: S3Client) {
+        let known = load(root: root).map(\.number).max() ?? -1
         for number in 0..<limit {
-            guard let data = try? client.get(path(number)) else { break }
+            guard let data = try? client.get(path(number)) else {
+                if number > known { break }
+                continue
+            }
             let url = root.appendingPathComponent(path(number))
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                      withIntermediateDirectories: true)
             try? data.write(to: url, options: .atomic)
         }
+    }
+
+    /// Remove one agent's record, from the bucket and from the folder. The agent is not stopped:
+    /// the app cannot reach it. One that still runs writes its record again at its next check.
+    public static func remove(_ number: Int, root: URL, client: S3Client?) throws {
+        try client?.delete(path(number))
+        let url = root.appendingPathComponent(path(number))
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
 
     /// When a page picture last changed, as `last-modified.txt` has it.

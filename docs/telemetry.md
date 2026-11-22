@@ -121,6 +121,7 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.photo.menu` | "Add Photo…" was clicked | None |
 | `ui.bluetooth.settings_opened` | "Open Bluetooth Settings" was clicked, in the panel of an app that may not use Bluetooth | None |
 | `ui.agent.copy_instructions` | "Copy instructions" was clicked | `ui.source` (`panel`, `settings`) |
+| `ui.agent.removed` | An agent was removed in Settings | None |
 | `ui.agent.opened` | An agent's link was opened | None |
 | `ui.update.check` | "Check for Updates…" was clicked | None |
 | `ui.sync_now` | A sync was asked for by hand | `ui.source` |

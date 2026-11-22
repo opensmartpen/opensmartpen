@@ -58,8 +58,19 @@ public struct SyncStatus: Equatable {
     public var lastFiles = 0
     /// Why the last attempt failed, or nil when it did not.
     public var error: String?
-    /// The agents that keep a record, by name. Empty when none is connected.
-    public var agents: [String] = []
+    /// The agents that keep a record. Empty when none is connected.
+    public var agents: [Agent] = []
+
+    public struct Agent: Identifiable, Equatable {
+        /// The number in the name of its record.
+        public let id: Int
+        public let name: String
+
+        public init(id: Int, name: String) {
+            self.id = id
+            self.name = name
+        }
+    }
     /// What a person gives their agent to set it up.
     public var agentSentence = ""
 
@@ -116,6 +127,8 @@ public final class SettingsStore: ObservableObject {
     /// Deletes a notebook, from the bucket and from this Mac, and answers with nil or with what
     /// went wrong. Set by the app, which has the bucket. Nil in the design window.
     public var onDeleteBook: ((BookRecord, @escaping (String?) -> Void) -> Void)?
+    /// Removes an agent's record, by its number. Set by the app, which has the bucket.
+    public var onRemoveAgent: ((Int) -> Void)?
 
     public init(pens: PenRegistry, books: BookRegistry, config: Config, configURL: URL,
                 info: AppInfo, link: PenLink? = nil, secretURL: URL = S3Secret.location) {
@@ -725,6 +738,7 @@ private struct SyncTab: View {
     @State private var agentCopied = false
     @ObservedObject var store: SettingsStore
     @State private var confirmingDisconnect = false
+    @State private var removing: SyncStatus.Agent?
 
     private static let waits: [Double] = [10, 30, 60, 300, 600]
 
@@ -754,8 +768,12 @@ private struct SyncTab: View {
             .autocorrectionDisabled()
 
             Section {
-                LabeledContent(store.sync.agents.isEmpty ? "Not connected"
-                               : store.sync.agents.joined(separator: ", ")) {
+                ForEach(store.sync.agents) { agent in
+                    LabeledContent(agent.name) {
+                        Button("Remove…") { removing = agent }
+                    }
+                }
+                LabeledContent(store.sync.agents.isEmpty ? "Not connected" : "Another agent") {
                     Button(agentCopied ? "Copied" : "Copy Instructions") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(store.sync.agentSentence, forType: .string)
@@ -794,6 +812,17 @@ private struct SyncTab: View {
                      + "Mac. Freeing its memory deletes that copy after the pages are safe here "
                      + "and in the bucket. Your notes are not deleted.")
             }
+        }
+        .confirmationDialog("Remove \(removing?.name ?? "the agent")?",
+                            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            presenting: removing) { agent in
+            Button("Remove", role: .destructive) {
+                Telemetry.event("ui.agent.removed")
+                store.onRemoveAgent?(agent.id)
+            }
+        } message: { _ in
+            Text("The app stops showing it. This does not stop the agent: stop it where it runs, "
+                 + "or it comes back at its next check. Its transcripts stay.")
         }
         .confirmationDialog("Disconnect the bucket?", isPresented: $confirmingDisconnect) {
             Button("Disconnect", role: .destructive) { store.disconnectS3() }

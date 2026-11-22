@@ -179,7 +179,7 @@ The layout of the bucket is the layout of the notes folder, under `prefix` if on
 
 A key that is only allowed `s3:PutObject` on the bucket is enough to upload: the app never lists,
 and a sync never deletes. To show a transcript in the viewer the key needs `s3:GetObject` too, and
-to delete a notebook in Settings it needs `s3:DeleteObject`.
+to delete a notebook or remove an agent in Settings it needs `s3:DeleteObject`.
 
 A PNG that is missing or older than its strokes is drawn again at the next start.
 

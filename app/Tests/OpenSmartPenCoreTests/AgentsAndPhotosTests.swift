@@ -21,13 +21,16 @@ final class AgentsAndPhotosTests: XCTestCase {
 
     // MARK: agents
 
-    func testAgentsAreReadInOrderUpToTheFirstGap() throws {
+    func testAgentsAreReadInOrderAndAGapIsPassedOver() throws {
         try write(#"{"name":"Claude Code","alive":"2026-11-14T10:00:00Z","url":"https://example.com/a"}"#, to: "agents/0.json")
         try write(#"{"name":"Codex","alive":"2026-11-14T09:00:00.500Z"}"#, to: "agents/1.json")
         try write(#"{"name":"Lost","alive":"2026-11-14T09:00:00Z"}"#, to: "agents/3.json")
 
         let agents = Agents.load(root: root)
-        XCTAssertEqual(agents.map(\.name), ["Claude Code", "Codex"], "3 is after a gap, and is never asked for")
+        XCTAssertEqual(agents.map(\.name), ["Claude Code", "Codex", "Lost"], "a removed agent leaves a gap")
+
+        try Agents.remove(0, root: root, client: nil)
+        XCTAssertEqual(Agents.load(root: root).map(\.name), ["Codex", "Lost"])
         XCTAssertEqual(agents[0].url, URL(string: "https://example.com/a"))
         XCTAssertNil(agents[1].url)
     }

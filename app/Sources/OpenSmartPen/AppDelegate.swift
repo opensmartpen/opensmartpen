@@ -649,6 +649,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Remove one agent's record, from the bucket and from the folder.
+    private func removeAgent(_ number: Int) {
+        let root = config.dataURL, client = sync.connection
+        agentQueue.async { [weak self] in
+            do {
+                try Agents.remove(number, root: root, client: client)
+            } catch {
+                Log.warn("could not remove an agent's record: \(error)")
+            }
+            DispatchQueue.main.async {
+                self?.showAgents()
+                self?.pushSyncStatus()
+            }
+        }
+    }
+
     /// Read the agents' records: from the folder each time, from the bucket once a minute.
     private func checkAgents() {
         model.agentSentence = Agents.sentence(folder: config.dataURL,
@@ -792,7 +808,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.lastUpload = coordinator.lastPublish?.date
         status.lastFiles = coordinator.lastPublish?.files ?? 0
         status.error = coordinator.lastError
-        status.agents = agentRecords.map(\.name)
+        status.agents = agentRecords.map { SyncStatus.Agent(id: $0.number, name: $0.name) }
         status.agentSentence = model.agentSentence
         if store.sync != status { store.sync = status }
     }
@@ -828,6 +844,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // A new title is a changed file with no page to carry it, so it is sent now.
             store.onRecordsChange = { [weak self] in self?.coordinator.publishAll() }
             store.onDeleteBook = { [weak self] book, done in self?.delete(book, done: done) }
+            store.onRemoveAgent = { [weak self] number in self?.removeAgent(number) }
             store.onSyncNow = { [weak self] in
                 self?.coordinator.publishAll()
                 self?.stateChanged()
