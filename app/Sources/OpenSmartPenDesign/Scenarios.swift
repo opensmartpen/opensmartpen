@@ -19,7 +19,7 @@ private typealias Publish = PanelModel.Publish
 /// hardware: a failing upload, a pen memory drain and a first run each take deliberate setup to
 /// see even once.
 public enum Scenario: String, CaseIterable {
-    case synced, writing, waiting, copying, failing, asleep, bluetoothOff, bluetoothRefused, firstRun, firstRunRefused
+    case synced, writing, waiting, copying, failing, asleep, bluetoothOff, bluetoothRefused, firstRun, firstRunLooking, firstRunRefused
     case newNotebook, threePens, penOpen
     /// The picture in the README: `assets/panel.png`.
     case readme
@@ -35,6 +35,7 @@ public enum Scenario: String, CaseIterable {
         case .bluetoothOff: return "Bluetooth off"
         case .bluetoothRefused: return "Bluetooth refused"
         case .firstRun: return "First run"
+        case .firstRunLooking: return "First run, looking"
         case .firstRunRefused: return "First run, no Bluetooth"
         case .newNotebook: return "A second pad"
         case .threePens: return "Three pens"
@@ -54,6 +55,7 @@ public enum Scenario: String, CaseIterable {
         case .bluetoothOff: return "the one real blocker"
         case .bluetoothRefused: return "the person said no to macOS"
         case .firstRun: return "never paired"
+        case .firstRunLooking: return "Add Pen was clicked"
         case .firstRunRefused: return "said no to macOS at the first start"
         case .newNotebook: return "two copies, decided silently"
         case .threePens: return "what the width is cut for"
@@ -129,7 +131,7 @@ public enum Scenario: String, CaseIterable {
                 PenRow(id: "b", name: "Red one", ink: .red, width: .thin, mode: .writing,
                        percent: nil, low: false, active: false, state: "Bluetooth not allowed", awake: false),
             ]
-        case .firstRun, .firstRunRefused:
+        case .firstRun, .firstRunLooking, .firstRunRefused:
             s.battery = nil
             s.lastPublish = nil
             s.recent = []
@@ -138,11 +140,8 @@ public enum Scenario: String, CaseIterable {
             s.pens = []
             s.agents = []
             s.asksForAgent = true
-            s.newAgents = [PanelModel.NewAgent(id: "claude-code", title: "Claude Code",
-                                               note: "Fast \u{00B7} recommended", recommended: true),
-                           PanelModel.NewAgent(id: "claude-cowork", title: "Claude Cowork",
-                                               note: "Simple \u{00B7} checks each hour", recommended: false)]
             if self == .firstRunRefused { s.bluetoothRefused = true }
+            if self == .firstRunLooking { s.addingPen = true }
         case .newNotebook:
             // A fresh pad is not announced, it simply appears: a second row with the same title
             // and a folder of its own. Nothing is asked, and no notice is posted (ADR-002).

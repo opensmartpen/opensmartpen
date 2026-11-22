@@ -32,6 +32,22 @@ The app does one job. It does not transcribe, it has no account, and it never se
 2. **The app keeps each page** in `~/OpenSmartPen`: the strokes, with the time of each one, and a picture of the page. If you connect an S3 bucket, it copies the same files there.
 3. **Your agent reads the pages.** One small file says when a page changed, so an agent can check often at almost no cost. The agent writes the text of each page back, and the app shows it beside the ink.
 
+## What you can do with it
+
+You write on paper as always. What happens next is between you and your agent. Some uses:
+
+| You write | You ask your agent to |
+|---|---|
+| A to-do list | add the open tasks to your task list |
+| Meeting notes | send the notes to the team |
+| Study notes | test you on the page |
+| A plan on a whiteboard, as a photo | make a document from it |
+| A sketch of a screen | build it |
+
+The first four are in the app as sample photos, so you can try them with no pen: click the pencil in the menu bar, then "Add Photo", then "Use Sample Photo…".
+
+Show us what you do with your pen. Open an issue with your use, or add a sample page: each one is a few lines in [`app/Sources/OpenSmartPenUI/SamplePhotos.swift`](app/Sources/OpenSmartPenUI/SamplePhotos.swift).
+
 ## What you need
 
 - A Mac with macOS 13 or later.
@@ -59,7 +75,6 @@ The camera of your phone is sufficient. Take a photo of any handwritten page: fr
 
 Download the newest [`OpenSmartPen-<version>.dmg`](https://github.com/opensmartpen/opensmartpen/releases/latest), open it, and drag Open Smart Pen to the Applications folder. Then open the app. If you open the app from the disk image or from Downloads, it offers to move itself to the Applications folder.
 
-- macOS asks one time for the Bluetooth permission. Allow it; without it the pen cannot connect.
 - The app is in the menu bar, as a pencil. It has no window of its own and no icon in the Dock.
 - The app starts when you log in, and it updates itself. A new version installs with no window, at a moment when no pen is writing. Settings → About has the switch for this, and "Check for Updates…".
 
@@ -69,12 +84,12 @@ To build the app from the source, see [`app/README.md`](app/README.md).
 
 ### 2. Add a page
 
-- **With a pen:** switch the pen on near your Mac. The app pairs with the first pen it sees. Then write.
-- **Without a pen:** click the pencil in the menu bar, then "Add Photo…". Take a photo with your iPhone, select a file, or use the sample page.
+- **With a pen:** click the pencil in the menu bar, then "Add Pen", and switch the pen on near your Mac. macOS asks one time for the Bluetooth permission; allow it. Then write.
+- **Without a pen:** click the pencil in the menu bar, then "Add Photo…". Take a photo with your iPhone, select a file, or use a sample photo.
 
 ### 3. Connect your agent
 
-Click the pencil in the menu bar, then "Copy instructions", and paste the sentence into your agent. It looks like this:
+Click the pencil in the menu bar. Under "Connect your agent", click "Copy instructions" and paste the sentence into your agent. It looks like this:
 
 > Read https://opensmartpen.org/llms.txt and set yourself up to transcribe my Open Smart Pen pages. The pages are in the folder ~/OpenSmartPen on my Mac.
 
@@ -87,7 +102,7 @@ The app never starts an agent. Your agent decides when it runs.
 All files are in `~/OpenSmartPen`, outside the app. You can delete the app and install it again, and no page is lost.
 
 - **Your pages go nowhere by themselves.** With no bucket connected, all files stay on your Mac.
-- **An S3 bucket is optional.** Connect one in Settings → Sync if your agent runs on a different computer. Amazon S3 and services with the same interface work, for example Cloudflare R2 and MinIO.
+- **An S3 bucket is optional.** Connect one in Settings → Sync if your agent runs on a different computer. Amazon S3 and services with the same interface work, for example Cloudflare R2, Supabase and MinIO.
 - **Your agent uses its own model.** When it reads a page, it sends the picture of the page to that model, as it does with any file you give it.
 
 [`docs/processing.md`](docs/processing.md) lists each file, and is the full contract between the app and an agent: what the app writes, where, and when.

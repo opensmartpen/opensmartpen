@@ -16,8 +16,8 @@ final class PenSession: NSObject {
     var onDot: ((PageID, DotSample, DotEvent) -> Void)?
 
     private(set) var bluetoothOff = false { didSet { if bluetoothOff != oldValue { onChange?() } } }
-    /// Looking for a new pen, after "Add pen…" in Settings. Stops by itself after a while, so a
-    /// pen switched on next week is not paired because somebody once opened the dialog.
+    /// Looking for a new pen, after "Add Pen" in the panel or in Settings. Stops by itself after
+    /// a while, so a pen switched on next week is not paired because somebody once clicked.
     private(set) var adding = false { didSet { if adding != oldValue { onChange?() } } }
 
     private var config: Config
@@ -34,6 +34,8 @@ final class PenSession: NSObject {
     /// The Bluetooth link being made, timed for telemetry: from the first call to the link.
     private var connectSpan: TelemetrySpan?
     private var scanning = false
+    /// The SDK's finder has been used, and so its Bluetooth manager exists.
+    private var finderTaken = false
     private var scanTimer: Timer?
     private var addingTimer: Timer?
     /// How long "Add pen…" keeps looking.
@@ -78,12 +80,16 @@ final class PenSession: NSObject {
         for connection in links.values { connection.showOnLED(rgb) }
     }
 
-    /// With no pen paired at all, the first pen seen is paired — the app works with no setup.
-    /// After that a new pen is only taken while somebody is adding one.
-    private var pairingOpen: Bool { adding || (autoPair && config.pairedPens.isEmpty) }
-    /// Off once a pen has been forgotten in this launch. Forgetting the last pen empties the list,
-    /// and without this the pen just forgotten would be paired again the moment it reconnects.
-    private var autoPair = true
+    /// A new pen is only taken while somebody is adding one: the first pen like each one after.
+    private var pairingOpen: Bool { adding }
+    /// A pen to look for: one that is paired, or the one somebody is adding. With neither, the
+    /// app does not scan and does not touch Bluetooth, so macOS asks nobody who has no pen.
+    private var looksForAPen: Bool { adding || !config.pairedPens.isEmpty }
+    /// "Add Pen" was clicked and macOS has not answered about Bluetooth yet: its question is on
+    /// screen, or comes now.
+    var asksForBluetoothToAdd: Bool { adding && Self.bluetoothNotAskedYet }
+    /// macOS has not asked about Bluetooth yet, and the next scan makes it ask.
+    var willAskForBluetooth: Bool { Self.bluetoothNotAskedYet && looksForAPen }
     /// The paired pens that a device has copied in this launch, by MAC.
     private var copiesRefused: Set<String> = []
 
@@ -97,7 +103,6 @@ final class PenSession: NSObject {
         workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.didWake()
         }
-        PenFinder.shared.delegate = self
         scanTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.scanIfNeeded() }
         scanIfNeeded()
     }
@@ -134,7 +139,6 @@ final class PenSession: NSObject {
         config.pairedPens.removeAll { pen in
             pen.mac == mac || gone.contains { $0.peripheral.identifier.uuidString == pen.peripheralId }
         }
-        autoPair = false
         savePairedPens()
         Log.info("forgot pen \(mac)")
         Telemetry.event("pen.forgotten", ["pen.mac": .string(mac), "pens.paired": .int(config.pairedPens.count)])
@@ -202,7 +206,29 @@ final class PenSession: NSObject {
 
     private func scanIfNeeded() {
         guard connecting == nil, !systemAsleep else { return }
+        guard looksForAPen else {
+            // Nothing to look for, so whether Bluetooth can be used is nobody's problem yet.
+            if scanning {
+                PenFinder.shared.scanStop()
+                scanning = false
+            }
+            bluetoothOff = false
+            return
+        }
+        // Here and not at the start: the first use of the finder makes its Bluetooth manager,
+        // and macOS asks its question the moment an app makes one.
+        if !finderTaken {
+            finderTaken = true
+            PenFinder.shared.delegate = self
+        }
         guard PenFinder.shared.bluetoothOn else {
+            // The person said no to macOS while a pen was being added: stop looking. The panel
+            // says that Bluetooth is not allowed, which is the thing to change first.
+            if adding, bluetoothRefused {
+                addingTimer?.invalidate()
+                addingTimer = nil
+                adding = false
+            }
             // macOS asks for Bluetooth when an app uses Bluetooth, and not before. Waiting for a
             // grant we never request is therefore a deadlock, and a silent one: the radio is on,
             // the app says it is waiting for Bluetooth, and no dialog ever appears because nothing
@@ -365,7 +391,7 @@ final class PenSession: NSObject {
             }
         } else if pairingOpen {
             Telemetry.event("pen.paired", ["pen.mac": .string(connection.mac),
-                                           "pen.pairing": .string(adding ? "added" : "first pen"),
+                                           "pen.pairing": .string(config.pairedPens.isEmpty ? "first pen" : "added"),
                                            "pens.paired": .int(config.pairedPens.count + 1)])
             config.pairedPens.append(PairedPen(mac: connection.mac, peripheralId: id))
             savePairedPens()

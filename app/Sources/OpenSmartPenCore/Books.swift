@@ -274,6 +274,42 @@ public final class BookRegistry {
         return found.sorted { $0.1 > $1.1 }.prefix(limit).map { (page: $0.0, written: $0.1) }
     }
 
+    // MARK: - Deleting
+
+    /// Each file of one copy, relative to the notes folder: all that is under its folder, and
+    /// the transcript of each page. The bucket has them under the same names, and that is how
+    /// they are deleted there: the app does not list a bucket.
+    public func files(of folder: BookFolder) -> [String] {
+        let own = S3Sync.files(under: folder.relativePath, in: root)
+        return own + own.compactMap(PageRef.init(rawRelativePath:)).map(TranscriptStore.path(for:))
+    }
+
+    /// How many pages one copy has.
+    public func pageCount(of folder: BookFolder) -> Int {
+        files(of: folder).filter { $0.hasPrefix("transcripts/") }.count
+    }
+
+    /// Remove one copy from this Mac: its folder, and the transcripts kept for it. This cannot
+    /// be undone.
+    ///
+    /// When the copy in use is deleted and an older copy of the same paper stays, a new and
+    /// empty copy begins. Without it the next page on that paper would go into the older copy,
+    /// among pages it does not belong to.
+    public func delete(_ folder: BookFolder) throws {
+        let copies = copies(of: folder.surface)
+        let wasInUse = copies.last?.folder == folder && copies.count > 1
+        for path in [folder.relativePath, "transcripts/\(folder.name)"] {
+            let url = root.appendingPathComponent(path)
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        }
+        loadedStamp = nil
+        reloadIfNeeded()
+        copyWatcher.forget(folder.surface)
+        if wasInUse {
+            _ = make(surface: folder.surface, startedAt: Int(Date().timeIntervalSince1970 * 1000), decidedBy: nil)
+        }
+    }
+
     // MARK: - Loading
 
     private func folderNames() -> [String] {

@@ -193,6 +193,11 @@ public final class SyncCoordinator {
         publish(pages: waiting, reason: "no pen event for \(Int(quietWindow)) s", now: now)
     }
 
+    /// A deleted notebook has nothing left to send.
+    public func forget(_ folder: BookFolder) {
+        tracker.clear(tracker.pendingPages.filter { $0.folder == folder })
+    }
+
     /// Publish everything pending regardless of quiet state (menu action).
     ///
     /// Runs even with no page pending: a notebook given a new title, or a pen a new name, is a

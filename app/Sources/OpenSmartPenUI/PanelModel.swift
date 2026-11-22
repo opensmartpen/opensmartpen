@@ -259,6 +259,7 @@ public final class PanelModel: ObservableObject {
         isPublishing = coordinator.isPublishing
         let refused = session.bluetoothRefused
         if bluetoothRefused != refused { bluetoothRefused = refused }
+        if isAddingPen != session.isAdding { isAddingPen = session.isAdding }
 
         // Only while the pen is actually here. A percentage read hours ago looks live and is not,
         // and the macOS Bluetooth menu sets the convention: a battery for what is connected,
@@ -389,10 +390,17 @@ public final class PanelModel: ObservableObject {
         return .asleep
     }
 
+    /// Notebooks that a person took out of the list, by folder name. Set by the app delegate,
+    /// from the config.
+    public var hiddenBooks: Set<String> = [] {
+        didSet { if hiddenBooks != oldValue { refreshRecent() } }
+    }
+
     /// Scanning the repo is too much for the one-second tick, so the recent list is rebuilt only
     /// when the panel is opened.
     public func refreshRecent() {
         guard let books = live?.books else { return }
+        let hidden = hiddenBooks
         // Newest first, one row per copy of a notebook: the same book appearing four times
         // because you wrote four pages in it says nothing you did not already know. A second copy
         // of one product is a second row, which is how a person learns the app decided there was
@@ -403,6 +411,7 @@ public final class PanelModel: ObservableObject {
         var seen = Set<String>()
         recent = books.recentPages(limit: 60).compactMap { entry in
             guard !utility.contains(entry.page.folder.surface) else { return nil }
+            guard !hidden.contains(entry.page.folder.name) else { return nil }
             guard seen.insert(entry.page.folder.name).inserted else { return nil }
             let label = books.label(for: entry.page)
             return RecentBook(id: entry.page.folder.name,
@@ -471,30 +480,6 @@ public final class PanelModel: ObservableObject {
     @Published private(set) var agentSentenceCopied = false
     /// What a person gives their agent. Set by the app delegate, which knows the folder and the bucket.
     public var agentSentence = ""
-    /// A way to set up a new agent with something that is on this Mac.
-    public struct NewAgent: Identifiable, Equatable {
-        public let id: String
-        public var title: String
-        /// What choosing it means, in two or three words.
-        public var note: String
-        public var recommended: Bool
-
-        public init(id: String, title: String, note: String, recommended: Bool) {
-            self.id = id
-            self.title = title
-            self.note = note
-            self.recommended = recommended
-        }
-    }
-
-    /// What can be set up from here, best first. Empty when nothing suitable is installed, and
-    /// then the only way is to copy the instructions. Set by the app delegate.
-    @Published public var newAgents: [NewAgent] = []
-    /// Set by the app delegate, which knows how each one is started.
-    public var onSetUpAgent: ((String) -> Void)?
-
-    func setUp(_ agent: NewAgent) { onSetUpAgent?(agent.id) }
-
     /// Called by the app delegate when it has read the agents' records.
     public func setAgents(_ records: [AgentRecord], changed: Date?, now: Date = Date()) {
         let rows = records.map {
@@ -534,6 +519,39 @@ public final class PanelModel: ObservableObject {
     public var onAddPhoto: (() -> Void)?
 
     func addPhoto() { onAddPhoto?() }
+
+    // MARK: adding a pen
+
+    /// The app looks for a new pen, after "Add Pen". It scans for no pen before that click, so
+    /// macOS asks about Bluetooth at the moment a person sees why.
+    @Published public private(set) var isAddingPen = false
+
+    /// The pens that work with the app, on the website: for a person who has none.
+    public static let pensURL = URL(string: "https://opensmartpen.org/#pens")!
+    /// The agents that work with the app and how each differs, on the website.
+    public static let agentsURL = URL(string: "https://opensmartpen.org/#agents")!
+
+    func addPen() {
+        Telemetry.event("ui.pen.add", ["ui.source": "panel"])
+        live?.session.addPen()
+        refresh()
+    }
+
+    func cancelAddingPen() {
+        Telemetry.event("ui.pen.add_cancelled", ["ui.source": "panel"])
+        live?.session.cancelAdding()
+        refresh()
+    }
+
+    func showPensThatWork() {
+        Telemetry.event("ui.pens.website")
+        NSWorkspace.shared.open(Self.pensURL)
+    }
+
+    func showAgentsThatWork() {
+        Telemetry.event("ui.agents.website")
+        NSWorkspace.shared.open(Self.agentsURL)
+    }
 
     // MARK: Bluetooth that was refused
 
@@ -633,7 +651,8 @@ public final class PanelModel: ObservableObject {
         public var asksForAgent = false
         /// As if the person had said no to Bluetooth.
         public var bluetoothRefused = false
-        public var newAgents: [NewAgent] = []
+        /// As if "Add Pen" was clicked and no pen has answered yet.
+        public var addingPen = false
 
         public init() {}
     }
@@ -660,7 +679,7 @@ public final class PanelModel: ObservableObject {
         agents = snapshot.agents
         asksForAgent = snapshot.asksForAgent
         bluetoothRefused = snapshot.bluetoothRefused
-        newAgents = snapshot.newAgents
+        isAddingPen = snapshot.addingPen
         agentSentence = "Read the setup text and set yourself up."
         markActiveBook()
     }

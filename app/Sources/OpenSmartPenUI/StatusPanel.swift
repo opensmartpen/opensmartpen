@@ -96,8 +96,7 @@ public struct StatusPanel: View {
     /// and may not have a pen at all. The panel then leads with the one thing they can do.
     private var startsWithoutAPen: Bool { model.pens.isEmpty && model.recent.isEmpty }
 
-    /// Whatever goes at the very top: the pens, or — before any pen has ever connected — the one
-    /// sentence that gets you a pen.
+    /// Whatever goes at the very top: the pens, or, with no pen paired, the way to add one.
     @ViewBuilder private var top: some View {
         if !model.pens.isEmpty {
             penRow
@@ -105,32 +104,56 @@ public struct StatusPanel: View {
                 .padding(.vertical, 11)
         } else {
             VStack(alignment: .leading, spacing: 9) {
-                // Nothing written yet, and no pen: the one thing a person can do now is add a
-                // page some other way, so that is what the panel leads with.
+                addYourPen
+                // Nothing written yet, and no pen: a person can add a page some other way.
                 if startsWithoutAPen {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("Start without a pen")
-                            .font(.system(size: 11.5, weight: .medium))
-                        Text("Add a photo of a handwritten page. Your agent reads it like a page from a pen.")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button(action: model.addPhoto) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "camera").font(.system(size: 11))
-                                Text("Add a Photo")
-                            }
-                            .frame(maxWidth: .infinity)
+                    Button(action: model.addPhoto) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "camera").font(.system(size: 11))
+                            Text("Add Photo")
                         }
-                        .buttonStyle(InkButtonStyle(filled: true))
+                        .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(InkButtonStyle(filled: false))
                 }
-                // Waking a pen does nothing while the app may not use Bluetooth. Saying "press its
-                // button" then sends a person to a pen that cannot answer.
-                if model.bluetoothRefused { bluetoothRefused } else { wakeHint }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
+        }
+    }
+
+    /// The first step, for a Mac with no pen: a button. The app scans for no pen before the
+    /// click, and macOS asks about Bluetooth at the click, when the person sees why. Without
+    /// Bluetooth the button could do nothing, so the panel then says that in its place.
+    @ViewBuilder private var addYourPen: some View {
+        if model.bluetoothRefused {
+            bluetoothRefused
+        } else {
+            VStack(alignment: .leading, spacing: 7) {
+                stepTitle(1, "Add your pen")
+                if model.isAddingPen {
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        VStack(alignment: .leading, spacing: 1) {
+                            // With no pen in the row, this is the one place that can say it.
+                            Text(model.status == .bluetoothOff ? "Bluetooth is off" : "Looking for your pen")
+                                .font(.system(size: 11.5))
+                            Text(model.status == .bluetoothOff ? "Turn on Bluetooth on this Mac."
+                                 : "Switch it on, near this Mac.")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Button(action: model.cancelAddingPen) { Text("Cancel").frame(maxWidth: .infinity) }
+                        .buttonStyle(InkButtonStyle(filled: false))
+                } else {
+                    Button(action: model.addPen) { Text("Add Pen").frame(maxWidth: .infinity) }
+                        // One filled button in a panel, and it is the first step while that
+                        // step is on screen.
+                        .buttonStyle(InkButtonStyle(filled: true))
+                    websiteLink("No pen yet?", "See pens that work", action: model.showPensThatWork)
+                }
+            }
         }
     }
 
@@ -261,45 +284,48 @@ public struct StatusPanel: View {
         }
     }
 
-    /// Shown until an agent has transcribed the sample page. The app captures and stops; without
-    /// an agent a page never becomes text, and nothing else in the panel would say why.
-    private var connectAgent: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("Connect your agent")
-                .font(.system(size: 11.5, weight: .medium))
-            Text("Your agent turns pages into text.")
-                .font(.system(size: 10.5))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            // What is on this Mac, best first. Each one opens with the instructions already in it.
-            if !model.newAgents.isEmpty {
-                caption("Set up a new agent")
-                ForEach(model.newAgents) { agent in
-                    Button { model.setUp(agent) } label: {
-                        VStack(spacing: 1) {
-                            Text(agent.title)
-                            Text(agent.note)
-                                .font(.system(size: 9.5))
-                                .opacity(0.75)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    // One filled button in the panel at a time: the next thing to do. With no
-                    // page yet that is adding one, and an agent has nothing to read.
-                    .buttonStyle(InkButtonStyle(filled: agent.recommended && !startsWithoutAPen))
-                }
-                caption("Or use an agent you have")
+    /// The name of a step, with its number in a small disc when the panel shows the steps in a row.
+    private func stepTitle(_ number: Int?, _ title: String) -> some View {
+        HStack(spacing: 6) {
+            if let number {
+                Text("\(number)")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .frame(width: 15, height: 15)
+                    .background(Circle().fill(Color.primary.opacity(0.12)))
             }
-            Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
-                .buttonStyle(InkButtonStyle(filled: model.newAgents.isEmpty && !startsWithoutAPen))
+            Text(title).font(.system(size: 11.5, weight: .medium))
         }
     }
 
-    private func caption(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10.5))
-            .foregroundStyle(.tertiary)
-            .padding(.top, 2)
+    /// Shown until an agent keeps a record. The app captures and stops; without an agent a page
+    /// never becomes text, and nothing else in the panel would say why.
+    private var connectAgent: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            // The second step while the first is on screen above it. Alone, it has no number.
+            stepTitle(model.pens.isEmpty && !model.bluetoothRefused ? 2 : nil, "Connect your agent")
+            // The link is at the end of the text, so it wraps with it. It goes through the model,
+            // which also counts the click.
+            (Text("Paste this into Claude Code, Codex or another agent. ").foregroundColor(.secondary)
+             + Text(.init("[Learn more](\(PanelModel.agentsURL.absoluteString))")))
+                .font(.system(size: 10.5))
+                .tint(Ink.accent)
+                .fixedSize(horizontal: false, vertical: true)
+                .environment(\.openURL, OpenURLAction { _ in model.showAgentsThatWork(); return .handled })
+            // One filled button in the panel at a time. While "Add Pen" is above, it is that one.
+            Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
+                .buttonStyle(InkButtonStyle(filled: !model.pens.isEmpty))
+        }
+    }
+
+    /// A small question and a link to the website, under the button of a step.
+    private func websiteLink(_ question: String, _ label: String, action: @escaping () -> Void) -> some View {
+        HStack(spacing: 4) {
+            Text(question).foregroundStyle(.secondary)
+            Button(label, action: action)
+                .buttonStyle(.plain)
+                .foregroundStyle(Ink.accent)
+        }
+        .font(.system(size: 10.5))
     }
 
     /// Who reads the pages. A dot for each: the accent while it keeps up, grey when pages changed
@@ -320,7 +346,7 @@ public struct StatusPanel: View {
     /// The person said no when macOS asked for Bluetooth, or a rule on this Mac forbids it. A pen
     /// can then never connect, and nothing else in the panel would say why: the pen is on, the
     /// radio is on, and still nothing happens. One sentence and the one place to change it.
-    /// Not a filled button while the panel leads with a photo: a photo needs no Bluetooth.
+    /// Not a filled button while nothing is written yet: the photo and the agent need no Bluetooth.
     private var bluetoothRefused: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text("Bluetooth is not allowed")
@@ -332,14 +358,6 @@ public struct StatusPanel: View {
             Button("Open Bluetooth Settings", action: model.openBluetoothSettings)
                 .buttonStyle(InkButtonStyle(filled: !startsWithoutAPen))
         }
-    }
-
-    private var wakeHint: some View {
-        Text(model.recent.isEmpty ? "Have a pen? Press its button to wake it, and keep it near this Mac."
-             : "Press the pen's button to wake it, and keep it near this Mac.")
-            .font(.system(size: 11.5))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func copying(_ percent: Int) -> some View {

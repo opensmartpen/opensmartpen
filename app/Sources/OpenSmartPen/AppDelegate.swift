@@ -50,6 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var telemetryNotice: TelemetryNoticeController?
     /// The first window has not been answered yet.
     private var welcomeOwed = false
+    /// The panel stayed open under the Bluetooth question of macOS.
+    private var heldForBluetooth = false
     /// The pens have not been started, so that macOS asks about Bluetooth after the first window.
     private var pensWaitForWelcome = false
     private let startedAt = Date()
@@ -145,11 +147,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model = PanelModel(session: session, coordinator: coordinator, config: config,
                            books: books, pens: pens, penState: penState)
+        model.hiddenBooks = Set(config.hiddenBooks)
         model.onShowLive = { [weak self] in self?.showViewer(nil) }
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.onAddPhoto = { [weak self] in self?.addPhoto() }
-        model.onSetUpAgent = { [weak self] id in self?.setUpAgent(id) }
         model.onOpenPage = { [weak self] page in self?.showViewer(page) }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         coordinator.onOfflineStored = { [weak self] pages in
@@ -346,12 +348,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// After "Get Started" the panel opens by itself: the app has no other window, and a person
-    /// who never used it does not know to look for a pencil in the menu bar. When macOS asks
-    /// about Bluetooth now, the panel waits for that answer: it closes at a click elsewhere, so
-    /// it would be gone before it was seen.
+    /// who never used it does not know to look for a pencil in the menu bar. With no pen paired
+    /// that is at once: macOS asks about Bluetooth only at "Add Pen". A Mac with a paired pen
+    /// and no answer about Bluetooth is asked now, and the panel waits for that answer: it
+    /// closes at a click elsewhere, so it would be gone before it was seen.
     private func openPanelAfterWelcome(tries: Int = 0) {
         // Two minutes is long enough for the question. After that the person is elsewhere.
-        if PenSession.bluetoothNotAskedYet, tries < 240 {
+        if session.willAskForBluetooth, tries < 240 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.openPanelAfterWelcome(tries: tries + 1)
             }
@@ -510,16 +513,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var photoImport: PhotoImportController?
 
-    /// One entry in the panel, one menu at the mouse: a file, the sample while there is no Photos
-    /// notebook, and below them what macOS adds for each iPhone or iPad near this Mac. The panel
-    /// stays until the menu closes.
+    /// One entry in the panel, one menu at the mouse: a file, the sample photos, and below them
+    /// what macOS adds for each iPhone or iPad near this Mac. The panel stays until the menu closes.
     private func addPhoto() {
         Telemetry.event("ui.photo.menu")
         let menu = PhotoImportController()
         menu.addEntry("Choose a File\u{2026}") { [weak self] in self?.uploadPhoto() }
-        if books.current(for: PhotoPages.surface) == nil {
-            menu.addEntry("Use the Sample Page") { [weak self] in self?.addSample() }
-        }
+        menu.addEntry("Use Sample Photo\u{2026}") { [weak self] in self?.showSamples() }
         menu.onImage = { [weak self] data, ext in
             self?.file(photo: data, ext: ext, from: "device", show: true, taken: Date())
         }
@@ -571,12 +571,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The page the app brings itself, for a person with no pen and no photo at hand who wants to
-    /// see an agent read something. Offered only until the Photos notebook exists: the notebook
-    /// is made when the first picture is filed, and not before.
-    private func addSample() {
+    private var sampleGallery: SampleGalleryController?
+
+    /// The window with the sample pages. The one that is clicked is filed as a photo.
+    private func showSamples() {
         panel?.dismiss()
-        if let picture = SamplePicture.png() { file(photo: picture, ext: "png", from: "sample", show: true) }
+        Telemetry.event("ui.photo.samples")
+        let gallery = SampleGalleryController { [weak self] sample in
+            self?.sampleGallery = nil
+            Telemetry.event("ui.photo.sample", ["photo.sample": .string(sample.id)])
+            if let picture = sample.png() { self?.file(photo: picture, ext: "png", from: "sample", show: true) }
+        }
+        sampleGallery = gallery
+        NSApp.activate(ignoringOtherApps: true)
+        gallery.showWindow(nil)
     }
 
     /// A photo is complete when it arrives: there is no pen to wait for. So it is drawn and sent now.
@@ -609,35 +617,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Start a new agent in the notes folder, with the sentence that sends it to the website.
-    private func setUpAgent(_ id: String) {
-        panel?.dismiss()
-        // Which of the two the person chose. The id is one of the app's own two words.
-        if ["claude-code", "claude-cowork"].contains(id) {
-            Telemetry.event("ui.agent.setup", ["agent.kind": .string(id)])
-        }
-        switch id {
-        case "claude-cowork":
-            if let link = Agents.coworkLink(folder: config.dataURL, bucket: config.s3Account()?.destination) {
-                NSWorkspace.shared.open(link)
-            }
-        case "claude-code":
-            guard let claude = Agents.claudeCommand() else { return }
-            // A `.command` file is what the Terminal runs when it is opened. It needs no
-            // permission to control the Terminal, which a script sent to it would.
-            let script = FileManager.default.temporaryDirectory
-                .appendingPathComponent("Set up Open Smart Pen agent.command")
+    /// Delete one notebook: from the bucket first, by the names of its files, then from this
+    /// Mac. When the bucket refuses, nothing on this Mac is deleted, and the person can try again.
+    private func delete(_ book: BookRecord, done: @escaping (String?) -> Void) {
+        let folder = book.folder
+        let files = books.files(of: folder)
+        let sync: S3Sync = sync
+        agentQueue.async { [weak self] in
+            var problem: String?
             do {
-                try Agents.terminalScript(folder: config.dataURL, bucket: config.s3Account()?.destination,
-                                          claude: claude)
-                    .write(to: script, atomically: true, encoding: .utf8)
-                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-                NSWorkspace.shared.open(script)
+                try sync.delete(files)
             } catch {
-                Log.warn("could not start Claude Code in the Terminal: \(error)")
+                // The bucket's own words can name the bucket and a file. Telemetry gets the short form.
+                Log.warn("could not delete a notebook from the bucket: \(Telemetry.describe(error))")
+                problem = "The bucket did not delete the notebook: \(error.localizedDescription) "
+                    + "Nothing was deleted on this Mac."
             }
-        default:
-            break
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if problem == nil {
+                    do {
+                        try self.books.delete(folder)
+                        self.coordinator.forget(folder)
+                    } catch {
+                        // The error names a path with the folder of the notebook: not for telemetry.
+                        Log.error("could not delete a notebook from this Mac: \(error)", telemetry: false)
+                        problem = "The notebook could not be deleted from this Mac: \(error.localizedDescription)"
+                    }
+                }
+                self.model.refreshRecent()
+                done(problem)
+            }
+        }
+    }
+
+    /// Remove one agent's record, from the folder and from the bucket. Answers with nil, or with
+    /// what went wrong.
+    private func removeAgent(_ number: Int, done: @escaping (String?) -> Void) {
+        let root = config.dataURL, client = sync.connection
+        agentQueue.async { [weak self] in
+            var problem: String?
+            do {
+                try Agents.remove(number, root: root, client: client)
+            } catch {
+                Log.warn("could not remove an agent's record: \(Telemetry.describe(error))")
+                problem = "The agent could not be removed: \(error.localizedDescription)"
+            }
+            DispatchQueue.main.async {
+                self?.showAgents()
+                self?.pushSyncStatus()
+                done(problem)
+            }
         }
     }
 
@@ -645,18 +675,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func checkAgents() {
         model.agentSentence = Agents.sentence(folder: config.dataURL,
                                               bucket: config.s3Account()?.destination)
-        // Asked each time: an agent can be installed or removed while this runs.
-        var found: [PanelModel.NewAgent] = []
-        if Agents.claudeCommand() != nil {
-            found.append(.init(id: "claude-code", title: "Claude Code", note: "Fast \u{00B7} recommended",
-                               recommended: true))
-        }
-        if NSWorkspace.shared.urlForApplication(withBundleIdentifier: Agents.claudeDesktop) != nil {
-            found.append(.init(id: "claude-cowork", title: "Claude Cowork",
-                               note: found.isEmpty ? "Checks each hour" : "Simple \u{00B7} checks each hour",
-                               recommended: found.isEmpty))
-        }
-        if model.newAgents != found { model.newAgents = found }
         if let client = sync.connection, Date().timeIntervalSince(agentsAsked) > 60 {
             agentsAsked = Date()
             let root = config.dataURL
@@ -705,6 +723,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panelHost = NSHostingController(rootView: StatusPanel(model: model, now: panelNow))
         panel = MenuBarPanel(content: panelHost)
+        panel.holdsOpen = { [weak self] in self?.session.asksForBluetoothToAdd ?? false }
         panel.onCommand = { [weak self] key in
             switch key {
             case ",": self?.showSettings(); return true
@@ -795,7 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.lastUpload = coordinator.lastPublish?.date
         status.lastFiles = coordinator.lastPublish?.files ?? 0
         status.error = coordinator.lastError
-        status.agents = agentRecords.map(\.name)
+        status.agents = agentRecords.map { SyncStatus.Agent(id: $0.number, name: $0.name) }
         status.agentSentence = model.agentSentence
         if store.sync != status { store.sync = status }
     }
@@ -819,6 +838,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let telemetryChanged = updated.telemetry != config.telemetry
                 config = updated
                 coordinator.quietWindow = updated.quietSeconds
+                model.hiddenBooks = Set(updated.hiddenBooks)
                 applyStartAtLogin()
                 if bucketChanged { connectBucket() }
                 // A bucket's name is hidden from the moment it is connected. Only a change to the
@@ -829,6 +849,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // A new title is a changed file with no page to carry it, so it is sent now.
             store.onRecordsChange = { [weak self] in self?.coordinator.publishAll() }
+            store.onDeleteBook = { [weak self] book, done in self?.delete(book, done: done) }
+            store.onRemoveAgent = { [weak self] number, done in self?.removeAgent(number, done: done) }
             store.onSyncNow = { [weak self] in
                 self?.coordinator.publishAll()
                 self?.stateChanged()
@@ -926,6 +948,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func tickPanel() {
         panelNow = Date()
         model.refresh(now: panelNow)
+        // The question of macOS took the keyboard from the panel. Take it back when the question
+        // is answered, so that Escape and a click elsewhere close the panel as before.
+        if session.asksForBluetoothToAdd {
+            heldForBluetooth = true
+        } else if heldForBluetooth {
+            heldForBluetooth = false
+            if panel?.isVisible == true {
+                NSApp.activate(ignoringOtherApps: true)
+                panel?.makeKey()
+            }
+        }
         refreshStatusButton()
         panelHost?.rootView = StatusPanel(model: model, now: panelNow)
         panel?.resizeToContent()

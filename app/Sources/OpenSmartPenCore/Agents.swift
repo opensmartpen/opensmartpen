@@ -43,7 +43,7 @@ public struct AgentRecord: Equatable {
 public enum Agents {
     /// How long an agent may leave a change unseen before it is shown as behind.
     public static let patience: TimeInterval = 2 * 60 * 60
-    /// The most agents ever asked for. The app asks by name and stops at the first gap.
+    /// The most agents ever asked for. The app asks by name.
     public static let limit = 16
 
     public static func path(_ number: Int) -> String { "agents/\(number).json" }
@@ -61,72 +61,42 @@ public enum Agents {
         return text + "."
     }
 
-    /// Claude Desktop, by the name macOS knows it under.
-    public static let claudeDesktop = "com.anthropic.claudefordesktop"
-
-    /// A link that opens Claude Desktop on a new Cowork task with the notes folder, and the
-    /// sentence already typed. Nothing is sent: the person reads it and presses Return. Claude asks
-    /// once whether another app may give it the folder.
-    ///
-    /// Cowork is where a person who is not a programmer works with Claude and with folders. Its
-    /// cost is speed: it wakes on its own schedule, hourly at the shortest.
-    ///
-    /// The form `claude://cowork/new?q=…&folder=…` was read out of Claude Desktop 5.11 and tried
-    /// on 2026-11-17.
-    public static func coworkLink(folder: URL, bucket: String?) -> URL? {
-        var parts = URLComponents()
-        parts.scheme = "claude"
-        parts.host = "cowork"
-        parts.path = "/new"
-        parts.queryItems = [URLQueryItem(name: "q", value: sentence(folder: folder, bucket: bucket)),
-                            URLQueryItem(name: "folder", value: folder.path)]
-        return parts.url
-    }
-
-    /// A script for the Terminal that starts Claude Code in the notes folder with the sentence.
-    /// Claude Code can run commands, so it can set up a check that costs nothing while no page
-    /// changes and runs each minute: the fast way. The prompt is sent as the session starts;
-    /// Claude Code still asks before it does anything.
-    public static func terminalScript(folder: URL, bucket: String?, claude: URL) -> String {
-        func quoted(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-        return """
-        #!/bin/zsh
-        cd \(quoted(folder.path)) || exit 1
-        exec \(quoted(claude.path)) \(quoted(sentence(folder: folder, bucket: bucket)))
-
-        """
-    }
-
-    /// Where the `claude` command is, among the places its installers put it. An app started by
-    /// macOS does not have the person's shell path, so the places are named.
-    public static func claudeCommand(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
-        let places = [home.appendingPathComponent(".local/bin/claude"),
-                      home.appendingPathComponent(".claude/local/claude"),
-                      URL(fileURLWithPath: "/opt/homebrew/bin/claude"),
-                      URL(fileURLWithPath: "/usr/local/bin/claude")]
-        return places.first { FileManager.default.isExecutableFile(atPath: $0.path) }
-    }
-
-    /// The agents recorded in the folder on this Mac, in order, up to the first gap.
+    /// The agents recorded in the folder on this Mac, in order. A number with no file is passed
+    /// over: a person can remove an agent, and the ones after it stay.
     public static func load(root: URL) -> [AgentRecord] {
-        var out: [AgentRecord] = []
-        for number in 0..<limit {
-            guard let data = try? Data(contentsOf: root.appendingPathComponent(path(number))) else { break }
-            if let record = AgentRecord(number: number, json: data) { out.append(record) }
+        (0..<limit).compactMap { number in
+            (try? Data(contentsOf: root.appendingPathComponent(path(number))))
+                .flatMap { AgentRecord(number: number, json: $0) }
         }
-        return out
     }
 
-    /// Ask the bucket for each agent's record, by name, and keep what it has in the folder. Stops
-    /// at the first one that is not there. Nothing is listed, so the key needs no more than it has.
+    /// Ask the bucket for each agent's record, by name, and keep what it has in the folder.
+    /// Nothing is listed, so the key needs no more than it has. It asks for each number the
+    /// folder knows, and then on to the first one that is not there.
     public static func fetch(root: URL, client: S3Client) {
+        let known = load(root: root).map(\.number).max() ?? -1
         for number in 0..<limit {
-            guard let data = try? client.get(path(number)) else { break }
+            guard let data = try? client.get(path(number)) else {
+                if number > known { break }
+                continue
+            }
             let url = root.appendingPathComponent(path(number))
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                      withIntermediateDirectories: true)
             try? data.write(to: url, options: .atomic)
         }
+    }
+
+    /// Remove one agent's record, from the bucket and from the folder. The agent is not stopped:
+    /// the app cannot reach it. One that still runs writes its record again at its next check.
+    ///
+    /// The folder first: an agent on this Mac has its record only there, and a bucket that
+    /// refuses must not keep it in the list. When the bucket refuses, the error says so, and the
+    /// record comes back from the bucket at the next look.
+    public static func remove(_ number: Int, root: URL, client: S3Client?) throws {
+        let url = root.appendingPathComponent(path(number))
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        try client?.delete(path(number))
     }
 
     /// When a page picture last changed, as `last-modified.txt` has it.

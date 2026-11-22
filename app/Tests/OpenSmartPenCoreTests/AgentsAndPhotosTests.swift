@@ -21,13 +21,16 @@ final class AgentsAndPhotosTests: XCTestCase {
 
     // MARK: agents
 
-    func testAgentsAreReadInOrderUpToTheFirstGap() throws {
+    func testAgentsAreReadInOrderAndAGapIsPassedOver() throws {
         try write(#"{"name":"Claude Code","alive":"2026-11-14T10:00:00Z","url":"https://example.com/a"}"#, to: "agents/0.json")
         try write(#"{"name":"Codex","alive":"2026-11-14T09:00:00.500Z"}"#, to: "agents/1.json")
         try write(#"{"name":"Lost","alive":"2026-11-14T09:00:00Z"}"#, to: "agents/3.json")
 
         let agents = Agents.load(root: root)
-        XCTAssertEqual(agents.map(\.name), ["Claude Code", "Codex"], "3 is after a gap, and is never asked for")
+        XCTAssertEqual(agents.map(\.name), ["Claude Code", "Codex", "Lost"], "a removed agent leaves a gap")
+
+        try Agents.remove(0, root: root, client: nil)
+        XCTAssertEqual(Agents.load(root: root).map(\.name), ["Codex", "Lost"])
         XCTAssertEqual(agents[0].url, URL(string: "https://example.com/a"))
         XCTAssertNil(agents[1].url)
     }
@@ -65,29 +68,6 @@ final class AgentsAndPhotosTests: XCTestCase {
         XCTAssertTrue(local.hasSuffix("The pages are in the folder ~/OpenSmartPen on my Mac."))
         XCTAssertTrue(Agents.sentence(folder: folder, bucket: "https://s3.example/notes")
             .hasSuffix("on my Mac, and in the bucket https://s3.example/notes."))
-    }
-
-    /// The link was read out of Claude Desktop and tried by hand. This holds its form still.
-    func testTheCoworkLinkOpensTheNotesFolderWithThePromptTyped() throws {
-        let folder = URL(fileURLWithPath: "/Users/someone/Open Smart Pen")
-        let link = try XCTUnwrap(Agents.coworkLink(folder: folder, bucket: nil))
-        XCTAssertEqual(link.scheme, "claude")
-        XCTAssertEqual(link.host, "cowork")
-        XCTAssertEqual(link.path, "/new")
-        let items = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
-        let query = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
-        XCTAssertEqual(query["folder"], "/Users/someone/Open Smart Pen")
-        XCTAssertEqual(query["q"], Agents.sentence(folder: folder, bucket: nil))
-        XCTAssertFalse(query["q"]!.hasPrefix("/"), "Claude refuses a prompt that starts with a slash")
-    }
-
-    /// A folder with a space or a quote in its name must not break out of the command.
-    func testTheTerminalScriptQuotesWhatItIsGiven() {
-        let script = Agents.terminalScript(folder: URL(fileURLWithPath: "/Users/o'neil/Open Smart Pen"),
-                                           bucket: nil, claude: URL(fileURLWithPath: "/opt/homebrew/bin/claude"))
-        XCTAssertTrue(script.hasPrefix("#!/bin/zsh\n"))
-        XCTAssertTrue(script.contains(#"cd '/Users/o'\''neil/Open Smart Pen' || exit 1"#))
-        XCTAssertTrue(script.contains("exec '/opt/homebrew/bin/claude' '"))
     }
 
     // MARK: photos

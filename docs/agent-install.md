@@ -15,6 +15,8 @@ The pages are in one of two places, with the same layout:
 
 Use the folder if you run on that Mac. Use the bucket if you run somewhere else. Use one of them, not both.
 
+If you run somewhere else and the person gave you no bucket, stop. You cannot read the folder, and you cannot connect a bucket: only the person can, in the app, in Settings, under "Sync". Tell them to connect a bucket there, then to give you its address and a key. If they have no bucket, tell them that Amazon S3 and each service with the same interface work, for example Cloudflare R2 and Supabase.
+
 ## The layout
 
 ```
@@ -26,9 +28,9 @@ transcripts/                  yours: one text file for each page
 agents/<n>.json               yours: who you are, and when you were last alive
 ```
 
-The app writes all of it except `transcripts/` and `agents/`. Do not write under `books/`. Ignore `books/s3-o1013-b1-*` (a printed control strip, not notes), `pens/`, `mode.jsonl` and `palette.json`.
+The app writes all of it except `transcripts/` and `agents/`. In this folder or bucket you write two things: the transcript of each page, and your one file `agents/<n>.json`. Keep each other file of yours in your own place. Do not change or delete a file that the app wrote. Ignore `pens/`, `mode.jsonl` and `palette.json`.
 
-Not each page comes from a pen. The notebook "Photos" holds pages that arrived as a picture. Such a page has no strokes: its `raw/p<N>.jsonl` has one line, `{"t":"image","file":"p<N>.jpg","added":<ms>,"taken":<ms>}`, with the times in epoch milliseconds. `file` is the picture as it arrived, in the same folder. `taken` is when the photo was taken; it is absent when the app does not know. `added` is when the picture came into the app. Use `taken` as the time of the page, and `added` when there is no `taken`. Treat the page as one piece of writing at that time: a photo does not say when each line was written. Its page picture is in `pages/` as for each other page, and you transcribe it the same way. The notebook exists only when the person added a picture. Its first page can be a sample page that the app offers.
+Not each page comes from a pen. The notebook "Photos" holds pages that arrived as a picture. Such a page has no strokes: its `raw/p<N>.jsonl` has one line, `{"t":"image","file":"p<N>.jpg","added":<ms>,"taken":<ms>}`, with the times in epoch milliseconds. `file` is the picture as it arrived, in the same folder. `taken` is when the photo was taken; it is absent when the app does not know. `added` is when the picture came into the app. Use `taken` as the time of the page, and `added` when there is no `taken`. Treat the page as one piece of writing at that time: a photo does not say when each line was written. Its page picture is in `pages/` as for each other page, and you transcribe it the same way. The notebook exists only when the person added a picture. A page in it can be a sample page that the app offers.
 
 ## Setup, once
 

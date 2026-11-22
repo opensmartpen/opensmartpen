@@ -85,7 +85,7 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `pen.powered_off` | The pen said it is switching off | `pen.mac`, `pen.power_off_reason` |
 | `pen.forgotten` | A pen was removed in Settings | `pen.mac`, `pens.paired` |
 | `pen.rejected` | A pen that is not paired connected and was let go | None |
-| `pen.add_timed_out` | "Add Pen…" found no pen in two minutes | None |
+| `pen.add_timed_out` | "Add Pen" found no pen in two minutes | None |
 | `bluetooth.unavailable` | Bluetooth is off or not allowed | `bluetooth.authorization` |
 | `control.tap` | A tap on the paper control strip | `control.button` (for example `ink red`, `width thin`, `no button`) |
 
@@ -121,15 +121,21 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.photo.menu` | "Add Photo…" was clicked | None |
 | `ui.bluetooth.settings_opened` | "Open Bluetooth Settings" was clicked, in the panel of an app that may not use Bluetooth | None |
 | `ui.agent.copy_instructions` | "Copy instructions" was clicked | `ui.source` (`panel`, `settings`) |
+| `ui.agent.removed` | An agent was removed in Settings | None |
 | `ui.agent.opened` | An agent's link was opened | None |
-| `ui.agent.setup` | "Set up a new agent" was clicked for one of the agents the app offers | `agent.kind` (`claude-code`, `claude-cowork`) |
 | `ui.update.check` | "Check for Updates…" was clicked | None |
 | `ui.sync_now` | A sync was asked for by hand | `ui.source` |
 | `ui.notes.opened`, `ui.log.opened` | The notes folder or the log was opened | `ui.source` |
 | `ui.settings.opened` | The settings window was opened | None |
 | `ui.settings.tab` | A tab of the settings window came on screen | `settings.tab` |
 | `ui.setting.changed` | A setting was changed | `setting.name`, `setting.value`. For: `startAtLogin`, `quietSeconds`, `deleteFromPenAfterPublish`, `lowBatteryPercent`, `memoryWarnPercent`, `updateAutomatically`, and `telemetry` when it is turned on |
-| `ui.pen.add`, `ui.pen.add_cancelled` | "Add Pen…" or its "Cancel" was clicked | None |
+| `ui.pen.add`, `ui.pen.add_cancelled` | "Add Pen" or its "Cancel" was clicked, in the panel or in Settings | `ui.source` (`panel`, `settings`) |
+| `ui.book.shown_in_panel` | "Show in panel" was changed for a notebook | `book.surface`, `book.shown` |
+| `ui.book.deleted` | A notebook was deleted in Settings | `book.surface`, `book.pages`, `book.bucket` (a bucket was connected) |
+| `ui.photo.samples` | "Use Sample Photo…" was clicked | None |
+| `ui.photo.sample` | A sample photo was chosen | `photo.sample` (`todo`, `meeting`, `study`, `plan`) |
+| `ui.pens.website` | "See pens that work" was clicked in the panel | None |
+| `ui.agents.website` | "Learn more" was clicked under "Connect your agent" in the panel | None |
 | `ui.pen.forget` | "Remove" was confirmed for a pen | `pen.mac` |
 | `ui.pen.edited` | A pen was changed in Settings | `pen.mac`, and what changed: `pen.renamed` (only that it was), `pen.mode`, `pen.ink`, `pen.width` |
 | `ui.book.renamed` | A notebook got a new title | `book.surface`. Not the title |

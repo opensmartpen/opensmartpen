@@ -4,7 +4,7 @@ macOS menubar app that keeps a smartpen's strokes flowing into `~/OpenSmartPen` 
 
 ## What it does
 
-- Accepts several pens, all connected at once. The first pen ever seen is paired automatically; every pen after that is added in Settings → Pens ("Add pen…", then switch the pen on), so a pen on the next desk is never taken by accident. "Forget…" on a pen stops syncing from it and keeps its record, because the strokes it wrote still name it.
+- Accepts several pens, all connected at once. A pen is added with "Add Pen", in the panel while no pen is paired and in Settings → Pens after that; the app then takes the next pen that is switched on near the Mac. With no pen paired and none being added, the app does not scan, so macOS asks about Bluetooth only at "Add Pen". "Forget…" on a pen stops syncing from it and keeps its record, because the strokes it wrote still name it.
 - Scans whenever a paired pen is not connected, and connects one pen at a time. Each connected pen authorises, drains and streams on its own.
 - On connect, per pen: authorises (sends the configured PIN once if the pen asks), sets the pen clock, subscribes to all notebooks, then drains offline memory one notebook at a time.
 - Live strokes are appended to `books/<copy>/raw/p{page}.jsonl` as they finish. Each physical copy of a notebook is one folder (ADR-002).
@@ -161,7 +161,7 @@ one captured file and could only be repaired by cutting it.
 | `dataPath` | `~/OpenSmartPen` | Where the notes are kept. |
 | `quietSeconds` | `30` | Seconds with no event from any pen before the waiting pages are uploaded. |
 | `s3` | none | The bucket: `bucket`, `region`, `accessKeyId`, and optionally `prefix` (a folder in the bucket) and `endpoint` (for a service other than Amazon S3). Set in Settings → Sync, which tests the connection before saving it. The secret key is not here: it is in `s3-secret` beside this file, mode 0600. |
-| `pairedPens` | none | The pens this Mac accepts, each with its Bluetooth address and the identifier macOS gave it. A pen that has connected before must agree in both. The first pen seen is added automatically; add and remove the others in Settings → Pens. |
+| `pairedPens` | none | The pens this Mac accepts, each with its Bluetooth address and the identifier macOS gave it. A pen that has connected before must agree in both. Add a pen with "Add Pen"; remove one in Settings → Pens. |
 | `startAtLogin` | `true` | Start the app when you log in. Set in Settings → General. |
 | `penPassword` | none | PIN for a locked pen. Sent once per connection; never retried, because repeated wrong PINs factory-reset the pen. |
 | `deleteFromPenAfterPublish` | `true` | Free pen memory once a notebook is synced: uploaded when a bucket is connected, on this Mac's disk when none is. |
@@ -169,6 +169,7 @@ one captured file and could only be repaired by cutting it.
 | `memoryWarnPercent` | `70` | Notify when pen memory usage reaches this level. |
 | `controlBooks` | `["s3/o1013/b1"]` | Printed control surfaces rather than paper to write on. Taps on them are kept as evidence and decoded as settings, but they are never pages. |
 | `sdkDebugLog` | `false` | Print the SDK's protocol log. |
+| `hiddenBooks` | none | Notebooks that the panel does not list, by folder name. Set with "Show in panel" in Settings → Notebooks. |
 | `telemetry` | see the link | What the app reports to its makers: `enabled`, and optionally `endpoint` (the collector) and `headers`. `../docs/telemetry.md` says when it is on and where it goes. |
 
 ## The bucket
@@ -176,8 +177,9 @@ one captured file and could only be repaired by cutting it.
 The layout of the bucket is the layout of the notes folder, under `prefix` if one is set.
 `../docs/processing.md` has it, with the order of the uploads and what an agent watches.
 
-A key that is only allowed `s3:PutObject` on the bucket is enough to upload: the app never lists
-and never deletes. To show a transcript in the viewer the key needs `s3:GetObject` too.
+A key that is only allowed `s3:PutObject` on the bucket is enough to upload: the app never lists,
+and a sync never deletes. To show a transcript in the viewer the key needs `s3:GetObject` too, and
+to delete a notebook or remove an agent in Settings it needs `s3:DeleteObject`.
 
 A PNG that is missing or older than its strokes is drawn again at the next start.
 

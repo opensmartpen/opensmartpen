@@ -2,8 +2,8 @@ import Foundation
 
 /// Copies captured files to the bucket, and remembers which ones it has copied.
 ///
-/// One direction only. Nothing is ever read back from the bucket and nothing in it is ever
-/// deleted: the notes folder on this Mac is the original, and the bucket is where the rest of
+/// One direction only. Nothing is ever read back from the bucket, and nothing in it is deleted
+/// by a sync: the notes folder on this Mac is the original, and the bucket is where the rest of
 /// the world picks the pages up.
 ///
 /// A captured page goes up as two files — the strokes, then the PNG that `PagePictures` keeps
@@ -135,6 +135,25 @@ public final class S3Sync: Publishing {
             }
         }
         return out
+    }
+
+    /// Delete these files from the bucket, by name: a notebook that a person deleted. With no
+    /// bucket connected it does nothing. In each case, also when the bucket refuses part of the
+    /// way, the files leave the list of what was uploaded, so what stays on disk goes up again.
+    public func delete(_ paths: [String]) throws {
+        guard let client = connection else { return }
+        defer { forget(paths) }
+        for path in paths { try client.delete(path) }
+    }
+
+    /// Drop these files from the list of what was uploaded: they were deleted from the bucket,
+    /// or may have been. A file that is still on disk then goes up again at the next sync.
+    public func forget(_ paths: [String]) {
+        lock.lock()
+        for path in paths { sent[path] = nil }
+        let client = self.client
+        lock.unlock()
+        if let client { save(for: client) }
     }
 
     // MARK: - pieces
