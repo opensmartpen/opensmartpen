@@ -20,7 +20,7 @@ private typealias Publish = PanelModel.Publish
 /// see even once.
 public enum Scenario: String, CaseIterable {
     case synced, writing, waiting, copying, failing, asleep, bluetoothOff, bluetoothRefused, firstRun, firstRunLooking, firstRunRefused
-    case firstRunAgent, photoOnly, firstRunSkipped
+    case firstRunAgent, photoOnly
     case newNotebook, threePens, penOpen
     /// The picture in the README: `assets/panel.png`.
     case readme
@@ -40,7 +40,6 @@ public enum Scenario: String, CaseIterable {
         case .firstRunRefused: return "First run, no Bluetooth"
         case .firstRunAgent: return "First run, agent"
         case .photoOnly: return "No pen, a photo"
-        case .firstRunSkipped: return "First run, idea skipped"
         case .newNotebook: return "A second pad"
         case .threePens: return "Three pens"
         case .penOpen: return "Pen settings"
@@ -63,7 +62,6 @@ public enum Scenario: String, CaseIterable {
         case .firstRunRefused: return "said no to macOS at the first start"
         case .firstRunAgent: return "an agent is connected, no page yet"
         case .photoOnly: return "set up with no pen"
-        case .firstRunSkipped: return "Skip was clicked on the idea"
         case .newNotebook: return "two copies, decided silently"
         case .threePens: return "what the width is cut for"
         case .penOpen: return "a tile clicked open"
@@ -138,7 +136,7 @@ public enum Scenario: String, CaseIterable {
                 PenRow(id: "b", name: "Red one", ink: .red, width: .thin, mode: .writing,
                        percent: nil, low: false, active: false, state: "Bluetooth not allowed", awake: false),
             ]
-        case .firstRun, .firstRunLooking, .firstRunRefused, .firstRunAgent, .photoOnly, .firstRunSkipped:
+        case .firstRun, .firstRunLooking, .firstRunRefused, .firstRunAgent, .photoOnly:
             s.battery = nil
             s.lastPublish = nil
             s.recent = []
@@ -148,8 +146,6 @@ public enum Scenario: String, CaseIterable {
             s.agents = []
             s.asksForAgent = true
             if self == .firstRunRefused { s.bluetoothRefused = true }
-            // The states that are about the pen step come after the idea.
-            if self != .firstRun { s.skippedIdea = true }
             if self == .firstRunAgent || self == .photoOnly {
                 s.asksForAgent = false
                 s.agents = [PanelModel.AgentRow(id: 0, name: "Claude Code", alive: "alive now", behind: false,

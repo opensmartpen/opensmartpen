@@ -152,20 +152,28 @@ public struct Idea: Identifiable, Equatable {
 
 /// The window with the ideas and the sample pages. "Try the Sample Photo" or a click on a sample page
 /// files it as a photo and closes the window.
-public final class SampleGalleryController: NSWindowController {
+public final class SampleGalleryController: NSWindowController, NSWindowDelegate {
+    /// Called when the window closes and no page was chosen: by "Skip", or by its close button.
+    public var onLeave: (() -> Void)?
+    private var chose = false
+
     /// `setup` is the sentence that connects an agent, while none is connected: each instruction
-    /// then starts with it, so one paste does both. `onChoose` gets the id of what was chosen and
-    /// its picture.
-    public init(setup: String? = nil, onChoose: @escaping (String, Data) -> Void) {
+    /// then starts with it, so one paste does both. `first` is the first start: the window then
+    /// comes before the panel, and has "Skip". `onChoose` gets the id of what was chosen and its
+    /// picture.
+    public init(setup: String? = nil, first: Bool = false, onChoose: @escaping (String, Data) -> Void) {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 560),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Ideas"
         window.isReleasedWhenClosed = false
         super.init(window: window)
-        let host = NSHostingController(rootView: SampleGallery(setup: setup) { [weak self] id, picture in
+        let host = NSHostingController(rootView: SampleGallery(setup: setup,
+                                                               skip: first ? { [weak self] in self?.close() } : nil) { [weak self] id, picture in
+            self?.chose = true
             self?.close()
             onChoose(id, picture)
         })
+        window.delegate = self
         host.sizingOptions = [.preferredContentSize]
         window.contentViewController = host
         window.center()
@@ -173,10 +181,16 @@ public final class SampleGalleryController: NSWindowController {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    public func windowWillClose(_ notification: Notification) {
+        if !chose { onLeave?() }
+    }
 }
 
 private struct SampleGallery: View {
     var setup: String?
+    /// At the first start: the way past the ideas, to the panel.
+    var skip: (() -> Void)?
     let choose: (String, Data) -> Void
     @State private var copied: String?
     @Environment(\.colorScheme) private var scheme
@@ -209,6 +223,10 @@ private struct SampleGallery: View {
             HStack(spacing: 4) {
                 Text("Have an idea of your own?").foregroundStyle(.secondary)
                 Link("Add it on GitHub", destination: Self.more)
+                Spacer()
+                if let skip {
+                    Button("Skip", action: skip).controlSize(.large).keyboardShortcut(.cancelAction)
+                }
             }
             .font(.callout)
         }

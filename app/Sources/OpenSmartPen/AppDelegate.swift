@@ -345,7 +345,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pensWaitForWelcome = false
             session.start()
         }
-        openPanelAfterWelcome()
+        // A new person sees the ideas first: what the app is for, before any setup. The panel
+        // comes after them. A Mac with a paired pen and no answer about Bluetooth is asked now,
+        // and the panel waits for that answer, as before.
+        if session.willAskForBluetooth { openPanelAfterWelcome() } else { showSamples(first: true) }
     }
 
     /// After "Get Started" the panel opens by itself: the app has no other window, and a person
@@ -574,12 +577,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sampleGallery: SampleGalleryController?
 
     /// The window with the sample pages. The one that is clicked is filed as a photo.
-    private func showSamples() {
+    private func showSamples(first: Bool = false) {
         panel?.dismiss()
-        let gallery = SampleGalleryController(setup: agentRecords.isEmpty ? model.agentSentence : nil) { [weak self] id, picture in
+        let gallery = SampleGalleryController(setup: agentRecords.isEmpty ? model.agentSentence : nil,
+                                              first: first) { [weak self] id, picture in
             self?.sampleGallery = nil
             Telemetry.event("ui.photo.sample", ["photo.sample": .string(id)])
             self?.file(photo: picture, ext: "png", from: "sample", show: true)
+        }
+        gallery.onLeave = { [weak self] in
+            self?.sampleGallery = nil
+            guard first else { return }
+            // Past the ideas at the first start: the panel opens by itself, so the person learns
+            // where the app is.
+            Telemetry.event("ui.onboarding.skipped", ["onboarding.step": "idea"])
+            self?.openPanelAfterWelcome()
         }
         sampleGallery = gallery
         NSApp.activate(ignoringOtherApps: true)

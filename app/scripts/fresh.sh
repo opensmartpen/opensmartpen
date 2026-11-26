@@ -79,8 +79,7 @@ trap restore EXIT
 # fresh copy would write into the real notes folder.
 [ -z "$ASK" ] || tccutil reset BluetoothAlways "$LABEL" >/dev/null 2>&1 || true
 rm -rf "$FRESH"
-# The steps that a person skipped in the panel are in the app's preferences. A fresh run has none.
-defaults delete "$LABEL" panel.skippedIdea 2>/dev/null || true
+# A step that a person skipped in the panel is in the app's preferences. A fresh run has none.
 defaults delete "$LABEL" panel.skippedPen 2>/dev/null || true
 mkdir -p "$FRESH/config/opensmartpen" "$FRESH/notes"
 printf '{ "dataPath": "%s/notes" }\n' "$FRESH" > "$FRESH/config/opensmartpen/config.json"

@@ -78,7 +78,7 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
             let setup = flag.hasSuffix("=setup")
                 ? "Read https://opensmartpen.org/llms.txt and set yourself up to transcribe my Open Smart Pen pages. The pages are in the folder ~/OpenSmartPen on my Mac."
                 : nil
-            controller = SampleGalleryController(setup: setup) { _, _ in NSApp.terminate(nil) }
+            controller = SampleGalleryController(setup: setup, first: setup != nil) { _, _ in NSApp.terminate(nil) }
         } else if arguments.contains("--notice") {
             // The design app has no icon of its own. The window shows the app's icon, so it is
             // given the one the build draws, when a build has drawn it.
