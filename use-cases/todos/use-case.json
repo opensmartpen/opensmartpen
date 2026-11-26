@@ -1,8 +1,7 @@
 {
   "title": "To-dos from your notes",
   "promise": "Write your to-dos between your normal notes, as you always do. Your agent keeps them in your favourite to-do app. Tick one on paper, and it is done there too.",
-  "instruction": "From now on, as you transcribe my pen notes, maintain my to-dos in Apple Reminders.",
-  "note": "Apple Reminders is an example. Use the name of your own to-do app.",
+  "instruction": "From now on, as you transcribe my pen notes, maintain my to-dos in my favourite to-do app (for example Apple Reminders).",
   "image": "sample/todos.png",
   "result": { "app": "Your to-do app", "items": [ { "text": "Fix pricing page" }, { "text": "Send invites", "done": true } ] }
 }
