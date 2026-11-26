@@ -1,0 +1,6 @@
+{
+  "title": "To-dos in your notes",
+  "promise": "Write your to-dos between your normal notes, as you always do. Your agent keeps them in Reminders. Tick one on paper, and it is done there too.",
+  "instruction": "From now on, as you transcribe my pen notes, maintain my to-dos in Apple Reminders.",
+  "image": "sample/todos.png"
+}

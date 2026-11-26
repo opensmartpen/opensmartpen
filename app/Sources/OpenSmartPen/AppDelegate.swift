@@ -577,10 +577,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showSamples() {
         panel?.dismiss()
         Telemetry.event("ui.photo.samples")
-        let gallery = SampleGalleryController { [weak self] sample in
+        let gallery = SampleGalleryController { [weak self] id, picture in
             self?.sampleGallery = nil
-            Telemetry.event("ui.photo.sample", ["photo.sample": .string(sample.id)])
-            if let picture = sample.png() { self?.file(photo: picture, ext: "png", from: "sample", show: true) }
+            Telemetry.event("ui.photo.sample", ["photo.sample": .string(id)])
+            self?.file(photo: picture, ext: "png", from: "sample", show: true)
         }
         sampleGallery = gallery
         NSApp.activate(ignoringOtherApps: true)

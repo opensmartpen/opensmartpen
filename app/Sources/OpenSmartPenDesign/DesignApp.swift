@@ -74,7 +74,7 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
             controller = ViewerWindowController(viewer: viewer)
             controller.window?.delegate = self
         } else if arguments.contains("--samples") {
-            controller = SampleGalleryController { _ in NSApp.terminate(nil) }
+            controller = SampleGalleryController { _, _ in NSApp.terminate(nil) }
         } else if arguments.contains("--notice") {
             // The design app has no icon of its own. The window shows the app's icon, so it is
             // given the one the build draws, when a build has drawn it.

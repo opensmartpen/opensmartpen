@@ -1,4 +1,5 @@
 import AppKit
+import OpenSmartPenCore
 import SwiftUI
 
 /// A page that the app brings itself, for a person with no pen and no photo at hand who wants to
@@ -25,10 +26,6 @@ public struct SamplePhoto: Identifiable, Equatable {
     }
 
     public static let all: [SamplePhoto] = [
-        SamplePhoto(id: "todo", title: "To-do list", hint: "Ask your agent to add the open tasks to your list.",
-                    lines: [.heading("TODO"), .box(done: false, "Buy milk"), .box(done: false, "Call mom"),
-                            .box(done: true, "Teach the pen to read"),
-                            .box(done: false, "Take over the world (after lunch)")]),
         SamplePhoto(id: "meeting", title: "Meeting notes", hint: "Ask your agent to send the notes to the team.",
                     lines: [.heading("Product review"), .dash("pricing page: per seat?"),
                             .dash("ask legal about the terms"), .dash("who owns the film?"),
@@ -103,17 +100,54 @@ public struct SamplePhoto: Identifiable, Equatable {
     }
 }
 
-/// The window with the sample pages. A click on one adds it as a photo and closes the window.
+/// A use case from the folder `use-cases/` of the repository: a real handwritten page, a promise,
+/// and the one sentence that a person gives their agent. The app reads the same files that the
+/// repository shows, so there is one home for each.
+public struct UseCase: Identifiable, Equatable {
+    /// The name of its folder. It goes into telemetry, so it is never a text a person wrote.
+    public let id: String
+    public let title: String
+    public let promise: String
+    public let instruction: String
+    /// The sample page, as the picture file in the folder.
+    public let image: Data
+
+    private struct Card: Decodable { let title, promise, instruction, image: String }
+
+    public static let all: [UseCase] = {
+        guard let folder, let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
+        return names.sorted().compactMap { name in
+            let dir = folder.appendingPathComponent(name)
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent("use-case.json")),
+                  let card = try? JSONDecoder().decode(Card.self, from: data),
+                  let image = try? Data(contentsOf: dir.appendingPathComponent(card.image)) else { return nil }
+            return UseCase(id: name, title: card.title, promise: card.promise, instruction: card.instruction, image: image)
+        }
+    }()
+
+    /// In the app, the folder is in the bundle. A build with no bundle, such as the design window
+    /// or a test, reads it from the repository that it was built from.
+    private static var folder: URL? {
+        let places = [Bundle.main.resourceURL?.appendingPathComponent("use-cases"),
+                      URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+                          .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("use-cases")]
+        return places.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+}
+
+/// The window with the use cases and the sample pages. "Add This Page" or a click on a sample page
+/// files it as a photo and closes the window.
 public final class SampleGalleryController: NSWindowController {
-    public init(onChoose: @escaping (SamplePhoto) -> Void) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 480),
+    /// `onChoose` gets the id of what was chosen and its picture.
+    public init(onChoose: @escaping (String, Data) -> Void) {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 480),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Sample Photos"
         window.isReleasedWhenClosed = false
         super.init(window: window)
-        let host = NSHostingController(rootView: SampleGallery { [weak self] sample in
+        let host = NSHostingController(rootView: SampleGallery { [weak self] id, picture in
             self?.close()
-            onChoose(sample)
+            onChoose(id, picture)
         })
         host.sizingOptions = [.preferredContentSize]
         window.contentViewController = host
@@ -125,45 +159,83 @@ public final class SampleGalleryController: NSWindowController {
 }
 
 private struct SampleGallery: View {
-    let choose: (SamplePhoto) -> Void
+    let choose: (String, Data) -> Void
+    @State private var copied: String?
     /// Drawn one time for the window, not at each redraw.
-    private let pictures: [String: NSImage] = Dictionary(uniqueKeysWithValues: SamplePhoto.all.compactMap { sample in
-        sample.png().flatMap(NSImage.init(data:)).map { (sample.id, $0) }
+    private let drawn: [String: Data] = Dictionary(uniqueKeysWithValues: SamplePhoto.all.compactMap { sample in
+        sample.png().map { (sample.id, $0) }
     })
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Add a sample page to try the app. Your agent reads it like a page from your pen.")
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible())], spacing: 18) {
-                ForEach(SamplePhoto.all) { sample in
-                    Button { choose(sample) } label: { card(sample) }
-                        .buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 20) {
+            ForEach(UseCase.all) { useCase($0) }
+            if !SamplePhoto.all.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("More sample pages").font(.headline)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 14), count: 3), spacing: 14) {
+                        ForEach(SamplePhoto.all) { sample in
+                            Button { if let picture = drawn[sample.id] { choose(sample.id, picture) } } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    page(drawn[sample.id]).padding(.bottom, 2)
+                                    Text(sample.title).font(.callout.weight(.medium))
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
         }
         .padding(20)
-        .frame(width: 560)
+        .frame(width: 620)
     }
 
-    private func card(_ sample: SamplePhoto) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Group {
-                if let picture = pictures[sample.id] {
-                    Image(nsImage: picture).resizable().aspectRatio(contentMode: .fit)
-                } else {
-                    Color.white.aspectRatio(1200 / 760, contentMode: .fit)
+    /// A use case: its page at the left; at the right what it does, the sentence for the agent, and
+    /// the button that adds the page.
+    private func useCase(_ useCase: UseCase) -> some View {
+        HStack(alignment: .top, spacing: 18) {
+            page(useCase.image).frame(width: 260)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(useCase.title).font(.title3.weight(.semibold))
+                Text(useCase.promise).font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("1. Give your agent this sentence, one time").font(.caption).foregroundStyle(.secondary)
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(useCase.instruction).font(.callout).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Button(copied == useCase.id ? "Copied" : "Copy") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(useCase.instruction, forType: .string)
+                            Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
+                            copied = useCase.id
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
+                        }
+                        .controlSize(.small)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("2. Add the page, and see what your agent does").font(.caption).foregroundStyle(.secondary)
+                    Button("Add This Page") { choose(useCase.id, useCase.image) }
+                        .buttonStyle(.borderedProminent)
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.15)))
-            .padding(.bottom, 4)
-            Text(sample.title).font(.headline)
-            Text(sample.hint).font(.callout).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .contentShape(Rectangle())
+    }
+
+    private func page(_ data: Data?) -> some View {
+        Group {
+            if let data, let picture = NSImage(data: data) {
+                Image(nsImage: picture).resizable().aspectRatio(contentMode: .fit)
+            } else {
+                Color.white.aspectRatio(1200 / 760, contentMode: .fit)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.15)))
     }
 }
