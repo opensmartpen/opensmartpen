@@ -235,7 +235,7 @@ private struct SampleGallery: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 30)
+            .padding(.vertical, 26)
             .background(LinearGradient(colors: [Ink.accent.opacity(scheme == .dark ? 0.30 : 0.16),
                                                 Color.pink.opacity(scheme == .dark ? 0.16 : 0.10)],
                                        startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -246,35 +246,27 @@ private struct SampleGallery: View {
                     Text(useCase.promise).font(.body).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Try it").font(.headline).padding(.top, 6)
-                VStack(alignment: .leading, spacing: 8) {
-                    step(1, "Give this instruction to your agent")
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(Ink.accent).padding(.top, 2)
-                        Text(useCase.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
-                    action(copied == useCase.id ? "Copied" : "Copy Instruction", copied == useCase.id ? "checkmark" : "doc.on.doc",
-                           leads: true) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Ink.accent).padding(.top, 2)
+                    Text(useCase.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
+                .padding(.top, 4)
+                HStack(spacing: 10) {
+                    action(copied == useCase.id ? "Copied" : "Copy Instruction",
+                           copied == useCase.id ? "checkmark" : "doc.on.doc") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(useCase.instruction, forType: .string)
                         Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
                         copied = useCase.id
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
                     }
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    step(2, "Add a page")
-                    HStack(spacing: 10) {
-                        action("Try the Sample Photo", "plus", leads: true) {
-                            choose(useCase.id, useCase.image)
-                        }
-                        Text("or test with your pen").font(.callout).foregroundStyle(.secondary)
-                    }
+                    action("Try the Sample Photo", "plus") { choose(useCase.id, useCase.image) }
+                    Text("or test with your pen").font(.callout).foregroundStyle(.secondary)
                 }
             }
             .padding(20)
@@ -284,27 +276,10 @@ private struct SampleGallery: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.10)))
     }
 
-    /// The button of a step, under its words at the left. One button leads at a time, in blue:
-    /// the one of the next step.
-    @ViewBuilder private func action(_ title: String, _ symbol: String, leads: Bool,
-                                     _ run: @escaping () -> Void) -> some View {
-        let label = Label(title, systemImage: symbol).frame(minWidth: 84)
-        if leads {
-            Button(action: run) { label }.buttonStyle(.borderedProminent).controlSize(.large)
-        } else {
-            Button(action: run) { label }.buttonStyle(.bordered).controlSize(.large)
-        }
-    }
-
-    /// The name of a step, with its number in a small disc, as in the first panel.
-    private func step(_ number: Int, _ title: String) -> some View {
-        HStack(spacing: 6) {
-            Text("\(number)")
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 17, height: 17)
-                .background(Circle().fill(Color.primary.opacity(0.12)))
-            Text(title).font(.callout.weight(.medium))
-        }
+    /// One of the two actions of a use case.
+    private func action(_ title: String, _ symbol: String, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) { Label(title, systemImage: symbol) }
+            .buttonStyle(.borderedProminent).controlSize(.large)
     }
 
     /// What the person finds after the agent did its work, drawn as a small list.
