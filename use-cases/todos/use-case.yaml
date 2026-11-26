@@ -1,4 +1,4 @@
-id: pen-todos
+id: todos
 title: To-dos in your notes
 promise: Write your to-dos between your normal notes, as you always do. Your agent keeps them in Reminders. Tick one on paper, and it is done there too.
 # What the person gives their agent, one time. The agent keeps it with its other rules.
@@ -6,6 +6,6 @@ instruction: From now on, as you transcribe my pen notes, maintain my to-dos in 
 needs: An agent that can run commands on your Mac, or a task app that your agent can reach.
 source: [pen, photo]
 sample:
-  image: sample/page.png
+  image: sample/todos.png
   alt: Handwritten notes of a weekly sync, with two notes, one open to-do and one ticked to-do
 status: draft

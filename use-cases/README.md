@@ -10,4 +10,4 @@ A use case has no code. It is a page, a promise and one sentence. An agent needs
 
 | Use case | What you write | What your agent does |
 |---|---|---|
-| [To-dos in your notes](pen-todos/) | A box before a line | Makes a task, and marks it as done when you tick the box |
+| [To-dos in your notes](todos/) | A box before a line | Makes a task, and marks it as done when you tick the box |
