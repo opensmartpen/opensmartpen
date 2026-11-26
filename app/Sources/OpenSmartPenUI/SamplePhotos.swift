@@ -109,6 +109,8 @@ public struct UseCase: Identifiable, Equatable {
     public let title: String
     public let promise: String
     public let instruction: String
+    /// What the person can change in the sentence, in one line.
+    public let note: String?
     /// The sample page, as the picture file in the folder.
     public let image: Data
     /// What the person sees after the agent did its work: the name of the app, and some lines.
@@ -125,6 +127,7 @@ public struct UseCase: Identifiable, Equatable {
 
     private struct Card: Decodable {
         let title, promise, instruction, image: String
+        let note: String?
         let result: Result?
     }
 
@@ -135,8 +138,8 @@ public struct UseCase: Identifiable, Equatable {
             guard let data = try? Data(contentsOf: dir.appendingPathComponent("use-case.json")),
                   let card = try? JSONDecoder().decode(Card.self, from: data),
                   let image = try? Data(contentsOf: dir.appendingPathComponent(card.image)) else { return nil }
-            return UseCase(id: name, title: card.title, promise: card.promise, instruction: card.instruction, image: image,
-                           result: card.result)
+            return UseCase(id: name, title: card.title, promise: card.promise, instruction: card.instruction, note: card.note,
+                           image: image, result: card.result)
         }
     }()
 
@@ -246,41 +249,57 @@ private struct SampleGallery: View {
                     Text(useCase.promise).font(.body).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                HStack(alignment: .center, spacing: 10) {
-                    Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold)).foregroundStyle(Ink.accent)
-                    Text(useCase.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
-                HStack(spacing: 10) {
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(useCase.instruction, forType: .string)
-                        Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
-                        copied = useCase.id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
-                    } label: {
-                        Label(copied == useCase.id ? "Copied" : "Copy for Your Agent",
-                              systemImage: copied == useCase.id ? "checkmark" : "doc.on.doc")
+                VStack(alignment: .leading, spacing: 7) {
+                    step(1, "Instruction for your agent")
+                    HStack(alignment: .center, spacing: 10) {
+                        Text(useCase.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(useCase.instruction, forType: .string)
+                            Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
+                            copied = useCase.id
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
+                        } label: {
+                            Label(copied == useCase.id ? "Copied" : "Copy",
+                                  systemImage: copied == useCase.id ? "checkmark" : "doc.on.doc")
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    Button { choose(useCase.id, useCase.image) } label: {
-                        Label("Try with This Page", systemImage: "plus")
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
+                    if let note = useCase.note {
+                        Text(note).font(.caption).foregroundStyle(.secondary)
                     }
-                    .controlSize(.large)
-                    Spacer()
                 }
-                Text("Give the sentence to your agent one time. Then add this page, or write your own.")
-                    .font(.caption).foregroundStyle(.secondary)
+                .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 7) {
+                    step(2, "Try it")
+                    HStack(spacing: 10) {
+                        Button { choose(useCase.id, useCase.image) } label: {
+                            Label("Add This Page as a Photo", systemImage: "photo.badge.plus")
+                        }
+                        Text("Or write your own page with your pen.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
             .padding(20)
         }
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.10)))
+    }
+
+    /// The name of a step, with its number in a small disc, as in the first panel.
+    private func step(_ number: Int, _ title: String) -> some View {
+        HStack(spacing: 6) {
+            Text("\(number)")
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 17, height: 17)
+                .background(Circle().fill(Color.primary.opacity(0.12)))
+            Text(title).font(.callout.weight(.medium))
+        }
     }
 
     /// What the person finds after the agent did its work, drawn as a small list.
