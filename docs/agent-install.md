@@ -51,16 +51,7 @@ Not each page comes from a pen. The notebook "Photos" holds pages that arrived a
    - **If you had a schedule before,** make it shorter now. A schedule of 30 minutes was right when each run read all pages. With the check, a run with nothing new costs almost nothing, so some minutes is right.
    - **Do not let two runs work at the same time.** If one run is still at work when the next check comes, the next one stops.
    - Test it before you say that you are done: change nothing and confirm that the check stops; then ask the person to add a page and confirm that you start.
-5. **Keep the rules in one file.** Make one text file of instructions for these pages, in your own place, and read it at the start of each run. Put in it: the section "Each run", your number `n` and the version number. It also has a part "The person's rules", empty at the start. Tell the person what you set up and how to stop it.
-
-## When the person gives you a rule
-
-The person can give you a rule for their pages in one sentence, for example "from now on, keep my to-dos in Apple Reminders". Then:
-
-- Add the sentence to "The person's rules" in your file of instructions, in the person's words. Tell the person that you did it.
-- Do nothing else. Do not write a program for the rule, do not change your wake-up, and do not go through the pages now.
-- If a run with no window cannot do what the rule needs, for example reach another app on the Mac, tell the person exactly what to allow. Change your wake-up for that only after the person says yes.
-- At each run, after the transcript of a page, apply each rule to that page with your own judgement. A rule applies only to pages that you transcribe from now on, not to old pages.
+5. **Keep the rules.** Store the section "Each run", your number `n` and the version number where you keep instructions. Tell the person what you set up and how to stop it.
 
 ## Each run
 
@@ -74,10 +65,18 @@ The person can give you a rule for their pages in one sentence, for example "fro
 2. If `rules:` is not the version you have, read this text again before you continue.
 3. Compare `changed:` with the value you saw at your last run. If it is the same, stop. Do not compare it with the clock: a pen used away from the Mac sends its pages hours later, and the time is then hours old.
 4. If it is different, find the pages that are owed. A page is owed when `books/<copy>/pages/p<N>.png` has no `transcripts/<copy>/p<N>.md`, or is newer than it. The time file says "look now". It does not say which pages.
-5. For each owed page, write the transcript (see below). Then store the new `changed:` value.
+5. For each owed page, write the transcript (see below). After the transcript of a page, do what the person asked you to do with their pages (see "What the person asks for"). Then store the new `changed:` value.
 6. Set `alive` in your `agents/<n>.json` to the time now. Do this at each run, also when nothing changed, if it costs you nothing. The app shows you in grey when the pages changed more than two hours ago and your `alive` is older than that change. It does not hold silence against you when there was nothing to do.
 
 The first time, and from time to time, do step 4 without step 3, so that a page is never missed.
+
+## What the person asks for
+
+A transcript is the start. The person can tell you in one sentence what more to do with their pages, for example "from now on, keep my to-dos in Apple Reminders".
+
+- When the person tells you, only keep the sentence, with your other instructions for these pages. Where and how you keep it is your decision. Do no more at that moment.
+- At each run, after the transcript of a page, do what the sentence says for that page. Use your own judgement.
+- If a run cannot do it, for example because it has no access to an app, tell the person what to allow.
 
 ## The transcript
 
