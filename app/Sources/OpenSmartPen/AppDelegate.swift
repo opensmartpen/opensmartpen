@@ -152,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.onAddPhoto = { [weak self] in self?.addPhoto() }
+        model.onShowIdeas = { [weak self] in self?.showSamples() }
         model.onOpenPage = { [weak self] page in self?.showViewer(page) }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         coordinator.onOfflineStored = { [weak self] pages in
@@ -344,7 +345,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pensWaitForWelcome = false
             session.start()
         }
-        openPanelAfterWelcome()
+        // A new person sees the ideas first: what the app is for, before any setup. The panel
+        // comes after them. A Mac with a paired pen and no answer about Bluetooth is asked now,
+        // and the panel waits for that answer, as before.
+        if session.willAskForBluetooth { openPanelAfterWelcome() } else { showSamples(first: true) }
     }
 
     /// After "Get Started" the panel opens by itself: the app has no other window, and a person
@@ -513,13 +517,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var photoImport: PhotoImportController?
 
-    /// One entry in the panel, one menu at the mouse: a file, the sample photos, and below them
+    /// One entry in the panel, one menu at the mouse: a file, and below it
     /// what macOS adds for each iPhone or iPad near this Mac. The panel stays until the menu closes.
     private func addPhoto() {
         Telemetry.event("ui.photo.menu")
         let menu = PhotoImportController()
         menu.addEntry("Choose a File\u{2026}") { [weak self] in self?.uploadPhoto() }
-        menu.addEntry("Use Sample Photo\u{2026}") { [weak self] in self?.showSamples() }
         menu.onImage = { [weak self] data, ext in
             self?.file(photo: data, ext: ext, from: "device", show: true, taken: Date())
         }
@@ -574,13 +577,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sampleGallery: SampleGalleryController?
 
     /// The window with the sample pages. The one that is clicked is filed as a photo.
-    private func showSamples() {
+    private func showSamples(first: Bool = false) {
         panel?.dismiss()
-        Telemetry.event("ui.photo.samples")
-        let gallery = SampleGalleryController { [weak self] sample in
+        let gallery = SampleGalleryController(setup: model.agentSentence,
+                                              first: first) { [weak self] id, picture in
             self?.sampleGallery = nil
-            Telemetry.event("ui.photo.sample", ["photo.sample": .string(sample.id)])
-            if let picture = sample.png() { self?.file(photo: picture, ext: "png", from: "sample", show: true) }
+            Telemetry.event("ui.photo.sample", ["photo.sample": .string(id)])
+            self?.file(photo: picture, ext: "png", from: "sample", show: true)
+        }
+        gallery.onLeave = { [weak self] in
+            self?.sampleGallery = nil
+            guard first else { return }
+            // Past the ideas at the first start: the panel opens by itself, so the person learns
+            // where the app is.
+            Telemetry.event("ui.onboarding.skipped", ["onboarding.step": "idea"])
+            self?.openPanelAfterWelcome()
         }
         sampleGallery = gallery
         NSApp.activate(ignoringOtherApps: true)

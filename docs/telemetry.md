@@ -132,8 +132,10 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.pen.add`, `ui.pen.add_cancelled` | "Add Pen" or its "Cancel" was clicked, in the panel or in Settings | `ui.source` (`panel`, `settings`) |
 | `ui.book.shown_in_panel` | "Show in panel" was changed for a notebook | `book.surface`, `book.shown` |
 | `ui.book.deleted` | A notebook was deleted in Settings | `book.surface`, `book.pages`, `book.bucket` (a bucket was connected) |
-| `ui.photo.samples` | "Use Sample Photo…" was clicked | None |
-| `ui.photo.sample` | A sample photo was chosen | `photo.sample` (`todo`, `meeting`, `study`, `plan`) |
+| `ui.photo.sample` | A sample photo was chosen | `photo.sample`: the folder name of an idea (`todos`), or `meeting`, `study`, `plan` |
+| `ui.ideas.opened` | "Ideas…" or "Show Ideas" was clicked in the panel | `ui.source` (`panel`) |
+| `ui.onboarding.skipped` | A first step was skipped: the ideas window at the first start was closed with no page chosen, or "Skip" was clicked on the pen step in the panel | `onboarding.step` (`idea`, `pen`) |
+| `ui.idea.copy` | "Copy" was clicked for the sentence of an idea | `idea.id`: the folder name of the idea |
 | `ui.pens.website` | "See pens that work" was clicked in the panel | None |
 | `ui.agents.website` | "Learn more" was clicked under "Connect your agent" in the panel | None |
 | `ui.pen.forget` | "Remove" was confirmed for a pen | `pen.mac` |

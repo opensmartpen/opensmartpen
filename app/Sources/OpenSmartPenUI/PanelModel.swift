@@ -520,6 +520,23 @@ public final class PanelModel: ObservableObject {
 
     func addPhoto() { onAddPhoto?() }
 
+    /// The person said "Skip" to the pen. Kept across starts, so that the step does not come back.
+    @Published public private(set) var skippedPen = UserDefaults.standard.bool(forKey: "panel.skippedPen")
+
+    func skipPen() {
+        Telemetry.event("ui.onboarding.skipped", ["onboarding.step": "pen"])
+        skippedPen = true
+        UserDefaults.standard.set(true, forKey: "panel.skippedPen")
+    }
+
+    /// Opens the window with the ideas. Set by the app delegate.
+    public var onShowIdeas: (() -> Void)?
+
+    func showIdeas() {
+        Telemetry.event("ui.ideas.opened", ["ui.source": "panel"])
+        onShowIdeas?()
+    }
+
     // MARK: adding a pen
 
     /// The app looks for a new pen, after "Add Pen". It scans for no pen before that click, so
@@ -653,6 +670,8 @@ public final class PanelModel: ObservableObject {
         public var bluetoothRefused = false
         /// As if "Add Pen" was clicked and no pen has answered yet.
         public var addingPen = false
+        /// As if the person said "Skip" to the pen.
+        public var skippedPen = false
 
         public init() {}
     }
@@ -680,6 +699,7 @@ public final class PanelModel: ObservableObject {
         asksForAgent = snapshot.asksForAgent
         bluetoothRefused = snapshot.bluetoothRefused
         isAddingPen = snapshot.addingPen
+        skippedPen = snapshot.skippedPen
         agentSentence = "Read the setup text and set yourself up."
         markActiveBook()
     }

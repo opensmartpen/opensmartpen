@@ -73,8 +73,12 @@ public final class DesignAppDelegate: NSObject, NSApplicationDelegate, NSWindowD
             }
             controller = ViewerWindowController(viewer: viewer)
             controller.window?.delegate = self
-        } else if arguments.contains("--samples") {
-            controller = SampleGalleryController { _ in NSApp.terminate(nil) }
+        } else if let flag = arguments.first(where: { $0.hasPrefix("--samples") }) {
+            // `--samples=setup` shows the window as a person with no agent sees it.
+            let setup = flag.hasSuffix("=setup")
+                ? "Read https://opensmartpen.org/llms.txt and set yourself up to transcribe my Open Smart Pen pages. The pages are in the folder ~/OpenSmartPen on my Mac."
+                : nil
+            controller = SampleGalleryController(setup: setup, first: setup != nil) { _, _ in NSApp.terminate(nil) }
         } else if arguments.contains("--notice") {
             // The design app has no icon of its own. The window shows the app's icon, so it is
             // given the one the build draws, when a build has drawn it.

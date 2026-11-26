@@ -34,6 +34,8 @@ Not each page comes from a pen. The notebook "Photos" holds pages that arrived a
 
 ## Setup, once
 
+How you work is your decision. If you have your own system for instructions, schedules and state, use it: the steps below are one way that works, not the only way. What is fixed is the files: the layout, what you write and where, and the form of a transcript.
+
 1. **Find the pages.** Confirm that you can read `last-modified.txt` and write under `transcripts/` and `agents/`. If you cannot, tell the person what access is missing and stop.
 2. **Say who you are.** Take the first number `n`, from 0, for which `agents/<n>.json` does not exist, and write that file:
 
@@ -65,10 +67,18 @@ Not each page comes from a pen. The notebook "Photos" holds pages that arrived a
 2. If `rules:` is not the version you have, read this text again before you continue.
 3. Compare `changed:` with the value you saw at your last run. If it is the same, stop. Do not compare it with the clock: a pen used away from the Mac sends its pages hours later, and the time is then hours old.
 4. If it is different, find the pages that are owed. A page is owed when `books/<copy>/pages/p<N>.png` has no `transcripts/<copy>/p<N>.md`, or is newer than it. The time file says "look now". It does not say which pages.
-5. For each owed page, write the transcript (see below). Then store the new `changed:` value.
+5. For each owed page, write the transcript (see below). After the transcript of a page, do what the person asked you to do with their pages (see "What the person asks for"). Then store the new `changed:` value.
 6. Set `alive` in your `agents/<n>.json` to the time now. Do this at each run, also when nothing changed, if it costs you nothing. The app shows you in grey when the pages changed more than two hours ago and your `alive` is older than that change. It does not hold silence against you when there was nothing to do.
 
 The first time, and from time to time, do step 4 without step 3, so that a page is never missed.
+
+## What the person asks for
+
+A transcript is the start. The person can tell you in one sentence what more to do with their pages, for example "from now on, keep my to-dos in Apple Reminders".
+
+- When the person tells you, only keep the sentence, with your other instructions for these pages. Where and how you keep it is your decision. Do no more at that moment.
+- At each run, after the transcript of a page, do what the sentence says for that page. Use your own judgement.
+- If a run cannot do it, for example because it has no access to an app, tell the person what to allow.
 
 ## The transcript
 
