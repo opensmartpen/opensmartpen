@@ -1,0 +1,12 @@
+id: pen-todos
+title: To-dos in your notes
+promise: Draw a box before anything you must do, between your normal notes. Your agent puts it in Reminders. Tick the box on paper, and it is done there too.
+marks:
+  - "a box: a task"
+  - "a tick or a cross in the box: done"
+needs: An agent that can run commands on your Mac (for Apple Reminders), or a task app that your agent can reach.
+source: [pen, photo]
+sample:
+  image: sample/page.png
+  alt: Handwritten notes of a weekly sync, with two notes, one open to-do and one ticked to-do
+status: draft
