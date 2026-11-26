@@ -1,5 +1,6 @@
 {
   "title": "To-dos in your favourite app",
+  "for": "In meetings",
   "promise": "Write your to-dos between your normal notes, as you always do. Your agent keeps them in your to-do app. Tick one on paper, and it is done there too.",
   "instruction": "From now on, as you transcribe pen notes, maintain my to-dos in a to-do app (for example Apple Reminders).",
   "image": "sample/todos.png",
