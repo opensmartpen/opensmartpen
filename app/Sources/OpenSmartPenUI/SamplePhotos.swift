@@ -246,7 +246,7 @@ private struct SampleGallery: View {
                     Text(useCase.promise).font(.body).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Give this instruction to your agent, one time").font(.callout.weight(.medium))
+                Text("Give this instruction to your agent, one time:").font(.callout.weight(.medium))
                     .padding(.top, 6)
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold))
