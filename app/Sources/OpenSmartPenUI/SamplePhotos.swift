@@ -217,7 +217,12 @@ private struct SampleGallery: View {
     /// person finds in their app after it. Under it, the words, the sentence and the two actions.
     private func card(_ idea: Idea) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: 18) {
+              Text(idea.title)
+                  .font(.system(size: 26, weight: .bold, design: .rounded))
+                  .foregroundStyle(Ink.accent)
+                  .padding(.horizontal, 22)
+              HStack(spacing: 18) {
                 page(idea.image)
                     .frame(width: 310)
                     .rotationEffect(.degrees(-2))
@@ -234,18 +239,17 @@ private struct SampleGallery: View {
                         .shadow(color: .black.opacity(0.16), radius: 12, y: 7)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 26)
+              .frame(maxWidth: .infinity)
+            }
+            .padding(.top, 20)
+            .padding(.bottom, 28)
             .background(LinearGradient(colors: [Ink.accent.opacity(scheme == .dark ? 0.30 : 0.16),
                                                 Color.pink.opacity(scheme == .dark ? 0.16 : 0.10)],
                                        startPoint: .topLeading, endPoint: .bottomTrailing))
 
             VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(idea.title).font(.title2.weight(.semibold))
-                    Text(idea.promise).font(.body).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(idea.promise).font(.body).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("Give this instruction to your agent, one time:").font(.callout.weight(.medium))
                     .padding(.top, 6)
                 HStack(alignment: .top, spacing: 10) {
@@ -274,9 +278,13 @@ private struct SampleGallery: View {
             }
             .padding(20)
         }
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.10)))
+        // A card that stands off the window, in the light and in the dark: its own ground, a
+        // border in the accent colour and a shadow under it.
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(scheme == .dark ? Color.white.opacity(0.07) : Color.white))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Ink.accent.opacity(0.35), lineWidth: 1))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.45 : 0.12), radius: 16, y: 8)
     }
 
     /// The number of a step in a small disc, as in the first panel.
