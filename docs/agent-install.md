@@ -51,7 +51,15 @@ Not each page comes from a pen. The notebook "Photos" holds pages that arrived a
    - **If you had a schedule before,** make it shorter now. A schedule of 30 minutes was right when each run read all pages. With the check, a run with nothing new costs almost nothing, so some minutes is right.
    - **Do not let two runs work at the same time.** If one run is still at work when the next check comes, the next one stops.
    - Test it before you say that you are done: change nothing and confirm that the check stops; then ask the person to add a page and confirm that you start.
-5. **Keep the rules.** Store the section "Each run", your number `n` and the version number where you keep instructions. Tell the person what you set up and how to stop it.
+5. **Keep the rules in one file.** Make one text file of instructions for these pages, in your own place, and read it at the start of each run. Put in it: the section "Each run", your number `n` and the version number. It also has a part "The person's rules", empty at the start. Tell the person what you set up and how to stop it.
+
+## When the person gives you a rule
+
+The person can give you a rule for their pages in one sentence, for example "from now on, keep my to-dos in Apple Reminders". Then:
+
+- Add the sentence to "The person's rules" in your file of instructions, in the person's words. Tell the person that you did it.
+- Do nothing else. Do not write a program for the rule, do not change your wake-up, and do not go through the pages now.
+- At each run, after the transcript of a page, apply each rule to that page with your own judgement. A rule applies only to pages that you transcribe from now on, not to old pages.
 
 ## Each run
 
