@@ -157,7 +157,7 @@ public final class SampleGalleryController: NSWindowController {
     public init(onChoose: @escaping (String, Data) -> Void) {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 560),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Use Cases"
+        window.title = "Ideas"
         window.isReleasedWhenClosed = false
         super.init(window: window)
         let host = NSHostingController(rootView: SampleGallery { [weak self] id, picture in
@@ -204,7 +204,7 @@ private struct SampleGallery: View {
                 }
             }
             HStack(spacing: 4) {
-                Text("Have a use of your own?").foregroundStyle(.secondary)
+                Text("Have an idea of your own?").foregroundStyle(.secondary)
                 Link("Add it on GitHub", destination: Self.more)
             }
             .font(.callout)

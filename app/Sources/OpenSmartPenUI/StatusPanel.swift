@@ -71,6 +71,7 @@ public struct StatusPanel: View {
                 // question about a thing the app finishes on its own. What survives of it is the
                 // mark on that notebook in the list.
                 if model.asksForAgent { section { connectAgent } }
+                if showsSteps { section { seeIdeas } }
                 if !model.agents.isEmpty { section(inset: 5) { agents } }
                 if case let .failing(_, _, error) = model.status { section { failure(error) } }
                 if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
@@ -94,6 +95,19 @@ public struct StatusPanel: View {
 
     /// No pen has ever connected and there is no page: a person who is here for the first time
     /// and may not have a pen at all. The panel then leads with the one thing they can do.
+    /// True while the panel shows the first steps in a row, with numbers: no pen is paired yet,
+    /// and no agent is connected.
+    private var showsSteps: Bool { model.pens.isEmpty && !model.bluetoothRefused && model.asksForAgent }
+
+    /// The third step of the first panel: what a pen and an agent are good for.
+    private var seeIdeas: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            stepTitle(3, "See what you can do")
+            Button(action: model.showUseCases) { Text("Show Ideas").frame(maxWidth: .infinity) }
+                .buttonStyle(InkButtonStyle(filled: false))
+        }
+    }
+
     private var startsWithoutAPen: Bool { model.pens.isEmpty && model.recent.isEmpty }
 
     /// Whatever goes at the very top: the pens, or, with no pen paired, the way to add one.
@@ -302,7 +316,7 @@ public struct StatusPanel: View {
     private var connectAgent: some View {
         VStack(alignment: .leading, spacing: 7) {
             // The second step while the first is on screen above it. Alone, it has no number.
-            stepTitle(model.pens.isEmpty && !model.bluetoothRefused ? 2 : nil, "Connect your agent")
+            stepTitle(showsSteps ? 2 : nil, "Connect your agent")
             // The link is at the end of the text, so it wraps with it. It goes through the model,
             // which also counts the click.
             (Text("Paste this into Claude Code, Codex or another agent. ").foregroundColor(.secondary)
@@ -391,7 +405,10 @@ public struct StatusPanel: View {
                 if !startsWithoutAPen {
                     MenuItem(title: "Add Photo…", symbol: "camera", action: model.addPhoto)
                 }
-                MenuItem(title: "Use Cases…", symbol: "sparkles", action: model.showUseCases)
+                // Not twice: while the first panel shows it as its third step, it is not here too.
+                if !showsSteps {
+                    MenuItem(title: "Ideas…", symbol: "lightbulb", action: model.showUseCases)
+                }
                 MenuItem(title: "Settings…", action: model.openConfig)
                 MenuItem(title: "Quit") { NSApp.terminate(nil) }
             }
