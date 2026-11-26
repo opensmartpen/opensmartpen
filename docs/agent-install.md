@@ -34,6 +34,8 @@ Not each page comes from a pen. The notebook "Photos" holds pages that arrived a
 
 ## Setup, once
 
+How you work is your decision. If you have your own system for instructions, schedules and state, use it: the steps below are one way that works, not the only way. What is fixed is the files: the layout, what you write and where, and the form of a transcript.
+
 1. **Find the pages.** Confirm that you can read `last-modified.txt` and write under `transcripts/` and `agents/`. If you cannot, tell the person what access is missing and stop.
 2. **Say who you are.** Take the first number `n`, from 0, for which `agents/<n>.json` does not exist, and write that file:
 
