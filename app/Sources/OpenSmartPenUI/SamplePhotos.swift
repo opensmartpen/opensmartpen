@@ -248,8 +248,9 @@ private struct SampleGallery: View {
                     Text(useCase.promise).font(.body).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                Text("Try it").font(.headline).padding(.top, 6)
                 VStack(alignment: .leading, spacing: 8) {
-                    step(1, "Instruction for your agent")
+                    step(1, "Give this instruction to your agent")
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold))
                             .foregroundStyle(Ink.accent).padding(.top, 2)
@@ -269,11 +270,8 @@ private struct SampleGallery: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
                     }
                 }
-                .padding(.top, 4)
                 VStack(alignment: .leading, spacing: 8) {
-                    step(2, "Try it")
-                    Text("Add this page to your notes as a photo, or test with your pen.")
-                        .font(.callout).foregroundStyle(.secondary)
+                    step(2, "Add the sample page as a photo, or write your own with your pen")
                     action("Add Page", "plus", leads: given.contains(useCase.id)) { choose(useCase.id, useCase.image) }
                 }
             }
