@@ -2,7 +2,7 @@ id: pen-todos
 title: To-dos in your notes
 promise: Write your to-dos between your normal notes, as you always do. Your agent keeps them in Reminders. Tick one on paper, and it is done there too.
 # What the person gives their agent, one time. The agent keeps it with its other rules.
-instruction: As you transcribe my pen notes, maintain my to-dos in Apple Reminders.
+instruction: From now on, as you transcribe my pen notes, maintain my to-dos in Apple Reminders.
 needs: An agent that can run commands on your Mac, or a task app that your agent can reach.
 source: [pen, photo]
 sample:

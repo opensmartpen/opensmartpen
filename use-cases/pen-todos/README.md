@@ -8,6 +8,6 @@ From this page the agent makes two tasks: "Fix pricing page", open, and "Send in
 
 To use it, give your agent this sentence one time:
 
-> As you transcribe my pen notes, maintain my to-dos in Apple Reminders.
+> From now on, as you transcribe my pen notes, maintain my to-dos in Apple Reminders.
 
 Change the sentence to fit you, for example with a different task app.
