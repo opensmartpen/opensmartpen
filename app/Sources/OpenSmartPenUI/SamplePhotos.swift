@@ -176,8 +176,6 @@ public final class SampleGalleryController: NSWindowController {
 private struct SampleGallery: View {
     let choose: (String, Data) -> Void
     @State private var copied: String?
-    /// The use cases whose sentence was copied in this window. The next step then leads.
-    @State private var given: Set<String> = []
     @Environment(\.colorScheme) private var scheme
     /// Drawn one time for the window, not at each redraw.
     private let drawn: [String: Data] = Dictionary(uniqueKeysWithValues: SamplePhoto.all.compactMap { sample in
@@ -261,22 +259,21 @@ private struct SampleGallery: View {
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
                     action(copied == useCase.id ? "Copied" : "Copy", copied == useCase.id ? "checkmark" : "doc.on.doc",
-                           leads: !given.contains(useCase.id)) {
+                           leads: true) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(useCase.instruction, forType: .string)
                         Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
                         copied = useCase.id
-                        given.insert(useCase.id)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     step(2, "Add a page")
                     HStack(spacing: 10) {
-                        action("Try the Sample Photo", "plus", leads: given.contains(useCase.id)) {
+                        action("Try the Sample Photo", "plus", leads: true) {
                             choose(useCase.id, useCase.image)
                         }
-                        Text("or write your own with your pen").font(.callout).foregroundStyle(.secondary)
+                        Text("or test with your pen").font(.callout).foregroundStyle(.secondary)
                     }
                 }
             }
