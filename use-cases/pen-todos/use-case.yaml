@@ -1,11 +1,8 @@
 id: pen-todos
 title: To-dos in your notes
-promise: Draw a box before anything you must do, between your normal notes. Your agent puts it in Reminders. Tick the box on paper, and it is done there too.
+promise: Write your to-dos between your normal notes, as you always do. Your agent keeps them in Reminders. Tick one on paper, and it is done there too.
 # What the person gives their agent, one time. The agent keeps it with its other rules.
-instruction: >-
-  Remember this rule for when you check my pen pages: a line that starts with a box is a to-do.
-  Keep it as a task in Apple Reminders, in a list "Open Smart Pen", and mark it as done when I tick
-  or cross the box. Never make the same task two times. Start with the pages that change from now on.
+instruction: As you transcribe my pen notes, maintain my to-dos in Apple Reminders.
 needs: An agent that can run commands on your Mac, or a task app that your agent can reach.
 source: [pen, photo]
 sample:
