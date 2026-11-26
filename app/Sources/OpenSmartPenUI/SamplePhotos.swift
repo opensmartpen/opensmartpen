@@ -271,8 +271,13 @@ private struct SampleGallery: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
-                    step(2, "Add the sample page as a photo, or write your own with your pen")
-                    action("Add Page", "plus", leads: given.contains(useCase.id)) { choose(useCase.id, useCase.image) }
+                    step(2, "Add a page")
+                    HStack(spacing: 10) {
+                        action("Try the Sample Photo", "plus", leads: given.contains(useCase.id)) {
+                            choose(useCase.id, useCase.image)
+                        }
+                        Text("or write your own with your pen").font(.callout).foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding(20)
