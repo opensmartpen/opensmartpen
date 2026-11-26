@@ -8,6 +8,6 @@ From this page the agent makes two tasks: "Fix pricing page", open, and "Send in
 
 To use it, give your agent this sentence one time:
 
-> Remember this rule for my Open Smart Pen pages: a line that starts with a box is a to-do. Keep it as a task in Apple Reminders, in a list "Open Smart Pen", and mark it as done when I tick or cross the box. Never make the same task two times.
+> Remember this rule for when you check my pen pages: a line that starts with a box is a to-do. Keep it as a task in Apple Reminders, in a list "Open Smart Pen", and mark it as done when I tick or cross the box. Never make the same task two times. Start with the pages that change from now on.
 
 Change the sentence to fit you: a different mark, a different task app.
