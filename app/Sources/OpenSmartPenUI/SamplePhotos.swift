@@ -251,24 +251,15 @@ private struct SampleGallery: View {
                 }
                 VStack(alignment: .leading, spacing: 7) {
                     step(1, "Instruction for your agent")
-                    HStack(alignment: .center, spacing: 10) {
-                        Text(useCase.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(useCase.instruction, forType: .string)
-                            Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
-                            copied = useCase.id
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
-                        } label: {
-                            Label(copied == useCase.id ? "Copied" : "Copy",
-                                  systemImage: copied == useCase.id ? "checkmark" : "doc.on.doc")
-                        }
-                        .buttonStyle(.borderedProminent)
+                    row(symbol: "quote.opening", text: useCase.instruction, strong: true,
+                        button: copied == useCase.id ? "Copied" : "Copy",
+                        buttonSymbol: copied == useCase.id ? "checkmark" : "doc.on.doc") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(useCase.instruction, forType: .string)
+                        Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
+                        copied = useCase.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
                     }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
                     if let note = useCase.note {
                         Text(note).font(.caption).foregroundStyle(.secondary)
                     }
@@ -276,11 +267,9 @@ private struct SampleGallery: View {
                 .padding(.top, 4)
                 VStack(alignment: .leading, spacing: 7) {
                     step(2, "Try it")
-                    HStack(spacing: 10) {
-                        Button { choose(useCase.id, useCase.image) } label: {
-                            Label("Add This Page as a Photo", systemImage: "photo.badge.plus")
-                        }
-                        Text("Or write your own page with your pen.").font(.caption).foregroundStyle(.secondary)
+                    row(symbol: "photo", text: "Add this page to your notes as a photo, or test with your pen.",
+                        strong: false, button: "Add Page", buttonSymbol: "plus") {
+                        choose(useCase.id, useCase.image)
                     }
                 }
             }
@@ -289,6 +278,22 @@ private struct SampleGallery: View {
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.10)))
+    }
+
+    /// One step: a sign, the words, and its one button at the right. Each step has this same form.
+    private func row(symbol: String, text: String, strong: Bool, button: String, buttonSymbol: String,
+                     action: @escaping () -> Void) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: symbol).font(.system(size: 12, weight: .bold)).foregroundStyle(Ink.accent)
+                .frame(width: 18)
+            Text(text).font(strong ? .callout.weight(.medium) : .callout).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button(action: action) { Label(button, systemImage: buttonSymbol).frame(minWidth: 78) }
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
     }
 
     /// The name of a step, with its number in a small disc, as in the first panel.
