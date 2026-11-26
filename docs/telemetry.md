@@ -134,6 +134,7 @@ A crash is read from the report that macOS writes in `~/Library/Logs/DiagnosticR
 | `ui.book.deleted` | A notebook was deleted in Settings | `book.surface`, `book.pages`, `book.bucket` (a bucket was connected) |
 | `ui.photo.samples` | "Use Sample Photo…" was clicked | None |
 | `ui.photo.sample` | A sample photo was chosen | `photo.sample`: the folder name of a use case (`todos`), or `meeting`, `study`, `plan` |
+| `ui.usecases.opened` | "Use Cases…" was clicked in the panel | `ui.source` (`panel`) |
 | `ui.usecase.copy` | "Copy" was clicked for the sentence of a use case | `usecase.id`: the folder name of the use case |
 | `ui.pens.website` | "See pens that work" was clicked in the panel | None |
 | `ui.agents.website` | "Learn more" was clicked under "Connect your agent" in the panel | None |

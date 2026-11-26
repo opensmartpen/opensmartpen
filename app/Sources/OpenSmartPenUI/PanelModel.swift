@@ -520,6 +520,14 @@ public final class PanelModel: ObservableObject {
 
     func addPhoto() { onAddPhoto?() }
 
+    /// Opens the window with the use cases. Set by the app delegate.
+    public var onShowUseCases: (() -> Void)?
+
+    func showUseCases() {
+        Telemetry.event("ui.usecases.opened", ["ui.source": "panel"])
+        onShowUseCases?()
+    }
+
     // MARK: adding a pen
 
     /// The app looks for a new pen, after "Add Pen". It scans for no pen before that click, so

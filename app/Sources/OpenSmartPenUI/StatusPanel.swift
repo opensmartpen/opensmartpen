@@ -391,6 +391,7 @@ public struct StatusPanel: View {
                 if !startsWithoutAPen {
                     MenuItem(title: "Add Photo…", symbol: "camera", action: model.addPhoto)
                 }
+                MenuItem(title: "Use Cases…", symbol: "sparkles", action: model.showUseCases)
                 MenuItem(title: "Settings…", action: model.openConfig)
                 MenuItem(title: "Quit") { NSApp.terminate(nil) }
             }

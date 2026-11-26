@@ -111,8 +111,22 @@ public struct UseCase: Identifiable, Equatable {
     public let instruction: String
     /// The sample page, as the picture file in the folder.
     public let image: Data
+    /// What the person sees after the agent did its work: the name of the app, and some lines.
+    public let result: Result?
 
-    private struct Card: Decodable { let title, promise, instruction, image: String }
+    public struct Result: Decodable, Equatable {
+        public let app: String
+        public let items: [Item]
+        public struct Item: Decodable, Equatable {
+            public let text: String
+            public let done: Bool?
+        }
+    }
+
+    private struct Card: Decodable {
+        let title, promise, instruction, image: String
+        let result: Result?
+    }
 
     public static let all: [UseCase] = {
         guard let folder, let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
@@ -121,7 +135,8 @@ public struct UseCase: Identifiable, Equatable {
             guard let data = try? Data(contentsOf: dir.appendingPathComponent("use-case.json")),
                   let card = try? JSONDecoder().decode(Card.self, from: data),
                   let image = try? Data(contentsOf: dir.appendingPathComponent(card.image)) else { return nil }
-            return UseCase(id: name, title: card.title, promise: card.promise, instruction: card.instruction, image: image)
+            return UseCase(id: name, title: card.title, promise: card.promise, instruction: card.instruction, image: image,
+                           result: card.result)
         }
     }()
 
@@ -140,9 +155,9 @@ public struct UseCase: Identifiable, Equatable {
 public final class SampleGalleryController: NSWindowController {
     /// `onChoose` gets the id of what was chosen and its picture.
     public init(onChoose: @escaping (String, Data) -> Void) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 620, height: 480),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 560),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Sample Photos"
+        window.title = "Use Cases"
         window.isReleasedWhenClosed = false
         super.init(window: window)
         let host = NSHostingController(rootView: SampleGallery { [weak self] id, picture in
@@ -161,13 +176,15 @@ public final class SampleGalleryController: NSWindowController {
 private struct SampleGallery: View {
     let choose: (String, Data) -> Void
     @State private var copied: String?
+    @Environment(\.colorScheme) private var scheme
     /// Drawn one time for the window, not at each redraw.
     private let drawn: [String: Data] = Dictionary(uniqueKeysWithValues: SamplePhoto.all.compactMap { sample in
         sample.png().map { (sample.id, $0) }
     })
+    private static let more = URL(string: "https://github.com/opensmartpen/opensmartpen/tree/main/use-cases")!
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 22) {
             ForEach(UseCase.all) { useCase($0) }
             if !SamplePhoto.all.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
@@ -186,45 +203,104 @@ private struct SampleGallery: View {
                     }
                 }
             }
+            HStack(spacing: 4) {
+                Text("Have a use of your own?").foregroundStyle(.secondary)
+                Link("Add it on GitHub", destination: Self.more)
+            }
+            .font(.callout)
         }
-        .padding(20)
-        .frame(width: 620)
+        .padding(22)
+        .frame(width: 680)
     }
 
-    /// A use case: its page at the left; at the right what it does, the sentence for the agent, and
-    /// the button that adds the page.
+    /// A use case as one card. On top, what happens: the page on paper, an arrow, and what the
+    /// person finds in their app after it. Under it, the words, the sentence and the two actions.
     private func useCase(_ useCase: UseCase) -> some View {
-        HStack(alignment: .top, spacing: 18) {
-            page(useCase.image).frame(width: 260)
-            VStack(alignment: .leading, spacing: 10) {
-                Text(useCase.title).font(.title3.weight(.semibold))
-                Text(useCase.promise).font(.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("1. Give your agent this sentence, one time").font(.caption).foregroundStyle(.secondary)
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(useCase.instruction).font(.callout).textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                        Button(copied == useCase.id ? "Copied" : "Copy") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(useCase.instruction, forType: .string)
-                            Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
-                            copied = useCase.id
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
-                        }
-                        .controlSize(.small)
-                    }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06)))
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 18) {
+                page(useCase.image)
+                    .frame(width: 310)
+                    .rotationEffect(.degrees(-2))
+                    .shadow(color: .black.opacity(0.18), radius: 14, y: 8)
+                if let result = useCase.result {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Ink.accent)
+                        .frame(width: 34, height: 34)
+                        .background(Circle().fill(Color(nsColor: .windowBackgroundColor)))
+                    outcome(result)
+                        .frame(width: 210)
+                        .rotationEffect(.degrees(1.5))
+                        .shadow(color: .black.opacity(0.16), radius: 12, y: 7)
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("2. Add the page, and see what your agent does").font(.caption).foregroundStyle(.secondary)
-                    Button("Add This Page") { choose(useCase.id, useCase.image) }
-                        .buttonStyle(.borderedProminent)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 30)
+            .background(LinearGradient(colors: [Ink.accent.opacity(scheme == .dark ? 0.30 : 0.16),
+                                                Color.pink.opacity(scheme == .dark ? 0.16 : 0.10)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing))
+
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(useCase.title).font(.title2.weight(.semibold))
+                    Text(useCase.promise).font(.body).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold)).foregroundStyle(Ink.accent)
+                    Text(useCase.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
+                HStack(spacing: 10) {
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(useCase.instruction, forType: .string)
+                        Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
+                        copied = useCase.id
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
+                    } label: {
+                        Label(copied == useCase.id ? "Copied" : "Copy for Your Agent",
+                              systemImage: copied == useCase.id ? "checkmark" : "doc.on.doc")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    Button { choose(useCase.id, useCase.image) } label: {
+                        Label("Try with This Page", systemImage: "plus")
+                    }
+                    .controlSize(.large)
+                    Spacer()
+                }
+                Text("Give the sentence to your agent one time. Then add this page, or write your own.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(20)
+        }
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.10)))
+    }
+
+    /// What the person finds after the agent did its work, drawn as a small list.
+    private func outcome(_ result: UseCase.Result) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(result.app).font(.system(size: 15, weight: .bold)).foregroundStyle(Ink.accent)
+            ForEach(Array(result.items.enumerated()), id: \.offset) { _, item in
+                HStack(spacing: 8) {
+                    Image(systemName: item.done == true ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(item.done == true ? Ink.accent : Color.secondary)
+                    Text(item.text).font(.system(size: 12.5))
+                        .strikethrough(item.done == true)
+                        .foregroundStyle(item.done == true ? Color.secondary : Color.primary)
+                    Spacer(minLength: 0)
                 }
             }
         }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(nsColor: .textBackgroundColor)))
     }
 
     private func page(_ data: Data?) -> some View {
@@ -236,6 +312,6 @@ private struct SampleGallery: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.15)))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.12)))
     }
 }

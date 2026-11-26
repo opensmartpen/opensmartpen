@@ -152,6 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.onTogglePin = { [weak self] in self?.togglePinned() }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
         model.onAddPhoto = { [weak self] in self?.addPhoto() }
+        model.onShowUseCases = { [weak self] in self?.showSamples() }
         model.onOpenPage = { [weak self] page in self?.showViewer(page) }
         coordinator.onChange = { [weak self] in self?.stateChanged() }
         coordinator.onOfflineStored = { [weak self] pages in
