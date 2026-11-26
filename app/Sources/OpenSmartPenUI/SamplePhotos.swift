@@ -153,14 +153,16 @@ public struct Idea: Identifiable, Equatable {
 /// The window with the ideas and the sample pages. "Try the Sample Photo" or a click on a sample page
 /// files it as a photo and closes the window.
 public final class SampleGalleryController: NSWindowController {
-    /// `onChoose` gets the id of what was chosen and its picture.
-    public init(onChoose: @escaping (String, Data) -> Void) {
+    /// `setup` is the sentence that connects an agent, while none is connected: each instruction
+    /// then starts with it, so one paste does both. `onChoose` gets the id of what was chosen and
+    /// its picture.
+    public init(setup: String? = nil, onChoose: @escaping (String, Data) -> Void) {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 560),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Ideas"
         window.isReleasedWhenClosed = false
         super.init(window: window)
-        let host = NSHostingController(rootView: SampleGallery { [weak self] id, picture in
+        let host = NSHostingController(rootView: SampleGallery(setup: setup) { [weak self] id, picture in
             self?.close()
             onChoose(id, picture)
         })
@@ -174,6 +176,7 @@ public final class SampleGalleryController: NSWindowController {
 }
 
 private struct SampleGallery: View {
+    var setup: String?
     let choose: (String, Data) -> Void
     @State private var copied: String?
     @Environment(\.colorScheme) private var scheme
@@ -250,12 +253,14 @@ private struct SampleGallery: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(idea.promise).font(.body).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Give this instruction to your agent, one time:").font(.callout.weight(.medium))
+                Text(setup == nil ? "Give this instruction to your agent, one time:"
+                     : "Give this instruction to your agent, one time. It connects your agent too:")
+                    .font(.callout.weight(.medium))
                     .padding(.top, 6)
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Ink.accent).padding(.top, 2)
-                    Text(idea.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
+                    Text(instruction(of: idea)).font(.callout.weight(.medium)).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -266,7 +271,7 @@ private struct SampleGallery: View {
                     action(copied == idea.id ? "Copied. Paste it into your agent" : "Copy Instruction",
                            copied == idea.id ? "checkmark" : "doc.on.doc") {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(idea.instruction, forType: .string)
+                        NSPasteboard.general.setString(instruction(of: idea), forType: .string)
                         Telemetry.event("ui.idea.copy", ["idea.id": .string(idea.id)])
                         copied = idea.id
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
@@ -285,6 +290,12 @@ private struct SampleGallery: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Ink.accent.opacity(0.35), lineWidth: 1))
         .shadow(color: .black.opacity(scheme == .dark ? 0.45 : 0.12), radius: 16, y: 8)
+    }
+
+    /// What the person gives their agent: the sentence of the idea, after the setup sentence while
+    /// no agent is connected.
+    private func instruction(of idea: Idea) -> String {
+        [setup, idea.instruction].compactMap { $0 }.joined(separator: " ")
     }
 
     /// The number of a step in a small disc, as in the first panel.

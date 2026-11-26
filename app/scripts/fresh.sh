@@ -22,7 +22,7 @@
 # Then the real app goes back to its LaunchAgent: at once when this runs in a terminal, and with
 # the two commands that are printed when it does not.
 #
-# What is not fresh: the app's own preferences.
+# What is not fresh: the app's other preferences, such as the pinned panel.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -79,6 +79,9 @@ trap restore EXIT
 # fresh copy would write into the real notes folder.
 [ -z "$ASK" ] || tccutil reset BluetoothAlways "$LABEL" >/dev/null 2>&1 || true
 rm -rf "$FRESH"
+# The steps that a person skipped in the panel are in the app's preferences. A fresh run has none.
+defaults delete "$LABEL" panel.skippedIdea 2>/dev/null || true
+defaults delete "$LABEL" panel.skippedPen 2>/dev/null || true
 mkdir -p "$FRESH/config/opensmartpen" "$FRESH/notes"
 printf '{ "dataPath": "%s/notes" }\n' "$FRESH" > "$FRESH/config/opensmartpen/config.json"
 

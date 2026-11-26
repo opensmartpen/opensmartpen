@@ -576,7 +576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The window with the sample pages. The one that is clicked is filed as a photo.
     private func showSamples() {
         panel?.dismiss()
-        let gallery = SampleGalleryController { [weak self] id, picture in
+        let gallery = SampleGalleryController(setup: agentRecords.isEmpty ? model.agentSentence : nil) { [weak self] id, picture in
             self?.sampleGallery = nil
             Telemetry.event("ui.photo.sample", ["photo.sample": .string(id)])
             self?.file(photo: picture, ext: "png", from: "sample", show: true)

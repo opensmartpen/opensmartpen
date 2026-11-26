@@ -104,14 +104,18 @@ public struct StatusPanel: View {
     /// and may not have a pen at all. The panel then leads with the one thing they can do.
     private enum Step { case agent, idea, pen }
 
-    /// The steps that are still to do. An agent: until one is connected. An idea: until a first
-    /// page exists. A pen: until the two before it are done; then "Add Pen…" is a row in the
-    /// lower part of the panel, so a person with no pen is not asked again and again.
+    /// At the first start the panel leads with one thing, an idea to try: it shows what the app is
+    /// for, and its instruction connects the agent too. It goes when an agent is connected, when
+    /// a page exists, or when the person skips it.
+    private var leadsWithAnIdea: Bool { !model.skippedIdea && model.asksForAgent && model.recent.isEmpty }
+
+    /// The steps that are still to do. First the idea, alone. After it, or when it was skipped:
+    /// an agent, until one is connected; a pen, until one is added or the person skips it.
     private var steps: [Step] {
+        if leadsWithAnIdea { return [.idea] }
         var out: [Step] = []
         if model.asksForAgent { out.append(.agent) }
-        if model.recent.isEmpty { out.append(.idea) }
-        if model.pens.isEmpty, !out.isEmpty || model.isAddingPen || model.bluetoothRefused { out.append(.pen) }
+        if model.pens.isEmpty, !model.skippedPen || model.isAddingPen || model.bluetoothRefused { out.append(.pen) }
         return out
     }
 
@@ -131,23 +135,28 @@ public struct StatusPanel: View {
         }
     }
 
-    /// Two ways to a first page with no pen: a sample page from an idea, or a photo of the
-    /// person's own writing.
+    /// The first thing a new person sees: one idea to try, and a way past it.
     private var tryAnIdea: some View {
         VStack(alignment: .leading, spacing: 7) {
-            stepTitle(number(of: .idea), "Try an idea")
-            HStack(spacing: 6) {
-                Button(action: model.showIdeas) { Text("Show Ideas").frame(maxWidth: .infinity) }
-                    .buttonStyle(InkButtonStyle(filled: leads(.idea)))
-                Button(action: model.addPhoto) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "camera").font(.system(size: 11))
-                        Text("Add Photo")
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(InkButtonStyle(filled: false))
-            }
+            stepTitle(nil, "Try an idea")
+            Text("See what your agent does with a page. It connects your agent too.")
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: model.showIdeas) { Text("Show Ideas").frame(maxWidth: .infinity) }
+                .buttonStyle(InkButtonStyle(filled: true))
+            skip(model.skipIdea)
+        }
+    }
+
+    /// "Skip", small and at the right: the way past a step that a person does not want now.
+    private func skip(_ action: @escaping () -> Void) -> some View {
+        HStack {
+            Spacer()
+            Button("Skip", action: action)
+                .buttonStyle(.plain)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -181,6 +190,7 @@ public struct StatusPanel: View {
                     Button(action: model.addPen) { Text("Add Pen").frame(maxWidth: .infinity) }
                         .buttonStyle(InkButtonStyle(filled: leads(.pen)))
                     websiteLink("No pen yet?", "See pens that work", action: model.showPensThatWork)
+                    skip(model.skipPen)
                 }
             }
         }
@@ -417,7 +427,7 @@ public struct StatusPanel: View {
                 // shortcut that fails half the time is worse than no shortcut at all. The
                 // handler stays; only the promise is gone.
                 // Not twice: what a step above shows as a button is not a row here too.
-                if !steps.contains(.idea) {
+                if !leadsWithAnIdea {
                     MenuItem(title: "Add Photo…", symbol: "camera", action: model.addPhoto)
                     MenuItem(title: "Ideas…", symbol: "lightbulb", action: model.showIdeas)
                 }
