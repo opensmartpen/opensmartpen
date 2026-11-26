@@ -258,7 +258,7 @@ private struct SampleGallery: View {
                     }
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
-                    action(copied == useCase.id ? "Copied" : "Copy", copied == useCase.id ? "checkmark" : "doc.on.doc",
+                    action(copied == useCase.id ? "Copied" : "Copy Instruction", copied == useCase.id ? "checkmark" : "doc.on.doc",
                            leads: true) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(useCase.instruction, forType: .string)
