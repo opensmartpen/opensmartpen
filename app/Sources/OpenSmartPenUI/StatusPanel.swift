@@ -103,8 +103,20 @@ public struct StatusPanel: View {
     private var seeIdeas: some View {
         VStack(alignment: .leading, spacing: 7) {
             stepTitle(3, "See what you can do")
-            Button(action: model.showIdeas) { Text("Show Ideas").frame(maxWidth: .infinity) }
+            // Two ways to a first page with no pen: a sample page from an idea, or a photo of
+            // the person's own writing.
+            HStack(spacing: 6) {
+                Button(action: model.showIdeas) { Text("Show Ideas").frame(maxWidth: .infinity) }
+                    .buttonStyle(InkButtonStyle(filled: false))
+                Button(action: model.addPhoto) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "camera").font(.system(size: 11))
+                        Text("Add Photo")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
                 .buttonStyle(InkButtonStyle(filled: false))
+            }
         }
     }
 
@@ -119,17 +131,6 @@ public struct StatusPanel: View {
         } else {
             VStack(alignment: .leading, spacing: 9) {
                 addYourPen
-                // Nothing written yet, and no pen: a person can add a page some other way.
-                if startsWithoutAPen {
-                    Button(action: model.addPhoto) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "camera").font(.system(size: 11))
-                            Text("Add Photo")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(InkButtonStyle(filled: false))
-                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
@@ -401,12 +402,9 @@ public struct StatusPanel: View {
                 // become key, so the keystrokes it advertised often did nothing — and a
                 // shortcut that fails half the time is worse than no shortcut at all. The
                 // handler stays; only the promise is gone.
-                // Not twice: while the top of the panel leads with it, it is not here too.
-                if !startsWithoutAPen {
-                    MenuItem(title: "Add Photo…", symbol: "camera", action: model.addPhoto)
-                }
-                // Not twice: while the first panel shows it as its third step, it is not here too.
+                // Not twice: while the first panel shows them as its third step, they are not here too.
                 if !showsSteps {
+                    MenuItem(title: "Add Photo…", symbol: "camera", action: model.addPhoto)
                     MenuItem(title: "Ideas…", symbol: "lightbulb", action: model.showIdeas)
                 }
                 MenuItem(title: "Settings…", action: model.openConfig)
