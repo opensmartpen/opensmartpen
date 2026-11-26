@@ -246,6 +246,8 @@ private struct SampleGallery: View {
                     Text(useCase.promise).font(.body).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                Text("Give this instruction to your agent, one time").font(.callout.weight(.medium))
+                    .padding(.top, 6)
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Ink.accent).padding(.top, 2)
@@ -255,9 +257,9 @@ private struct SampleGallery: View {
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
-                .padding(.top, 4)
-                HStack(spacing: 10) {
-                    action(copied == useCase.id ? "Copied" : "Copy Instruction",
+                HStack(spacing: 8) {
+                    number(1)
+                    action(copied == useCase.id ? "Copied. Paste it into your agent" : "Copy Instruction",
                            copied == useCase.id ? "checkmark" : "doc.on.doc") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(useCase.instruction, forType: .string)
@@ -265,6 +267,7 @@ private struct SampleGallery: View {
                         copied = useCase.id
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
                     }
+                    number(2).padding(.leading, 8)
                     action("Try the Sample Photo", "plus") { choose(useCase.id, useCase.image) }
                     Text("or test with your pen").font(.callout).foregroundStyle(.secondary)
                 }
@@ -274,6 +277,14 @@ private struct SampleGallery: View {
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color(nsColor: .controlBackgroundColor)))
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.primary.opacity(0.10)))
+    }
+
+    /// The number of a step in a small disc, as in the first panel.
+    private func number(_ number: Int) -> some View {
+        Text("\(number)")
+            .font(.system(size: 11, weight: .semibold))
+            .frame(width: 20, height: 20)
+            .background(Circle().fill(Color.primary.opacity(0.12)))
     }
 
     /// One of the two actions of a use case.
