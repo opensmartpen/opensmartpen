@@ -123,6 +123,19 @@ public struct Idea: Identifiable, Equatable {
         }
     }
 
+    /// What "Copy Instruction" puts on the clipboard: two steps in order. The first one connects
+    /// the agent, and an agent that is connected already skips it. The second is the idea.
+    public func copied(after setup: String?) -> String {
+        guard let setup else { return instruction }
+        return """
+        Do these two things, in this order.
+
+        1. \(setup) Skip this step if you are set up for these pages already.
+
+        2. \(instruction)
+        """
+    }
+
     private struct Card: Decodable {
         let title, promise, instruction, image: String
         let result: Result?
@@ -157,8 +170,9 @@ public final class SampleGalleryController: NSWindowController, NSWindowDelegate
     public var onLeave: (() -> Void)?
     private var chose = false
 
-    /// `setup` is the sentence that connects an agent, while none is connected: each instruction
-    /// then starts with it, so one paste does both. `first` is the first start: the window then
+    /// `setup` is the sentence that connects an agent. The window shows only the sentence of an
+    /// idea; what "Copy Instruction" copies has the setup as its first step, so one paste does
+    /// both. `first` is the first start: the window then
     /// comes before the panel, and has "Skip". `onChoose` gets the id of what was chosen and its
     /// picture.
     public init(setup: String? = nil, first: Bool = false, onChoose: @escaping (String, Data) -> Void) {
@@ -271,14 +285,12 @@ private struct SampleGallery: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text(idea.promise).font(.body).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(setup == nil ? "Give this instruction to your agent, one time:"
-                     : "Give this instruction to your agent, one time. It connects your agent too:")
-                    .font(.callout.weight(.medium))
+                Text("Give this instruction to your agent, one time:").font(.callout.weight(.medium))
                     .padding(.top, 6)
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Ink.accent).padding(.top, 2)
-                    Text(instruction(of: idea)).font(.callout.weight(.medium)).textSelection(.enabled)
+                    Text(idea.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -289,7 +301,7 @@ private struct SampleGallery: View {
                     action(copied == idea.id ? "Copied. Paste it into your agent" : "Copy Instruction",
                            copied == idea.id ? "checkmark" : "doc.on.doc") {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(instruction(of: idea), forType: .string)
+                        NSPasteboard.general.setString(idea.copied(after: setup), forType: .string)
                         Telemetry.event("ui.idea.copy", ["idea.id": .string(idea.id)])
                         copied = idea.id
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
@@ -308,12 +320,6 @@ private struct SampleGallery: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Ink.accent.opacity(0.35), lineWidth: 1))
         .shadow(color: .black.opacity(scheme == .dark ? 0.45 : 0.12), radius: 16, y: 8)
-    }
-
-    /// What the person gives their agent: the sentence of the idea, after the setup sentence while
-    /// no agent is connected.
-    private func instruction(of idea: Idea) -> String {
-        [setup, idea.instruction].compactMap { $0 }.joined(separator: " ")
     }
 
     /// The number of a step in a small disc, as in the first panel.
