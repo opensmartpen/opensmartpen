@@ -103,7 +103,7 @@ public struct StatusPanel: View {
     private var seeIdeas: some View {
         VStack(alignment: .leading, spacing: 7) {
             stepTitle(3, "See what you can do")
-            Button(action: model.showUseCases) { Text("Show Ideas").frame(maxWidth: .infinity) }
+            Button(action: model.showIdeas) { Text("Show Ideas").frame(maxWidth: .infinity) }
                 .buttonStyle(InkButtonStyle(filled: false))
         }
     }
@@ -407,7 +407,7 @@ public struct StatusPanel: View {
                 }
                 // Not twice: while the first panel shows it as its third step, it is not here too.
                 if !showsSteps {
-                    MenuItem(title: "Ideas…", symbol: "lightbulb", action: model.showUseCases)
+                    MenuItem(title: "Ideas…", symbol: "lightbulb", action: model.showIdeas)
                 }
                 MenuItem(title: "Settings…", action: model.openConfig)
                 MenuItem(title: "Quit") { NSApp.terminate(nil) }

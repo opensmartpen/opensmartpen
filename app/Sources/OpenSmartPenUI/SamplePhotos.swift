@@ -100,10 +100,10 @@ public struct SamplePhoto: Identifiable, Equatable {
     }
 }
 
-/// A use case from the folder `use-cases/` of the repository: a real handwritten page, a promise,
+/// An idea from the folder `ideas/` of the repository: a real handwritten page, a promise,
 /// and the one sentence that a person gives their agent. The app reads the same files that the
 /// repository shows, so there is one home for each.
-public struct UseCase: Identifiable, Equatable {
+public struct Idea: Identifiable, Equatable {
     /// The name of its folder. It goes into telemetry, so it is never a text a person wrote.
     public let id: String
     public let title: String
@@ -128,14 +128,14 @@ public struct UseCase: Identifiable, Equatable {
         let result: Result?
     }
 
-    public static let all: [UseCase] = {
+    public static let all: [Idea] = {
         guard let folder, let names = try? FileManager.default.contentsOfDirectory(atPath: folder.path) else { return [] }
         return names.sorted().compactMap { name in
             let dir = folder.appendingPathComponent(name)
-            guard let data = try? Data(contentsOf: dir.appendingPathComponent("use-case.json")),
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent("idea.json")),
                   let card = try? JSONDecoder().decode(Card.self, from: data),
                   let image = try? Data(contentsOf: dir.appendingPathComponent(card.image)) else { return nil }
-            return UseCase(id: name, title: card.title, promise: card.promise, instruction: card.instruction,
+            return Idea(id: name, title: card.title, promise: card.promise, instruction: card.instruction,
                            image: image, result: card.result)
         }
     }()
@@ -143,14 +143,14 @@ public struct UseCase: Identifiable, Equatable {
     /// In the app, the folder is in the bundle. A build with no bundle, such as the design window
     /// or a test, reads it from the repository that it was built from.
     private static var folder: URL? {
-        let places = [Bundle.main.resourceURL?.appendingPathComponent("use-cases"),
+        let places = [Bundle.main.resourceURL?.appendingPathComponent("ideas"),
                       URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-                          .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("use-cases")]
+                          .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("ideas")]
         return places.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 }
 
-/// The window with the use cases and the sample pages. "Add This Page" or a click on a sample page
+/// The window with the ideas and the sample pages. "Try the Sample Photo" or a click on a sample page
 /// files it as a photo and closes the window.
 public final class SampleGalleryController: NSWindowController {
     /// `onChoose` gets the id of what was chosen and its picture.
@@ -181,11 +181,11 @@ private struct SampleGallery: View {
     private let drawn: [String: Data] = Dictionary(uniqueKeysWithValues: SamplePhoto.all.compactMap { sample in
         sample.png().map { (sample.id, $0) }
     })
-    private static let more = URL(string: "https://github.com/opensmartpen/opensmartpen/tree/main/use-cases")!
+    private static let more = URL(string: "https://github.com/opensmartpen/opensmartpen/tree/main/ideas")!
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            ForEach(UseCase.all) { useCase($0) }
+            ForEach(Idea.all) { card($0) }
             if !SamplePhoto.all.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("More sample pages").font(.headline)
@@ -213,16 +213,16 @@ private struct SampleGallery: View {
         .frame(width: 680)
     }
 
-    /// A use case as one card. On top, what happens: the page on paper, an arrow, and what the
+    /// An idea as one card. On top, what happens: the page on paper, an arrow, and what the
     /// person finds in their app after it. Under it, the words, the sentence and the two actions.
-    private func useCase(_ useCase: UseCase) -> some View {
+    private func card(_ idea: Idea) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 18) {
-                page(useCase.image)
+                page(idea.image)
                     .frame(width: 310)
                     .rotationEffect(.degrees(-2))
                     .shadow(color: .black.opacity(0.18), radius: 14, y: 8)
-                if let result = useCase.result {
+                if let result = idea.result {
                     Image(systemName: "arrow.right")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Ink.accent)
@@ -242,8 +242,8 @@ private struct SampleGallery: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(useCase.title).font(.title2.weight(.semibold))
-                    Text(useCase.promise).font(.body).foregroundStyle(.secondary)
+                    Text(idea.title).font(.title2.weight(.semibold))
+                    Text(idea.promise).font(.body).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text("Give this instruction to your agent, one time:").font(.callout.weight(.medium))
@@ -251,7 +251,7 @@ private struct SampleGallery: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "quote.opening").font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Ink.accent).padding(.top, 2)
-                    Text(useCase.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
+                    Text(idea.instruction).font(.callout.weight(.medium)).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -259,16 +259,16 @@ private struct SampleGallery: View {
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Ink.accent.opacity(0.10)))
                 HStack(spacing: 8) {
                     number(1)
-                    action(copied == useCase.id ? "Copied. Paste it into your agent" : "Copy Instruction",
-                           copied == useCase.id ? "checkmark" : "doc.on.doc") {
+                    action(copied == idea.id ? "Copied. Paste it into your agent" : "Copy Instruction",
+                           copied == idea.id ? "checkmark" : "doc.on.doc") {
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(useCase.instruction, forType: .string)
-                        Telemetry.event("ui.usecase.copy", ["usecase.id": .string(useCase.id)])
-                        copied = useCase.id
+                        NSPasteboard.general.setString(idea.instruction, forType: .string)
+                        Telemetry.event("ui.idea.copy", ["idea.id": .string(idea.id)])
+                        copied = idea.id
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = nil }
                     }
                     number(2).padding(.leading, 8)
-                    action("Try the Sample Photo", "plus") { choose(useCase.id, useCase.image) }
+                    action("Try the Sample Photo", "plus") { choose(idea.id, idea.image) }
                     Text("or test with your pen").font(.callout).foregroundStyle(.secondary)
                 }
             }
@@ -287,14 +287,14 @@ private struct SampleGallery: View {
             .background(Circle().fill(Color.primary.opacity(0.12)))
     }
 
-    /// One of the two actions of a use case.
+    /// One of the two actions of an idea.
     private func action(_ title: String, _ symbol: String, _ run: @escaping () -> Void) -> some View {
         Button(action: run) { Label(title, systemImage: symbol) }
             .buttonStyle(.borderedProminent).controlSize(.large)
     }
 
     /// What the person finds after the agent did its work, drawn as a small list.
-    private func outcome(_ result: UseCase.Result) -> some View {
+    private func outcome(_ result: Idea.Result) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(result.app).font(.system(size: 15, weight: .bold)).foregroundStyle(Ink.accent)
             ForEach(Array(result.items.enumerated()), id: \.offset) { _, item in

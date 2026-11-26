@@ -42,8 +42,8 @@ cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # Assets.car alongside it: Notification Center resolves the icon through
 # CFBundleIconName and the compiled catalog, and ignores CFBundleIconFile entirely.
 cp Resources/Assets.car "$APP/Contents/Resources/Assets.car"
-# The use cases of the repository: the app shows them under "Use Sample Photo…".
-cp -R ../use-cases "$APP/Contents/Resources/use-cases"
+# The ideas of the repository: the app shows them under "Ideas…".
+cp -R ../ideas "$APP/Contents/Resources/ideas"
 
 # The license texts travel with the app. The built app contains NISDK3, which is GPL-3.0, and the
 # GPL asks that each copy of a binary carries the license. The GPL text is taken from the SDK

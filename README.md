@@ -46,7 +46,7 @@ You write on paper as always. What happens next is between you and your agent. S
 
 The app shows these under "Ideas…": click the pencil in the menu bar. Each idea has a sample page and the one sentence that you give your agent, so you can try it with no pen.
 
-Show us what you do with your pen. Open an issue with your use, or add it: each one is a folder in [`use-cases/`](use-cases/), with a handwritten page and one sentence. No code.
+Show us what you do with your pen. Open an issue with your use, or add it: each one is a folder in [`ideas/`](ideas/), with a handwritten page and one sentence. No code.
 
 ## What you need
 

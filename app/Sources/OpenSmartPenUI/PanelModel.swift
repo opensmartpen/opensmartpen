@@ -520,12 +520,12 @@ public final class PanelModel: ObservableObject {
 
     func addPhoto() { onAddPhoto?() }
 
-    /// Opens the window with the use cases. Set by the app delegate.
-    public var onShowUseCases: (() -> Void)?
+    /// Opens the window with the ideas. Set by the app delegate.
+    public var onShowIdeas: (() -> Void)?
 
-    func showUseCases() {
-        Telemetry.event("ui.usecases.opened", ["ui.source": "panel"])
-        onShowUseCases?()
+    func showIdeas() {
+        Telemetry.event("ui.ideas.opened", ["ui.source": "panel"])
+        onShowIdeas?()
     }
 
     // MARK: adding a pen
