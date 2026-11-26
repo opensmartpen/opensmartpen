@@ -1,13 +1,13 @@
 # To-dos in your notes
 
-You take notes as always. When something must be done, you draw a small box before the line. Your agent makes a task from each box, in Apple Reminders or in your task app. When you tick or cross the box on paper later, the agent marks the task as done.
+You take notes as always. When something must be done, you draw a small box before the line. Your agent makes a task from each box. When you tick or cross the box on paper later, the agent marks the task as done.
 
 ![A handwritten page: Weekly sync, two notes, an open to-do and a ticked to-do](sample/page.png)
 
 From this page the agent makes two tasks: "Fix pricing page", open, and "Send invites", done. The lines with a dash stay notes.
 
-To use it, give your agent this sentence:
+To use it, give your agent this sentence one time:
 
-> Read `use-cases/pen-todos/SKILL.md` in https://github.com/opensmartpen/opensmartpen and use it for my Open Smart Pen pages.
+> On my pages, a line that starts with a box is a to-do. Keep it as a task in Apple Reminders, in a list "Open Smart Pen", and mark it as done when I tick or cross the box. Never make the same task two times.
 
-The instructions for the agent are in [`SKILL.md`](SKILL.md).
+Change the sentence to fit you: a different mark, a different task app.

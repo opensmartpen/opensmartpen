@@ -2,12 +2,11 @@
 
 What people do with a pen and their own agent. Each folder is one use case:
 
-- `SKILL.md`: the instructions for the agent, in the [Agent Skills](https://agentskills.io) format.
-- `use-case.yaml`: the card: title, promise, marks, what it needs.
+- `use-case.yaml`: the card: the title, the promise, and the sentence that the person gives their agent.
 - `README.md`: the use case for a person, in a few sentences.
 - `sample/`: a real handwritten page.
 
-A use case has no code. It is text and pictures.
+A use case has no code. It is a page, a promise and one sentence. An agent needs no more than that for most of them.
 
 | Use case | What you write | What your agent does |
 |---|---|---|
