@@ -20,6 +20,7 @@ private typealias Publish = PanelModel.Publish
 /// see even once.
 public enum Scenario: String, CaseIterable {
     case synced, writing, waiting, copying, failing, asleep, bluetoothOff, bluetoothRefused, firstRun, firstRunLooking, firstRunRefused
+    case firstRunAgent, photoOnly
     case newNotebook, threePens, penOpen
     /// The picture in the README: `assets/panel.png`.
     case readme
@@ -37,6 +38,8 @@ public enum Scenario: String, CaseIterable {
         case .firstRun: return "First run"
         case .firstRunLooking: return "First run, looking"
         case .firstRunRefused: return "First run, no Bluetooth"
+        case .firstRunAgent: return "First run, agent"
+        case .photoOnly: return "No pen, a photo"
         case .newNotebook: return "A second pad"
         case .threePens: return "Three pens"
         case .penOpen: return "Pen settings"
@@ -57,6 +60,8 @@ public enum Scenario: String, CaseIterable {
         case .firstRun: return "never paired"
         case .firstRunLooking: return "Add Pen was clicked"
         case .firstRunRefused: return "said no to macOS at the first start"
+        case .firstRunAgent: return "an agent is connected, no page yet"
+        case .photoOnly: return "set up with no pen"
         case .newNotebook: return "two copies, decided silently"
         case .threePens: return "what the width is cut for"
         case .penOpen: return "a tile clicked open"
@@ -131,7 +136,7 @@ public enum Scenario: String, CaseIterable {
                 PenRow(id: "b", name: "Red one", ink: .red, width: .thin, mode: .writing,
                        percent: nil, low: false, active: false, state: "Bluetooth not allowed", awake: false),
             ]
-        case .firstRun, .firstRunLooking, .firstRunRefused:
+        case .firstRun, .firstRunLooking, .firstRunRefused, .firstRunAgent, .photoOnly:
             s.battery = nil
             s.lastPublish = nil
             s.recent = []
@@ -141,6 +146,15 @@ public enum Scenario: String, CaseIterable {
             s.agents = []
             s.asksForAgent = true
             if self == .firstRunRefused { s.bluetoothRefused = true }
+            if self == .firstRunAgent || self == .photoOnly {
+                s.asksForAgent = false
+                s.agents = [PanelModel.AgentRow(id: 0, name: "Claude Code", alive: "alive now", behind: false,
+                                                url: URL(string: "https://example.com"))]
+            }
+            if self == .photoOnly {
+                s.recent = [Self.book("s0-o0-b0-0b8951", PhotoPages.title,
+                                      PageID(section: 0, owner: 0, book: 0, page: 1), latest: true, binding: .pad)]
+            }
             if self == .firstRunLooking { s.addingPen = true }
         case .newNotebook:
             // A fresh pad is not announced, it simply appears: a second row with the same title

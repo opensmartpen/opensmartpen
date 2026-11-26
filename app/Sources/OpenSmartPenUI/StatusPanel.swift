@@ -63,15 +63,22 @@ public struct StatusPanel: View {
                 // to be separated from. A headline used to sit here — a dot and a word for the
                 // whole app — and it was saying a third time what the pen's own line and the
                 // page countdowns already say, in a larger type size than either.
-                top
-                // With pens in the row, the reason none of them connects goes right under them.
-                if model.bluetoothRefused, !model.pens.isEmpty { section { bluetoothRefused } }
-                // No list of pages waiting. It named the same notebook that is already in the
-                // list below, one row further down, and the countdown beside it answered a
-                // question about a thing the app finishes on its own. What survives of it is the
-                // mark on that notebook in the list.
-                if model.asksForAgent { section { connectAgent } }
-                if showsSteps { section { seeIdeas } }
+                if !model.pens.isEmpty {
+                    penRow
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 11)
+                    // With pens in the row, the reason none of them connects goes right under them.
+                    if model.bluetoothRefused { section { bluetoothRefused } }
+                }
+                // What is left to set up, in the order that needs the least first: an agent,
+                // then a first page, then a pen. Each step goes when it is done.
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                    if index == 0, model.pens.isEmpty {
+                        view(of: step).padding(.horizontal, 14).padding(.vertical, 11)
+                    } else {
+                        section { view(of: step) }
+                    }
+                }
                 if !model.agents.isEmpty { section(inset: 5) { agents } }
                 if case let .failing(_, _, error) = model.status { section { failure(error) } }
                 if case let .copying(_, _, percent) = model.status { section { copying(percent) } }
@@ -95,19 +102,43 @@ public struct StatusPanel: View {
 
     /// No pen has ever connected and there is no page: a person who is here for the first time
     /// and may not have a pen at all. The panel then leads with the one thing they can do.
-    /// True while the panel shows the first steps in a row, with numbers: no pen is paired yet,
-    /// and no agent is connected.
-    private var showsSteps: Bool { model.pens.isEmpty && !model.bluetoothRefused && model.asksForAgent }
+    private enum Step { case agent, idea, pen }
 
-    /// The third step of the first panel: what a pen and an agent are good for.
-    private var seeIdeas: some View {
+    /// The steps that are still to do. An agent: until one is connected. An idea: until a first
+    /// page exists. A pen: until the two before it are done; then "Add Pen…" is a row in the
+    /// lower part of the panel, so a person with no pen is not asked again and again.
+    private var steps: [Step] {
+        var out: [Step] = []
+        if model.asksForAgent { out.append(.agent) }
+        if model.recent.isEmpty { out.append(.idea) }
+        if model.pens.isEmpty, !out.isEmpty || model.isAddingPen || model.bluetoothRefused { out.append(.pen) }
+        return out
+    }
+
+    /// A step has a number only while more than one is on screen.
+    private func number(of step: Step) -> Int? {
+        steps.count > 1 ? steps.firstIndex(of: step).map { $0 + 1 } : nil
+    }
+
+    /// One filled button in the panel at a time: the one of the first step that is left.
+    private func leads(_ step: Step) -> Bool { steps.first == step }
+
+    @ViewBuilder private func view(of step: Step) -> some View {
+        switch step {
+        case .agent: connectAgent
+        case .idea: tryAnIdea
+        case .pen: addYourPen
+        }
+    }
+
+    /// Two ways to a first page with no pen: a sample page from an idea, or a photo of the
+    /// person's own writing.
+    private var tryAnIdea: some View {
         VStack(alignment: .leading, spacing: 7) {
-            stepTitle(3, "See what you can do")
-            // Two ways to a first page with no pen: a sample page from an idea, or a photo of
-            // the person's own writing.
+            stepTitle(number(of: .idea), "Try an idea")
             HStack(spacing: 6) {
                 Button(action: model.showIdeas) { Text("Show Ideas").frame(maxWidth: .infinity) }
-                    .buttonStyle(InkButtonStyle(filled: false))
+                    .buttonStyle(InkButtonStyle(filled: leads(.idea)))
                 Button(action: model.addPhoto) {
                     HStack(spacing: 5) {
                         Image(systemName: "camera").font(.system(size: 11))
@@ -122,22 +153,7 @@ public struct StatusPanel: View {
 
     private var startsWithoutAPen: Bool { model.pens.isEmpty && model.recent.isEmpty }
 
-    /// Whatever goes at the very top: the pens, or, with no pen paired, the way to add one.
-    @ViewBuilder private var top: some View {
-        if !model.pens.isEmpty {
-            penRow
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-        } else {
-            VStack(alignment: .leading, spacing: 9) {
-                addYourPen
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-        }
-    }
-
-    /// The first step, for a Mac with no pen: a button. The app scans for no pen before the
+    /// The step for a Mac with no pen: a button. The app scans for no pen before the
     /// click, and macOS asks about Bluetooth at the click, when the person sees why. Without
     /// Bluetooth the button could do nothing, so the panel then says that in its place.
     @ViewBuilder private var addYourPen: some View {
@@ -145,7 +161,7 @@ public struct StatusPanel: View {
             bluetoothRefused
         } else {
             VStack(alignment: .leading, spacing: 7) {
-                stepTitle(1, "Add your pen")
+                stepTitle(number(of: .pen), "Add your pen")
                 if model.isAddingPen {
                     HStack(spacing: 7) {
                         ProgressView().controlSize(.small)
@@ -163,9 +179,7 @@ public struct StatusPanel: View {
                         .buttonStyle(InkButtonStyle(filled: false))
                 } else {
                     Button(action: model.addPen) { Text("Add Pen").frame(maxWidth: .infinity) }
-                        // One filled button in a panel, and it is the first step while that
-                        // step is on screen.
-                        .buttonStyle(InkButtonStyle(filled: true))
+                        .buttonStyle(InkButtonStyle(filled: leads(.pen)))
                     websiteLink("No pen yet?", "See pens that work", action: model.showPensThatWork)
                 }
             }
@@ -317,7 +331,7 @@ public struct StatusPanel: View {
     private var connectAgent: some View {
         VStack(alignment: .leading, spacing: 7) {
             // The second step while the first is on screen above it. Alone, it has no number.
-            stepTitle(showsSteps ? 2 : nil, "Connect your agent")
+            stepTitle(number(of: .agent), "Connect your agent")
             // The link is at the end of the text, so it wraps with it. It goes through the model,
             // which also counts the click.
             (Text("Paste this into Claude Code, Codex or another agent. ").foregroundColor(.secondary)
@@ -328,7 +342,7 @@ public struct StatusPanel: View {
                 .environment(\.openURL, OpenURLAction { _ in model.showAgentsThatWork(); return .handled })
             // One filled button in the panel at a time. While "Add Pen" is above, it is that one.
             Button(model.agentSentenceCopied ? "Copied" : "Copy instructions", action: model.copyAgentSentence)
-                .buttonStyle(InkButtonStyle(filled: !model.pens.isEmpty))
+                .buttonStyle(InkButtonStyle(filled: leads(.agent)))
         }
     }
 
@@ -402,10 +416,13 @@ public struct StatusPanel: View {
                 // become key, so the keystrokes it advertised often did nothing — and a
                 // shortcut that fails half the time is worse than no shortcut at all. The
                 // handler stays; only the promise is gone.
-                // Not twice: while the first panel shows them as its third step, they are not here too.
-                if !showsSteps {
+                // Not twice: what a step above shows as a button is not a row here too.
+                if !steps.contains(.idea) {
                     MenuItem(title: "Add Photo…", symbol: "camera", action: model.addPhoto)
                     MenuItem(title: "Ideas…", symbol: "lightbulb", action: model.showIdeas)
+                }
+                if model.pens.isEmpty, !steps.contains(.pen) {
+                    MenuItem(title: "Add Pen…", symbol: "pencil.tip", action: model.addPen)
                 }
                 MenuItem(title: "Settings…", action: model.openConfig)
                 MenuItem(title: "Quit") { NSApp.terminate(nil) }
