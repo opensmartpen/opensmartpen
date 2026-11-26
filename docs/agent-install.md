@@ -59,6 +59,7 @@ The person can give you a rule for their pages in one sentence, for example "fro
 
 - Add the sentence to "The person's rules" in your file of instructions, in the person's words. Tell the person that you did it.
 - Do nothing else. Do not write a program for the rule, do not change your wake-up, and do not go through the pages now.
+- If a run with no window cannot do what the rule needs, for example reach another app on the Mac, tell the person exactly what to allow. Change your wake-up for that only after the person says yes.
 - At each run, after the transcript of a page, apply each rule to that page with your own judgement. A rule applies only to pages that you transcribe from now on, not to old pages.
 
 ## Each run
